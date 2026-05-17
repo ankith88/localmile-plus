@@ -1,0 +1,32 @@
+{
+  "name": "functions",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --external:firebase-admin --external:firebase-functions --outfile=lib/index.js",
+    "build:watch": "tsc --watch",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^13.8.0",
+    "firebase-functions": "^7.2.5",
+    "nodemailer": "^6.9.13",
+    "googleapis": "^140.0.1",
+    "imap-simple": "^5.1.0",
+    "mailparser": "^3.7.1"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^6.4.15",
+    "@types/imap-simple": "^4.2.8",
+    "@types/mailparser": "^3.4.4",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.0.0"
+  },
+  "private": true
+}

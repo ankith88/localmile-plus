@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/pwa-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,500&family=JetBrains+Mono:wght@500&family=Manrope:wght@400&family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>LocalMile.Plus</title>
+  </head>
+  <body>
+    <div id="root">
+      <div id="initial-loader">
+        <div class="loader-content">
+          <div class="logo-wrap">
+            <div class="logo-pulse"></div>
+            <div class="logo-text">LocalMile<span>.Plus</span></div>
+          </div>
+          <div class="loader-line">
+            <div class="line-fill"></div>
+          </div>
+        </div>
+        <style>
+          #initial-loader {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: #095c7b; display: flex; align-items: center; justify-content: center;
+            z-index: 10000; font-family: 'Fraunces', serif;
+          }
+          .loader-content { display: flex; flex-direction: column; align-items: center; gap: 40px; }
+          .logo-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
+          .logo-text { font-size: 2.5rem; color: #FFFFFF; z-index: 2; letter-spacing: -0.025em; }
+          .logo-text span { color: #EAF044; font-style: italic; font-weight: 500; }
+          .logo-pulse {
+            position: absolute; width: 80px; height: 80px; border: 2px solid #A8763A;
+            border-radius: 50%; animation: pulse-out 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+          }
+          @keyframes pulse-out { 0% { transform: scale(0.8); opacity: 0.8; } 100% { transform: scale(2); opacity: 0; } }
+          .loader-line { width: 200px; height: 2px; background: rgba(26, 61, 51, 0.05); border-radius: 2px; overflow: hidden; position: relative; }
+          .line-fill { position: absolute; width: 40%; height: 100%; background: #EAF044; animation: slide 1.5s ease-in-out infinite; }
+          @keyframes slide { 0% { left: -40%; } 100% { left: 100%; } }
+        </style>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

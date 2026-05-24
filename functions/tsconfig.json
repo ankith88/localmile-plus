@@ -7,11 +7,19 @@
     "sourceMap": true,
     "strict": true,
     "target": "es2020",
-    "lib": ["es2020"],
+    "lib": [
+      "es2020"
+    ],
     "skipLibCheck": true
   },
   "compileOnSave": true,
   "include": [
     "src"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "lib",
+    ".cache"
   ]
 }

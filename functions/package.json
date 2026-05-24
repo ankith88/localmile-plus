@@ -1,7 +1,7 @@
 {
   "name": "functions",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --external:firebase-admin --external:firebase-functions --outfile=lib/index.js",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --external:firebase-admin --external:firebase-functions --external:nodemailer --external:googleapis --external:imap-simple --external:mailparser --outfile=lib/index.js",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",

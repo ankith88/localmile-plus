@@ -2264,7 +2264,7 @@ export const testReports = onRequest({
 });
 
 // Logic: verifyAddressServiceability (NetSuite API)
-export const verifyAddressServiceability = onCall(async (request) => {
+export const verifyAddressServiceability = onCall({ invoker: "public" }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
   }
@@ -2289,10 +2289,10 @@ export const verifyAddressServiceability = onCall(async (request) => {
   }
 
   const url = new URL('https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl');
-  url.searchParams.set('script', '2168');
+  url.searchParams.set('script', '2643');
   url.searchParams.set('deploy', '1');
   url.searchParams.set('compid', '1048144');
-  url.searchParams.set('ns-at', 'AAEJ7tMQ9qxU1ZofUpqPe2ZpEIw6G70q4kZeX4zsYESD6rZ87EQ');
+  url.searchParams.set('ns-at', 'AAEJ7tMQgGpiFMAEaj5fjluvuIQ5nWJX1tlMBVdZnRMcZiL7B4A');
   url.searchParams.set('address1', street);
   if (suite) {
     url.searchParams.set('address2', suite);

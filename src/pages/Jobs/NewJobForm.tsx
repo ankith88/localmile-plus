@@ -1,30 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  ChevronRight,
-  ChevronLeft, 
-  Truck, 
-  Repeat, 
+  ArrowDownUp, 
   CheckCircle2,
+  ChevronRight,
   Info,
   Building2,
   User,
   Phone,
   MapPin,
   ClipboardList,
-  CreditCard,
-  Rocket,
   Lock,
+  Rocket,
   Clock,
   Mail,
   Database,
   Sparkles
 } from 'lucide-react';
-import { useJsApiLoader } from '@react-google-maps/api';
+import { useJsApiLoader, GoogleMap, Marker, DirectionsRenderer } from '@react-google-maps/api';
 import { formatDateForInput, getDefaultBookingDate } from '../../utils/scheduling';
-import CustomDatePicker from '../../components/CustomDatePicker';
-import CustomTimePicker from '../../components/CustomTimePicker';
 import { useLpo } from '../../context/LpoContext';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
 import { db, googleMapsApiKey } from '../../firebase/config';
 
 type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip';
@@ -55,10 +50,129 @@ interface JobData {
   preferredTime?: string;
 }
 
-const LIBRARIES: ("places")[] = ["places"];
+const LIBRARIES: ("places" | "maps" | "routes")[] = ["places", "routes"];
+
+const JobMap: React.FC<{ stops: any[] }> = ({ stops }) => {
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+  const [markerPositions, setMarkerPositions] = useState<({lat: number, lng: number} | null)[]>([]);
+
+  useEffect(() => {
+    if (stops.length === 0) return;
+
+    const fetchPositions = async () => {
+      if (!window.google || !window.google.maps) return;
+      const geocoder = new window.google.maps.Geocoder();
+      
+      const positions = await Promise.all(stops.map(async (stop) => {
+        if (stop.lat && stop.lng && !isNaN(stop.lat) && !isNaN(stop.lng)) {
+          return { lat: stop.lat, lng: stop.lng };
+        }
+        const address = `${stop.address || ''} ${stop.suburb || ''} ${stop.state || ''} ${stop.postcode || ''}`.trim();
+        if (address) {
+          try {
+            const results = await new Promise<google.maps.GeocoderResult[]>((resolve) => {
+              geocoder.geocode({ address }, (res, status) => {
+                if (status === 'OK' && res) resolve(res);
+                else resolve([]);
+              });
+            });
+            if (results && results.length > 0) {
+              const loc = results[0].geometry.location;
+              return { lat: loc.lat(), lng: loc.lng() };
+            }
+          } catch (e) {
+            console.error("Geocoding failed for", address);
+          }
+        }
+        return null;
+      }));
+      
+      setMarkerPositions(positions);
+    };
+
+    fetchPositions();
+  }, [stops]);
+
+  useEffect(() => {
+    if (stops.length < 2 || markerPositions.length < 2) return;
+    
+    // We try directions using string addresses (or lat/lng) just in case
+    const getPoint = (stop: any, idx: number) => {
+      const pos = markerPositions[idx];
+      if (pos) return new window.google.maps.LatLng(pos.lat, pos.lng);
+      return `${stop.address || ''} ${stop.suburb || ''} ${stop.state || ''} ${stop.postcode || ''}`.trim();
+    };
+    
+    const origin = getPoint(stops[0], 0);
+    const destination = getPoint(stops[stops.length - 1], stops.length - 1);
+    const waypoints = stops.slice(1, -1).map((stop, idx) => ({
+      location: getPoint(stop, idx + 1),
+      stopover: true
+    }));
+
+    if (!origin || !destination) return;
+
+    const directionsService = new window.google.maps.DirectionsService();
+    directionsService.route(
+      {
+        origin,
+        destination,
+        waypoints,
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      },
+      (result, status) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result) {
+          setDirections(result);
+        } else {
+          console.error("Directions request failed:", status);
+        }
+      }
+    );
+  }, [stops, markerPositions]);
+
+  if (stops.length === 0) {
+    return (
+      <div className="map-placeholder" style={{ background: '#eee', borderRadius: '12px', height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>
+         <MapPin size={32} />
+         <span style={{ marginLeft: '12px', fontWeight: 600 }}>No valid locations found</span>
+      </div>
+    );
+  }
+
+  // Find the first valid position for fallback center
+  const validPos = markerPositions.find(p => p !== null) || { lat: -33.8688, lng: 151.2093 };
+
+  return (
+    <GoogleMap
+      mapContainerStyle={{ width: '100%', height: '250px', borderRadius: '12px' }}
+      center={validPos}
+      zoom={11}
+      options={{
+        disableDefaultUI: true,
+        zoomControl: true,
+      }}
+    >
+      {directions ? (
+        <DirectionsRenderer
+          options={{ 
+            directions: directions,
+            suppressMarkers: false
+          }}
+        />
+      ) : (
+        markerPositions.map((pos, idx) => {
+          if (pos) {
+            return <Marker key={idx} position={{ lat: pos.lat, lng: pos.lng }} label={(idx + 1).toString()} />;
+          }
+          return null;
+        })
+      )}
+    </GoogleMap>
+  );
+};
 
 const NewJobForm: React.FC = () => {
-  const { parent, customer, userData } = useLpo();
+  const { parent, customer, userData, companyData } = useLpo();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -123,34 +237,56 @@ const NewJobForm: React.FC = () => {
   const [addressPredictions, setAddressPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [, setIsSearchingAddress] = useState(false);
   const [allCustomers, setAllCustomers] = useState<any[]>([]);
-  const [availableServices, setAvailableServices] = useState<{id: ServiceType, internalId: string, rate: string}[]>([]);
+  const [, setAvailableServices] = useState<{id: ServiceType, internalId: string, rate: string}[]>([]);
 
   const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
 
+  const hasPMPO = Boolean(companyData?.servicePMPOInternalID && companyData?.servicePMPOInternalID !== 'null');
+  const hasAMPO = Boolean(companyData?.serviceAMPOInternalID && companyData?.serviceAMPOInternalID !== 'null');
+  const canSwap = !companyData || (hasPMPO && hasAMPO) || (!hasPMPO && !hasAMPO);
+
+  useEffect(() => {
+    if (userData?.role === 'customer' && companyData) {
+      if (hasPMPO && !hasAMPO && independentServiceType !== 'outbound') {
+        setIndependentServiceType('outbound');
+      } else if (hasAMPO && !hasPMPO && independentServiceType !== 'inbound') {
+        setIndependentServiceType('inbound');
+      }
+    }
+  }, [hasPMPO, hasAMPO, companyData, userData?.role, independentServiceType]);
+
   // Independent Customer Pre-population
   useEffect(() => {
-    if (userData?.role === 'customer' && customer) {
-      setFormData(prev => ({
-        ...prev,
-        customer: {
-          ...prev.customer,
-          company: customer.name || prev.customer.company,
-          email: customer.email || prev.customer.email,
-          phone: customer.mobile || prev.customer.phone,
-          address: customer.address || prev.customer.address,
-          suburb: customer.suburb || prev.customer.suburb,
-          state: customer.state || prev.customer.state,
-          postcode: customer.postcode || prev.customer.postcode,
-          netsuiteId: customer.id
-        },
-        billing: 'customer',
-        service: independentServiceType === 'outbound' ? 'site-to-lpo' : 'lpo-to-site'
-      }));
+    if (userData?.role === 'customer' && (customer || companyData)) {
+      setFormData(prev => {
+        const companyName = companyData?.companyName || customer?.name || prev.customer.company;
+        const address = companyData?.address1 || companyData?.street || customer?.address || prev.customer.address;
+        const suburb = companyData?.city || customer?.suburb || prev.customer.suburb;
+        const state = companyData?.state || customer?.state || prev.customer.state;
+        const postcode = companyData?.zip || customer?.postcode || prev.customer.postcode;
+
+        return {
+          ...prev,
+          customer: {
+            ...prev.customer,
+            company: companyName,
+            email: customer?.email || prev.customer.email,
+            phone: customer?.mobile || prev.customer.phone,
+            address: address,
+            suburb: suburb,
+            state: state,
+            postcode: postcode,
+            netsuiteId: customer?.id || userData.customer_id
+          },
+          billing: 'customer',
+          service: independentServiceType === 'outbound' ? 'site-to-lpo' : 'lpo-to-site'
+        };
+      });
       setIsExistingCustomer(true);
       setCustomerStatus("Active");
     }
-  }, [userData, customer, independentServiceType]);
+  }, [userData, customer, companyData, independentServiceType]);
 
   useEffect(() => {
     const draft = localStorage.getItem('rebook_draft');
@@ -328,7 +464,7 @@ const NewJobForm: React.FC = () => {
 
 
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 1) {
       setValidationError(null);
       
@@ -369,33 +505,67 @@ const NewJobForm: React.FC = () => {
         }
       }
 
-      if (!parent?.franchiseeTerritoryJSON) {
-        changeStep(step + 1);
-        return;
-      }
+      const targetAddress = userData?.role === 'customer' ? recipientData : formData.customer;
+      const userSuburb = (targetAddress.suburb || '').trim().toUpperCase();
+      const userState = (targetAddress.state || '').trim().toUpperCase();
+      const userPostcode = (targetAddress.postcode || '').trim();
+      const searchAddress = `${userSuburb}, ${userState} ${userPostcode}`;
+      const fullAddressStr = `${targetAddress.address}, ${targetAddress.suburb}, ${targetAddress.state} ${targetAddress.postcode}`.trim();
 
-      let territories: string[] = [];
-      if (Array.isArray(parent.franchiseeTerritoryJSON)) {
-        territories = parent.franchiseeTerritoryJSON;
-      } else {
-        try {
-          const parsed = JSON.parse(parent.franchiseeTerritoryJSON);
-          territories = Array.isArray(parsed) ? (typeof parsed[0] === 'string' ? parsed : parsed.map((p: any) => p.suburb)) : [];
-        } catch (e) {
-          console.error("Failed to parse territory:", e);
+      try {
+        let targetCoords = targetAddress.coordinates;
+        if ((!targetCoords || !targetCoords.lat || !targetCoords.lng) && window.google && window.google.maps) {
+          const geocoder = new window.google.maps.Geocoder();
+          const results = await new Promise<google.maps.GeocoderResult[]>((resolve) => {
+            geocoder.geocode({ address: fullAddressStr }, (res, status) => {
+              if (status === 'OK' && res) resolve(res);
+              else resolve([]);
+            });
+          });
+          
+          if (results && results.length > 0) {
+            const loc = results[0].geometry.location;
+            targetCoords = { lat: loc.lat(), lng: loc.lng() };
+            
+            if (userData?.role === 'customer') {
+              setRecipientData(prev => ({ ...prev, coordinates: targetCoords as { lat: number, lng: number } | null }));
+            } else {
+              setFormData(prev => ({
+                ...prev,
+                customer: { ...prev.customer, coordinates: targetCoords as { lat: number, lng: number } }
+              }));
+            }
+          }
         }
+      } catch (err) {
+        console.error("Geocoding fallback error:", err);
       }
 
-      const userSuburb = formData.customer.suburb.trim().toUpperCase();
-      const userPostcode = formData.customer.postcode.trim();
-      const isValid = territories.some(t => {
-        const territoryStr = t.toUpperCase();
-        return territoryStr.includes(userSuburb) || territoryStr.includes(userPostcode);
-      });
+      try {
+        const companyId = userData?.customer_id || parent?.id;
+        if (companyId) {
+          const compDoc = await getDoc(doc(db, 'companies', companyId));
+          if (compDoc.exists()) {
+            const data = compDoc.data();
+            
+            const territoryArray = data.franchiseeTerritoryJSON;
+            const isValid = Array.isArray(territoryArray) && territoryArray.includes(searchAddress);
 
-      if (!isValid && userSuburb !== "") {
-        setValidationError(`Sorry, the address in ${userSuburb} is outside our coverage.`);
-        return;
+            if (!isValid && userSuburb !== "") {
+              setValidationError(`Sorry, the address ${searchAddress} is outside our coverage.`);
+              return;
+            }
+            
+            if (data.servicePMPORate) {
+              setFormData(prev => ({
+                ...prev,
+                serviceRate: data.servicePMPORate
+              }));
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Verification error:", err);
       }
     }
 
@@ -546,8 +716,8 @@ const NewJobForm: React.FC = () => {
       suburb: data.customer.suburb,
       state: data.customer.state,
       postcode: data.customer.postcode,
-      lat: data.customer.coordinates?.lat,
-      lng: data.customer.coordinates?.lng
+      lat: data.customer.coordinates?.lat ? parseFloat(data.customer.coordinates.lat as any) : undefined,
+      lng: data.customer.coordinates?.lng ? parseFloat(data.customer.coordinates.lng as any) : undefined
     };
 
     const otherLoc = {
@@ -556,9 +726,12 @@ const NewJobForm: React.FC = () => {
       suburb: recipientData.suburb,
       state: recipientData.state,
       postcode: recipientData.postcode,
-      lat: recipientData.coordinates?.lat,
-      lng: recipientData.coordinates?.lng
+      lat: recipientData.coordinates?.lat ? parseFloat(recipientData.coordinates.lat as any) : undefined,
+      lng: recipientData.coordinates?.lng ? parseFloat(recipientData.coordinates.lng as any) : undefined
     };
+
+    const rawParentLat = parentData?.latitude ?? parentData?.coordinates?.lat;
+    const rawParentLng = parentData?.longitude ?? parentData?.coordinates?.lng;
 
     const parentLoc = {
       name: parentData?.name || '',
@@ -566,8 +739,8 @@ const NewJobForm: React.FC = () => {
       suburb: parentData?.city || parentData?.location || parentData?.suburb || '',
       state: parentData?.state || 'NSW',
       postcode: parentData?.zip || parentData?.postcode || '',
-      lat: parentData?.latitude,
-      lng: parentData?.longitude
+      lat: rawParentLat ? parseFloat(rawParentLat) : undefined,
+      lng: rawParentLng ? parseFloat(rawParentLng) : undefined
     };
 
     if (userData?.role === 'customer') {
@@ -960,11 +1133,11 @@ const NewJobForm: React.FC = () => {
             </header>
 
             <div className="step-tracker">
-              {[1, 2, 3].map((s) => (
+              {[1, 2].map((s) => (
                 <div key={s} className={`step-item ${step === s ? 'active' : step > s ? 'completed' : ''}`}>
                   <div className="step-circle">{step > s ? <CheckCircle2 size={16} /> : s}</div>
-                  <span className="step-label">{s === 1 ? 'Site' : s === 2 ? 'Service' : 'Review'}</span>
-                  {s < 3 && <div className="step-connector"></div>}
+                  <span className="step-label">{s === 1 ? 'Route & Address' : 'Map & Quote'}</span>
+                  {s < 2 && <div className="step-connector"></div>}
                 </div>
               ))}
             </div>
@@ -979,50 +1152,34 @@ const NewJobForm: React.FC = () => {
 
                   {userData?.role === 'customer' ? (
                     <div className="independent-step-1 fade-in">
-                      {/* Service Selection for Customers */}
-                      <div className="selection-group">
-                        <label className="group-label">What direction is the job?</label>
-                        <div className="service-grid">
-                          <button 
-                            className={`service-btn glass ${independentServiceType === 'outbound' ? 'active' : ''}`}
-                            onClick={() => {
-                              setIndependentServiceType('outbound');
-                              setFormData(prev => ({ ...prev, service: 'site-to-lpo' }));
-                            }}
-                          >
-                            <Rocket size={24} />
-                            <span className="srv-label">Outbound</span>
-                            <span className="srv-hint">Site ➔ Recipient</span>
-                          </button>
-                          <button 
-                            className={`service-btn glass ${independentServiceType === 'inbound' ? 'active' : ''}`}
-                            onClick={() => {
-                              setIndependentServiceType('inbound');
-                              setFormData(prev => ({ ...prev, service: 'lpo-to-site' }));
-                            }}
-                          >
-                            <Truck size={24} style={{ transform: 'scaleX(-1)' }} />
-                            <span className="srv-label">Inbound</span>
-                            <span className="srv-hint">Sender ➔ Site</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="route-connector-visual">
-                        <div className="route-block">
-                          <label className="route-label">FROM</label>
-                          <div className={`address-card glass ${independentServiceType === 'outbound' ? 'locked' : ''}`}>
-                            <div className="address-header">
-                              <MapPin size={16} />
-                              <span>{independentServiceType === 'outbound' ? 'Your Site Address' : 'Sender Address'}</span>
-                              {independentServiceType === 'outbound' && <Lock size={12} className="lock-icon" />}
-                            </div>
-                            {independentServiceType === 'outbound' ? (
+                      <div className="unified-route-card">
+                        {/* FROM SECTION */}
+                        <div className={`route-segment ${independentServiceType === 'outbound' ? 'locked-segment dark-theme' : 'active-segment elevated'}`}>
+                          {independentServiceType === 'outbound' ? (
+                            <>
+                              <div className="bg-glow"></div>
+                              <div className="locked-header-row">
+                                <div className="route-title">
+                                  <MapPin size={18} />
+                                  <span>FROM (ORIGIN)</span>
+                                </div>
+                                <div className="hub-badge">PRIMARY HUB</div>
+                              </div>
                               <div className="locked-address-display">
                                 <strong>{formData.customer.company}</strong>
-                                <p>{formData.customer.address}, {formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</p>
+                                <p>{formData.customer.address}</p>
+                                <div className="address-bottom">
+                                  <span>{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
+                                </div>
                               </div>
-                            ) : (
+                            </>
+                          ) : (
+                            <>
+                              <label className="route-label">PICKUP FROM</label>
+                              <div className="address-header">
+                                <MapPin size={16} />
+                                <span>Sender Address</span>
+                              </div>
                               <div className="searchable-address-area">
                                 <input 
                                   type="text" 
@@ -1045,29 +1202,57 @@ const NewJobForm: React.FC = () => {
                                   />
                                 </div>
                               </div>
-                            )}
-                          </div>
+                            </>
+                          )}
                         </div>
 
-                        <div className="connector-arrow">
-                          <div className="line"></div>
-                          <ChevronRight size={24} />
+                        {/* SWAP BUTTON */}
+                        <div className="swap-button-container">
+                          {canSwap && (
+                            <button 
+                              className="swap-route-btn shadow-teal"
+                              onClick={() => {
+                                if (independentServiceType === 'outbound') {
+                                  setIndependentServiceType('inbound');
+                                  setFormData(prev => ({ ...prev, service: 'lpo-to-site' }));
+                                } else {
+                                  setIndependentServiceType('outbound');
+                                  setFormData(prev => ({ ...prev, service: 'site-to-lpo' }));
+                                }
+                              }}
+                            >
+                              <ArrowDownUp size={20} />
+                            </button>
+                          )}
                         </div>
 
-                        <div className="route-block">
-                          <label className="route-label">TO</label>
-                          <div className={`address-card glass ${independentServiceType === 'inbound' ? 'locked' : ''}`}>
-                            <div className="address-header">
-                              <MapPin size={16} />
-                              <span>{independentServiceType === 'inbound' ? 'Your Site Address' : 'Recipient Address'}</span>
-                              {independentServiceType === 'inbound' && <Lock size={12} className="lock-icon" />}
-                            </div>
-                            {independentServiceType === 'inbound' ? (
+                        {/* TO SECTION */}
+                        <div className={`route-segment ${independentServiceType === 'inbound' ? 'locked-segment dark-theme' : 'active-segment elevated'}`}>
+                          {independentServiceType === 'inbound' ? (
+                            <>
+                              <div className="bg-glow"></div>
+                              <div className="locked-header-row">
+                                <div className="route-title">
+                                  <MapPin size={18} />
+                                  <span>TO (DESTINATION)</span>
+                                </div>
+                                <div className="hub-badge">PRIMARY HUB</div>
+                              </div>
                               <div className="locked-address-display">
                                 <strong>{formData.customer.company}</strong>
-                                <p>{formData.customer.address}, {formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</p>
+                                <p>{formData.customer.address}</p>
+                                <div className="address-bottom">
+                                  <span>{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
+                                </div>
                               </div>
-                            ) : (
+                            </>
+                          ) : (
+                            <>
+                              <label className="route-label">DELIVER TO</label>
+                              <div className="address-header">
+                                <MapPin size={16} />
+                                <span>Recipient Address</span>
+                              </div>
                               <div className="searchable-address-area">
                                 <input 
                                   type="text" 
@@ -1090,10 +1275,11 @@ const NewJobForm: React.FC = () => {
                                   />
                                 </div>
                               </div>
-                            )}
-                          </div>
+                            </>
+                          )}
                         </div>
                       </div>
+
 
                       {addressPredictions.length > 0 && (
                         <div className="search-dropdown glass floating-dropdown address-suggestions inline-suggestions">
@@ -1285,228 +1471,70 @@ const NewJobForm: React.FC = () => {
               )}
 
               {step === 2 && (
-                <div className="glass-card step-card">
-                  <div className="card-top-info">
-                    <ClipboardList size={20} />
-                    <h3>Service & Schedule</h3>
-                  </div>
-
-                  <div className="selection-group">
-                    <label className="group-label">Billing Option</label>
-                    {isExistingCustomer && (
-                      <div className="locked-badge fade-in">
-                         <Lock size={12} />
-                         <span>LOCKED BY CUSTOMER HUB</span>
-                      </div>
-                    )}
-                    <div className={`billing-grid two-cols ${isExistingCustomer ? 'locked-group' : ''}`}>
-                       {[
-                         { id: 'customer', label: 'Customer Pays' },
-                         { id: 'lpo', label: 'Parent Pays' }
-                       ].map(opt => (
-                         <button 
-                           key={opt.id}
-                           className={`billing-btn glass ${formData.billing === opt.id ? 'active' : ''}`}
-                           onClick={() => !isExistingCustomer && setFormData({...formData, billing: opt.id as BillingOption})}
-                           disabled={isExistingCustomer && formData.billing !== opt.id}
-                           style={isExistingCustomer && formData.billing !== opt.id ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                         >
-                           <CreditCard size={18} />
-                           {opt.label}
-                         </button>
-                       ))}
-                    </div>
-                    {isExistingCustomer && (
-                      <p className="field-hint mini">Billing for this client is permanently set to {formData.billing.toUpperCase()} as per their Customer Hub profile.</p>
-                    )}
-                  </div>
-
-                  {userData?.role !== 'customer' && (
-                    <div className="selection-group">
-                      <label className="group-label">Pickup & Delivery Type</label>
-                      <div className="service-grid">
-                        {[
-                          { id: 'site-to-lpo', label: 'Site ➔ Parent', icon: Truck, price: '$10.00' },
-                          { id: 'lpo-to-site', label: 'Parent ➔ Site', icon: Truck, price: '$10.00', flip: true },
-                          { id: 'round-trip', label: 'Round Trip', icon: Repeat, price: '$20.00' }
-                        ].filter(srv => {
-                           return availableServices.some(as => as.id === srv.id);
-                         })
-                         .map(srv => {
-                           const metadata = availableServices.find(as => as.id === srv.id);
-                           const displayPrice = metadata ? `$${parseFloat(metadata.rate).toFixed(2)}` : srv.price;
-                           
-                           return (
-                             <button 
-                               key={srv.id}
-                               className={`service-btn glass ${formData.service === srv.id ? 'active' : ''}`}
-                               onClick={() => setFormData({
-                                 ...formData, 
-                                 service: srv.id as ServiceType,
-                                 serviceInternalId: metadata?.internalId,
-                                 serviceRate: metadata?.rate
-                               })}
-                             >
-                               <srv.icon size={28} style={srv.flip ? { transform: 'scaleX(-1)' } : {}} />
-                               <span className="srv-label">{srv.label}</span>
-                               <strong className="srv-price">{displayPrice}</strong>
-                             </button>
-                           );
-                         })}
-                      </div>
-                      {availableServices.length === 0 && (
-                        <div className="error-pill glass">
-                          <Info size={16} />
-                          No services are currently configured for this customer in NetSuite.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="date-time-row">
-                    <div className="selection-group flex-1">
-                      <label className="group-label">Booking Date</label>
-                       <div className="custom-booking-date">
-                         <CustomDatePicker 
-                           value={formData.date}
-                           min={formatDateForInput(getDefaultBookingDate())}
-                           onChange={(val) => setFormData({...formData, date: val})}
-                         />
-                       </div>
-                    </div>
-
-                    <div className="selection-group flex-1">
-                      <label className="group-label">Time Constraints (Optional)</label>
-                      <div className="custom-booking-time">
-                        <CustomTimePicker 
-                          value={formData.preferredTime}
-                          onChange={(val) => setFormData({...formData, preferredTime: val})}
-                        />
-                      </div>
-                      <p className="field-hint">Are there any timing restrictions for this job? Leave blank if the operator can attend anytime during business hours.</p>
-                    </div>
-                  </div>
-
-                  <div className="alert-wrapper">
-                    {new Date().getHours() < 12 ? (
-                      <div className="alert-pill glass success">
-                        <Info size={14} /> Same-day pickup available before 12:00 PM
-                      </div>
-                    ) : (
-                      <div className="alert-pill glass warning">
-                        <Info size={14} /> Today is closed (Past 12:00 PM). Booking for next business day.
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="selection-group recurring-section">
-                    <label className="group-label">Is this a recurring job?</label>
-                    <div className="job-type-tabs glass small-tabs">
-                       <button 
-                        className={`type-tab ${formData.jobType === 'one-off' ? 'active' : ''}`}
-                        onClick={() => setFormData({...formData, jobType: 'one-off', frequency: []})}
-                       >
-                         No
-                       </button>
-                       <button 
-                        className={`type-tab ${formData.jobType === 'scheduled' ? 'active' : ''}`}
-                        onClick={() => setFormData({...formData, jobType: 'scheduled', frequency: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']})}
-                       >
-                         Yes
-                       </button>
-                    </div>
-
-                    {formData.jobType === 'scheduled' && (
-                      <div className="frequency-picker fade-in">
-                        <div className="flex-between">
-                          <label className="group-label sub">Select Frequency (Weekdays Only)</label>
-                        </div>
-                        <div className="frequency-grid weekdays-only">
-                          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
-                            <button
-                              key={day}
-                              className={`freq-pill ${formData.frequency.includes(day) ? 'active' : ''}`}
-                              onClick={() => {
-                                const newFreq = formData.frequency.includes(day)
-                                  ? formData.frequency.filter(d => d !== day)
-                                  : [...formData.frequency, day];
-                                setFormData({...formData, frequency: newFreq});
-                              }}
-                            >
-                              {day}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {validationError && (
-                    <div className="error-pill glass">
-                      <Info size={16} />
-                      {validationError}
-                    </div>
-                  )}
-
-                  <div className="form-actions">
-                    <button className="btn-secondary" onClick={handleBack}><ChevronLeft size={20} /> BACK</button>
-                    <button className="btn-primary flex-1 shadow-teal" onClick={handleNext}>NEXT <ChevronRight size={20} /></button>
-                  </div>
-                </div>
-              )}
-
-              {step === 3 && (
                 <div className="glass-card step-card confirmation">
                   <div className="card-top-info">
                     <ClipboardList size={20} />
-                    <h3>Final Confirmation</h3>
+                    <h3>Map & Quote Confirmation</h3>
                   </div>
 
-                  <div className="voucher-card glass">
-                    <div className="voucher-header">
-                       <div className="v-logo">mailplus</div>
-                       <div className="v-badge">JOB BOOKING</div>
-                    </div>
-                    <div className="voucher-body">
-                      <div className="v-row">
-                        <span className="v-label">CUSTOMER</span>
-                        <span className="v-val">{formData.customer.company}</span>
-                      </div>
-                      <div className="v-row">
-                        <span className="v-label">TYPE</span>
-                        <span className="v-val">{formData.jobType.replace(/-/g, ' ').toUpperCase()}</span>
-                      </div>
-                      {formData.jobType === 'scheduled' && (
-                        <div className="v-row">
-                          <span className="v-label">FREQUENCY</span>
-                          <span className="v-val">{formData.frequency.join(', ')}</span>
+                  <div className="split-view">
+                    <div className="map-element">
+                      {isLoaded ? (
+                        <JobMap stops={generateStops(formData, parent || customer)} />
+                      ) : (
+                        <div className="map-placeholder" style={{ background: '#eee', borderRadius: '12px', height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>
+                           <span style={{ fontWeight: 600 }}>Loading Map...</span>
                         </div>
                       )}
-                      <div className="v-row">
-                        <span className="v-label">SERVICE</span>
-                        <span className="v-val">{formData.service.replace(/-/g, ' ').toUpperCase()}</span>
-                      </div>
-                      <div className="v-row">
-                        <span className="v-label">{formData.jobType === 'scheduled' ? 'START DATE' : 'SCHEDULED'}</span>
-                        <span className="v-val">{formData.date}</span>
-                      </div>
-                      {formData.preferredTime && (
-                        <div className="v-row">
-                          <span className="v-label">BY TIME</span>
-                          <span className="v-val">{formData.preferredTime}</span>
-                        </div>
-                      )}
-                      <div className="v-row total">
-                        <span className="v-label">TOTAL PRICE</span>
-                        <span className="v-val">{formData.serviceRate ? `$${parseFloat(formData.serviceRate).toFixed(2)}` : (formData.service === 'round-trip' ? '$20.00' : '$10.00')}</span>
-                      </div>
                     </div>
-                    <div className="voucher-footer">
-                       Valid for lodgement at {parent?.name || 'Local Parent'}
+                    <div className="pricing-element" style={{ marginTop: '24px' }}>
+                      <div className="voucher-card glass">
+                        <div className="voucher-header">
+                           <div className="v-logo">mailplus</div>
+                           <div className="v-badge">JOB QUOTE</div>
+                        </div>
+                        <div className="voucher-body">
+                          <div className="v-row">
+                            <span className="v-label">CUSTOMER</span>
+                            <span className="v-val">{formData.customer.company}</span>
+                          </div>
+                          <div className="v-row">
+                            <span className="v-label">TYPE</span>
+                            <span className="v-val">{formData.jobType.replace(/-/g, ' ').toUpperCase()}</span>
+                          </div>
+                          {formData.jobType === 'scheduled' && (
+                            <div className="v-row">
+                              <span className="v-label">FREQUENCY</span>
+                              <span className="v-val">{formData.frequency.join(', ')}</span>
+                            </div>
+                          )}
+                          <div className="v-row">
+                            <span className="v-label">SERVICE</span>
+                            <span className="v-val">{formData.service.replace(/-/g, ' ').toUpperCase()}</span>
+                          </div>
+                          <div className="v-row">
+                            <span className="v-label">{formData.jobType === 'scheduled' ? 'START DATE' : 'SCHEDULED'}</span>
+                            <span className="v-val">{formData.date}</span>
+                          </div>
+                          {formData.preferredTime && (
+                            <div className="v-row">
+                              <span className="v-label">BY TIME</span>
+                              <span className="v-val">{formData.preferredTime}</span>
+                            </div>
+                          )}
+                          <div className="v-row total">
+                            <span className="v-label">FINAL QUOTE PRICE</span>
+                            <span className="v-val">{formData.serviceRate ? `$${parseFloat(formData.serviceRate).toFixed(2)}` : (formData.service === 'round-trip' ? '$20.00' : '$10.00')}</span>
+                          </div>
+                        </div>
+                        <div className="voucher-footer">
+                           Valid for lodgement at {parent?.name || 'Local Parent'}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="form-actions">
+                  <div className="form-actions" style={{ marginTop: '32px' }}>
                     <button className="btn-text" onClick={handleBack}>Modify Selection</button>
                     <button 
                       className="btn-primary flex-1 shadow-teal" 
@@ -1731,6 +1759,50 @@ const NewJobForm: React.FC = () => {
         .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cream-warm); transition: all 0.3s; }
         .step-dot.active { background: var(--ink); transform: scale(1.5); box-shadow: 0 0 10px rgba(26,61,51,0.2); }
         .step-dot.done { background: var(--ink); opacity: 0.5; }
+        .unified-route-card { display: flex; flex-direction: column; position: relative; gap: 16px; margin: 32px 0; padding: 24px; background: rgba(255, 255, 255, 0.4); border-radius: 24px; border: 1px dashed var(--cream-warm); }
+        .route-segment { position: relative; padding: 24px; border-radius: 16px; border: 1px solid var(--cream-warm); transition: all 0.3s; display: flex; flex-direction: column; gap: 12px; }
+        .locked-segment.dark-theme { background: var(--ink); color: white; border: none; }
+        .locked-segment.dark-theme .route-label { color: rgba(255,255,255,0.6); }
+        .locked-segment.dark-theme .lock-icon { color: rgba(255,255,255,0.6); }
+        .locked-segment.dark-theme .address-header { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; }
+        .active-segment.elevated { background: white; box-shadow: 0 12px 30px rgba(26,61,51,0.08); border-color: transparent; }
+        
+        .swap-button-container { position: absolute; right: 48px; top: 50%; transform: translateY(-50%); z-index: 10; }
+        .swap-route-btn { width: 56px; height: 56px; border-radius: 50%; background: white; border: 1px solid var(--cream-warm); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+        .swap-route-btn:hover { transform: scale(1.1); }
+        
+        .address-header { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 24px; color: var(--ink-soft); }
+        .active-segment.elevated .route-label { color: var(--gold); margin-bottom: 12px; font-size: 0.75rem; letter-spacing: 0.1em; font-weight: 800; }
+        
+        .locked-address-display strong { font-size: 1.2rem; display: block; margin-bottom: 4px; }
+        .locked-address-display p { font-size: 0.9rem; opacity: 0.8; margin: 0; }
+        
+        .transparent-input { background: transparent; border: none; width: 100%; font-size: 1rem; color: inherit; outline: none; }
+        .transparent-input::placeholder { color: #a0aec0; font-weight: 500; }
+        
+        .transparent-input.company { font-size: 1.25rem; font-weight: 600; padding: 8px 0; border-bottom: 1px solid var(--cream-warm); margin-bottom: 20px; transition: border-color 0.3s; color: var(--ink); }
+        .transparent-input.company:focus { border-bottom-color: var(--ink); }
+        
+        .transparent-input.address { font-size: 1rem; color: var(--ink); }
+        .search-input-wrapper { display: flex; align-items: center; background: #f7fafc; padding: 14px 20px; border-radius: 12px; border: 1px solid transparent; transition: all 0.3s; }
+        .search-input-wrapper:focus-within { background: white; border-color: var(--ink); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        
+        .dark-theme .transparent-input { color: white; }
+        .dark-theme .transparent-input::placeholder { color: rgba(255,255,255,0.5); }
+
+        /* Premium Locked Segment styling */
+        .locked-segment.dark-theme { background: #1f362a; color: white; border: none; overflow: hidden; padding: 24px 32px; border-radius: 20px; box-shadow: 0 12px 24px rgba(31,54,42,0.15); }
+        .locked-segment.dark-theme .bg-glow { position: absolute; top: -50px; right: -50px; width: 250px; height: 250px; background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 70%); border-radius: 50%; pointer-events: none; }
+        
+        .locked-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; position: relative; z-index: 1; }
+        .route-title { display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); font-weight: 600; font-size: 0.9rem; letter-spacing: 0.05em; text-transform: uppercase; }
+        .hub-badge { background: rgba(255,255,255,0.1); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; backdrop-filter: blur(4px); }
+        
+        .locked-address-display { position: relative; z-index: 1; }
+        .locked-address-display strong { font-size: 1.4rem; display: block; margin-bottom: 8px; color: white; }
+        .locked-address-display p { font-size: 1.05rem; color: rgba(255,255,255,0.8); margin: 0 0 24px 0; }
+        .address-bottom span { color: #d6b484; font-size: 0.95rem; font-weight: 500; }
+
       `}</style>
     </div>
   );

@@ -1,0 +1,107 @@
+--- src/pages/Jobs/NewJobForm.tsx
++++ src/pages/Jobs/NewJobForm.tsx
+@@ -25,7 +25,7 @@
+ import CustomTimePicker from '../../components/CustomTimePicker';
+ import { useLpo } from '../../context/LpoContext';
+-import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
++import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
+ import { db, googleMapsApiKey } from '../../firebase/config';
+ 
+@@ -58,7 +58,7 @@
+ }
+ 
+-const LIBRARIES: ("places")[] = ["places"];
++const LIBRARIES: ("places" | "maps")[] = ["places", "maps"];
+ 
+ const NewJobForm: React.FC = () => {
+@@ -337,8 +337,8 @@
+ 
+ 
+-  const handleNext = () => {
++  const handleNext = async () => {
+     if (step === 1) {
+       setValidationError(null);
+       
+       // For independent customers, we validate both site and recipient
+       if (userData?.role === 'customer') {
+@@ -375,34 +375,41 @@
+         }
+       }
+ 
+-      if (!parent?.franchiseeTerritoryJSON) {
+-        changeStep(step + 1);
+-        return;
+-      }
+-
+-      let territories: string[] = [];
+-      if (Array.isArray(parent.franchiseeTerritoryJSON)) {
+-        territories = parent.franchiseeTerritoryJSON;
+-      } else {
+-        try {
+-          const parsed = JSON.parse(parent.franchiseeTerritoryJSON);
+-          territories = Array.isArray(parsed) ? (typeof parsed[0] === 'string' ? parsed : parsed.map((p: any) => p.suburb)) : [];
+-        } catch (e) {
+-          console.error("Failed to parse territory:", e);
+-        }
+-      }
+-
+       const userSuburb = formData.customer.suburb.trim().toUpperCase();
++      const userState = formData.customer.state.trim().toUpperCase();
+       const userPostcode = formData.customer.postcode.trim();
+-      const isValid = territories.some(t => {
+-        const territoryStr = t.toUpperCase();
+-        return territoryStr.includes(userSuburb) || territoryStr.includes(userPostcode);
+-      });
+-
+-      if (!isValid && userSuburb !== "") {
+-        setValidationError(`Sorry, the address in ${userSuburb} is outside our coverage.`);
+-        return;
++      const searchAddress = `${userSuburb}, ${userState} ${userPostcode}`;
++
++      try {
++        const companyId = userData?.customer_id || parent?.id;
++        if (companyId) {
++          const compDoc = await getDoc(doc(db, 'companies', companyId));
++          if (compDoc.exists()) {
++            const data = compDoc.data();
++            let isValid = false;
++            
++            for (const key in data) {
++              if (Array.isArray(data[key]) && data[key].includes(searchAddress)) {
++                isValid = true;
++                break;
++              }
++            }
++
++            if (!isValid && userSuburb !== "") {
++              setValidationError(`Sorry, the address ${searchAddress} is outside our coverage.`);
++              return;
++            }
++            
++            if (data.servicePMPORate) {
++              setFormData(prev => ({
++                ...prev,
++                serviceRate: data.servicePMPORate
++              }));
++            }
++          }
++        }
++      } catch (err) {
++        console.error("Verification error:", err);
+       }
+     }
+ 
+@@ -968,14 +975,13 @@
+ 
+             <div className="step-tracker">
+-              {[1, 2, 3].map((s) => (
++              {[1, 2].map((s) => (
+                 <div key={s} className={`step-item ${step === s ? 'active' : step > s ? 'completed' : ''}`}>
+                   <div className="step-circle">{step > s ? <CheckCircle2 size={16} /> : s}</div>
+-                  <span className="step-label">{s === 1 ? 'Site' : s === 2 ? 'Service' : 'Review'}</span>
+-                  {s < 3 && <div className="step-connector"></div>}
++                  <span className="step-label">{s === 1 ? 'Route & Address' : 'Map & Quote'}</span>
++                  {s < 2 && <div className="step-connector"></div>}
+                 </div>
+               ))}
+             </div>

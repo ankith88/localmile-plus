@@ -8,7 +8,9 @@ import { defineSecret } from "firebase-functions/params";
 import * as nodemailer from "nodemailer";
 import { connect, ImapSimple } from "imap-simple";
 import { simpleParser } from "mailparser";
-
+import express from "express";
+import cors from "cors";
+import * as crypto from "crypto";
 // Initialize admin once
 if (admin.apps.length === 0) {
   admin.initializeApp();
@@ -2339,3 +2341,126 @@ export const verifyAddressServiceability = onCall({ invoker: "public" }, async (
     throw new HttpsError("internal", error.message || "Failed to verify address with NetSuite.");
   }
 });
+
+// Logic: Accounts Provisioning API
+const apiApp = express();
+apiApp.use(cors({ origin: true }));
+apiApp.use(express.json());
+
+apiApp.post("/v1/accounts/provision", async (req: express.Request, res: express.Response) => {
+  // 1. Security Check
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Provisioning API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const payload = req.body;
+    
+    // Validate required fields
+    if (!payload.companyId || !payload.email || !payload.customerEmail) {
+      res.status(400).send({ success: false, message: "Missing required fields: companyId, email, customerEmail" });
+      return;
+    }
+
+    const companyId = String(payload.companyId);
+    const userEmail = payload.email;
+
+    // 2. Auth Provisioning
+    const randomPassword = crypto.randomBytes(16).toString("hex") + "Aa1!";
+    let authUser;
+    
+    try {
+      authUser = await admin.auth().getUserByEmail(userEmail);
+    } catch (error: any) {
+      if (error.code === "auth/user-not-found") {
+        authUser = await admin.auth().createUser({
+          email: userEmail,
+          password: randomPassword,
+          displayName: `${payload.first_name || ""} ${payload.last_name || ""}`.trim(),
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    const uid = authUser.uid;
+    const db = getDB();
+
+    // 3. Generate Security Code
+    const securityCode = crypto.randomInt(1000, 10000).toString(); // 4-digit code
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+
+    // 4. Firestore Writes (Batch)
+    const batch = db.batch();
+
+    // companies Collection
+    const companyRef = db.collection("companies").doc(companyId);
+    batch.set(companyRef, {
+      address1: payload.address1 || "",
+      city: payload.city || "",
+      companyId: companyId,
+      companyName: payload.companyName || "",
+      customerEmail: payload.customerEmail || "",
+      customerEntityId: payload.customerEntityId || "",
+      customerPhone: payload.customerPhone || "",
+      customerServiceEmail: payload.customerServiceEmail || "",
+      extraWeightCharges: payload.extraWeightCharges || "3.50",
+      franchisee: payload.franchisee || "",
+      franchiseeTerritoryJSON: payload.franchiseeTerritoryJSON || [],
+      servicePMPOInternalID: payload.servicePMPOInternalID || "",
+      servicePMPORate: payload.servicePMPORate || "",
+      state: payload.state || "",
+      street: payload.street || "",
+      zip: payload.zip || "",
+    }, { merge: true });
+
+    // users Collection
+    const userRef = db.collection("users").doc(uid);
+    batch.set(userRef, {
+      companyId: companyId,
+      customer_id: payload.customer_id || companyId,
+      email: userEmail,
+      first_name: payload.first_name || "",
+      hasCompletedTour: typeof payload.hasCompletedTour === "boolean" ? payload.hasCompletedTour : true,
+      last_name: payload.last_name || "",
+      mobile: payload.mobile || "",
+      parent_id: payload.parent_id || "",
+      role: payload.role || "customer",
+      uid: uid,
+      trial_credits_balance: 5,
+      status: "Pending_Activation"
+    }, { merge: true });
+
+    // verification_tokens Collection
+    const tokenRef = db.collection("verification_tokens").doc(uid);
+    batch.set(tokenRef, {
+      uid: uid,
+      code: securityCode,
+      expiresAt: expiresAt
+    });
+
+    await batch.commit();
+
+    res.status(200).send({
+      success: true,
+      message: "Account provisioned successfully.",
+      data: {
+        uid: uid,
+        companyId: companyId,
+        securityCode: securityCode
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Provisioning API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+export const api = onRequest({
+  secrets: [netsuiteApiKey],
+  cors: true
+}, apiApp);

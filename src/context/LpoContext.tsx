@@ -25,6 +25,16 @@ export interface CustomerMetadata {
   mobile?: string;
 }
 
+export interface CompanyData {
+  companyName?: string;
+  address1?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  [key: string]: any;
+}
+
 export interface UserMetadata {
   uid: string;
   email: string;
@@ -33,12 +43,12 @@ export interface UserMetadata {
   mobile?: string;
   parent_id?: string;
   customer_id?: string;
-  role: 'superadmin' | 'admin' | 'lpoadmin' | 'operator' | 'customer';
+  role: 'superadmin' | 'admin' | 'lpoadmin' | 'operator' | 'customer' | 'parent';
   hasCompletedTour: boolean;
 }
 
 export interface ImpersonationState {
-  role: 'superadmin' | 'admin' | 'lpoadmin' | 'operator' | 'customer';
+  role: 'superadmin' | 'admin' | 'lpoadmin' | 'operator' | 'customer' | 'parent';
   parent_id?: string;
   customer_id?: string;
   uid?: string;
@@ -49,6 +59,8 @@ interface LpoContextType {
   userData: UserMetadata | null;
   parent: ParentEntity | null;
   customer: CustomerMetadata | null;
+  companyName: string | null;
+  companyData: CompanyData | null;
   loading: boolean;
   isSidebarPinned: boolean;
   setIsSidebarPinned: (pinned: boolean) => void;
@@ -73,6 +85,8 @@ const LpoContext = createContext<LpoContextType>({
   userData: null,
   parent: null,
   customer: null,
+  companyName: null,
+  companyData: null,
   loading: true,
   isSidebarPinned: false,
   setIsSidebarPinned: () => {},
@@ -95,6 +109,8 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [baseUserData, setBaseUserData] = useState<UserMetadata | null>(null);
   const [parent, setParent] = useState<ParentEntity | null>(null);
   const [customer, setCustomer] = useState<CustomerMetadata | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const [hasCompletedTour, setHasCompletedTour] = useState(true);
@@ -202,6 +218,8 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setBaseUserData(null);
         setParent(null);
         setCustomer(null);
+        setCompanyName(null);
+        setCompanyData(null);
         setHasCompletedTour(true);
         setAllParents([]);
       }
@@ -217,8 +235,26 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!userData) {
         setParent(null);
         setCustomer(null);
+        setCompanyName(null);
+        setCompanyData(null);
         return;
       }
+
+      if (userData.customer_id && userData.customer_id !== 'test_standalone_customer') {
+        const companyDoc = await getDoc(doc(db, 'companies', userData.customer_id));
+        if (active && companyDoc.exists()) {
+          const data = companyDoc.data() as CompanyData;
+          setCompanyName(data.companyName || null);
+          setCompanyData(data);
+        } else if (active) {
+          setCompanyName(null);
+          setCompanyData(null);
+        }
+      } else if (active) {
+        setCompanyName(null);
+        setCompanyData(null);
+      }
+
       if (userData.parent_id) {
         const parentDoc = await getDoc(doc(db, 'lpo', userData.parent_id));
         if (active && parentDoc.exists()) {
@@ -309,6 +345,15 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const userDocRef = doc(db, "users", newUser.uid);
     const isSuperAdmin = newUser.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au';
+    let assignedRole: UserMetadata['role'] = 'operator';
+    if (isSuperAdmin) {
+      assignedRole = 'superadmin';
+    } else if (customerId && parentId) {
+      assignedRole = 'parent';
+    } else if (customerId && !parentId) {
+      assignedRole = 'customer';
+    }
+
     const newUserData: UserMetadata = {
       uid: newUser.uid,
       email: newUser.email || email,
@@ -317,7 +362,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mobile: phone,
       parent_id: parentId || "",
       customer_id: customerId || "",
-      role: isSuperAdmin ? 'superadmin' : (customerId ? 'customer' : 'operator'),
+      role: assignedRole,
       hasCompletedTour: isSuperAdmin ? true : false,
     };
 
@@ -333,6 +378,8 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userData,
       parent, 
       customer,
+      companyName,
+      companyData,
       loading, 
       isSidebarPinned, 
       setIsSidebarPinned, 

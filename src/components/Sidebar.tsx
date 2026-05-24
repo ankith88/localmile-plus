@@ -19,7 +19,7 @@ import { auth } from '../firebase/config';
 import { useLpo } from '../context/LpoContext';
 
 const Sidebar: React.FC = () => {
-  const { isSidebarPinned, setIsSidebarPinned, parent, isAdmin, userData, awaitingTcCount } = useLpo();
+  const { isSidebarPinned, setIsSidebarPinned, parent, isAdmin, userData, awaitingTcCount, companyName } = useLpo();
   const [isHovered, setIsHovered] = useState(false);
 
   // The sidebar is visually expanded if it's either pinned OR being hovered over
@@ -102,7 +102,12 @@ const Sidebar: React.FC = () => {
                     ? `${userData.first_name} ${userData.last_name}` 
                     : (userData?.email.split('@')[0] || 'Clarke Kent')}
                 </p>
-                <p className="lpo-name">{isAdmin ? 'Head Office Admin' : (parent?.name || 'Parent Account')}</p>
+                {companyName && (
+                  <p className="company-name" style={{ fontSize: '0.65rem', fontWeight: 600, color: 'rgba(255, 255, 255, 0.7)', margin: '2px 0 0 0', whiteSpace: 'normal', wordBreak: 'break-word', maxWidth: '140px', lineHeight: '1.2' }}>{companyName}</p>
+                )}
+                {(isAdmin || userData?.role === 'parent') && (
+                  <p className="lpo-name">{isAdmin ? 'Head Office Admin' : (parent?.name || 'Parent Account')}</p>
+                )}
               </div>
             )}
           </NavLink>

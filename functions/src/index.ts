@@ -2471,6 +2471,60 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
   }
 });
 
+apiApp.post("/api/v1/accounts/recreate-code", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Recreate Code API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).send({ success: false, message: "Missing required field: email" });
+      return;
+    }
+
+    let authUser;
+    try {
+      authUser = await admin.auth().getUserByEmail(email);
+    } catch (error: any) {
+      if (error.code === "auth/user-not-found") {
+        res.status(404).send({ success: false, message: "User not found for the provided email." });
+        return;
+      }
+      throw error;
+    }
+
+    const uid = authUser.uid;
+    const db = getDB();
+
+    const securityCode = crypto.randomInt(1000, 10000).toString(); // 4-digit code
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+
+    const tokenRef = db.collection("verification_tokens").doc(uid);
+    await tokenRef.set({
+      uid: uid,
+      code: securityCode,
+      expiresAt: expiresAt
+    }, { merge: true });
+
+    res.status(200).send({
+      success: true,
+      message: "Security code recreated successfully.",
+      data: {
+        uid: uid,
+        securityCode: securityCode
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Recreate Code API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
 export const activateAccount = onCall({ invoker: "public" }, async (request) => {
   const { uid, code, newPassword } = request.data;
 
@@ -2511,11 +2565,145 @@ export const activateAccount = onCall({ invoker: "public" }, async (request) => 
     return { success: true, customToken };
   } catch (error: any) {
     console.error("Account Activation Error:", error);
-    throw new HttpsError("internal", "Failed to activate account.");
+    throw new HttpsError("internal", error.message);
   }
 });
 
-export const api = onRequest({
-  secrets: [netsuiteApiKey],
-  cors: true
-}, apiApp);
+export const api = onRequest({ secrets: [netsuiteApiKey], cors: true }, apiApp);
+
+// Admin Callable Function: Recreate Security Code
+export const adminRecreateSecurityCode = onCall({ invoker: "public" }, async (request) => {
+  const { email } = request.data;
+  if (!email) {
+    throw new HttpsError("invalid-argument", "Missing email.");
+  }
+  
+  if (!request.auth || !request.auth.token.email) {
+    throw new HttpsError("unauthenticated", "You must be authenticated.");
+  }
+  
+  // Verify superadmin
+  const callerUser = await admin.auth().getUser(request.auth.uid);
+  const callerRole = callerUser.customClaims?.role;
+  if (callerRole !== "superadmin" && request.auth.token.email !== "ankith.ravindran@mailplus.com.au") {
+    throw new HttpsError("permission-denied", "Only superadmins can recreate security codes.");
+  }
+
+  try {
+    const authUser = await admin.auth().getUserByEmail(email);
+    const uid = authUser.uid;
+    const db = getDB();
+
+    const securityCode = crypto.randomInt(1000, 10000).toString(); // 4-digit code
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+
+    const tokenRef = db.collection("verification_tokens").doc(uid);
+    await tokenRef.set({
+      uid: uid,
+      code: securityCode,
+      expiresAt: expiresAt
+    }, { merge: true });
+
+    return { success: true, securityCode, uid };
+  } catch (error: any) {
+    console.error("Error recreating security code:", error);
+    throw new HttpsError("internal", error.message);
+  }
+});
+
+// Admin Callable Function: Resend Auth Email
+export const adminResendAuthEmail = onCall({ invoker: "public", secrets: [netsuiteApiKey, gmailAppPassword] }, async (request) => {
+  const { email } = request.data;
+  if (!email) {
+    throw new HttpsError("invalid-argument", "Missing email.");
+  }
+  
+  if (!request.auth || !request.auth.token.email) {
+    throw new HttpsError("unauthenticated", "You must be authenticated.");
+  }
+  
+  // Verify superadmin
+  const callerUser = await admin.auth().getUser(request.auth.uid);
+  const callerRole = callerUser.customClaims?.role;
+  if (callerRole !== "superadmin" && request.auth.token.email !== "ankith.ravindran@mailplus.com.au") {
+    throw new HttpsError("permission-denied", "Only superadmins can resend auth emails.");
+  }
+
+  try {
+    const authUser = await admin.auth().getUserByEmail(email);
+    const uid = authUser.uid;
+    const db = getDB();
+
+    const tokenDoc = await db.collection("verification_tokens").doc(uid).get();
+    if (!tokenDoc.exists) {
+      throw new Error("No active verification token found for this user.");
+    }
+    const securityCode = tokenDoc.data()?.code;
+    const localMilePlusAuthLink = `https://localmile.plus/activate/${uid}`;
+    
+    // Get user details to get customerName
+    const userDoc = await db.collection("users").doc(uid).get();
+    let contactFirstName = "Valued Customer";
+    if (userDoc.exists) {
+        contactFirstName = userDoc.data()?.firstName || "Valued Customer";
+    }
+    
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "bookings@localmile.plus",
+        pass: gmailAppPassword.value(),
+      },
+    });
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>MailPlus - Authenticate Your Access</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+	<style>
+		body, html { margin: 0; padding: 0; width: 100% !important; background-color: #f4f7f8; }
+		.email-container { font-family: 'Inter', system-ui, -apple-system, sans-serif; max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(9, 92, 123, 0.08); border: 1px solid #e1e8ed; }
+		.content-body { padding: 40px; }
+		h1 { color: #095c7b; font-size: 24px; font-weight: 700; margin-top: 0; margin-bottom: 24px; letter-spacing: -0.5px; }
+		p { font-size: 16px; line-height: 1.6; color: #3c4858; margin-bottom: 20px; }
+		.auth-card { background: linear-gradient(145deg, #f8fafc, #ffffff); border: 1px solid #e1e8ed; border-radius: 12px; padding: 32px; text-align: center; margin: 32px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
+		.code-label { display: block; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: #8492a6; margin-bottom: 12px; }
+		.security-code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 42px; font-weight: 700; color: #095c7b; letter-spacing: 8px; margin: 0; }
+		.auth-button { display: inline-block; background-color: #095c7b; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; padding: 16px 36px; border-radius: 8px; margin-top: 24px; }
+	</style>
+</head>
+<body>
+	<div class="email-container">
+		<div class="content-body">
+			<h1>Secure Your Account</h1>
+			<p>Hi ${contactFirstName},</p>
+			<p>An administrator has requested to re-authenticate your access to LocalMile.Plus. Please use the secure code below to activate your account.</p>
+			<div class="auth-card">
+				<span class="code-label">Your Security Code</span>
+				<p class="security-code">${securityCode}</p>
+				<a href="${localMilePlusAuthLink}" class="auth-button">Authenticate Now</a>
+			</div>
+			<p>If you did not expect this email, please contact our support team.</p>
+		</div>
+	</div>
+</body>
+</html>`;
+
+    await transporter.sendMail({
+      from: '"LocalMile.Plus Support" <bookings@localmile.plus>',
+      to: email,
+      subject: "Your LocalMile.Plus Access",
+      html,
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error resending auth email:", error);
+    throw new HttpsError("internal", error.message);
+  }
+});

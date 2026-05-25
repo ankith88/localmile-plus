@@ -11,7 +11,8 @@ import {
   X,
   Lock,
   Key,
-  Edit2
+  Edit2,
+  RefreshCw
 } from 'lucide-react';
 import { collection, query, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -25,6 +26,8 @@ interface UserRecord {
   role: string;
   parent_id: string;
   lpoName?: string;
+  customer_id?: string;
+  customerName?: string;
 }
 
 const UserManagement: React.FC = () => {
@@ -58,17 +61,27 @@ const UserManagement: React.FC = () => {
   const fetchUsers = async () => {
     setLoading(true);
     try {
+      const companiesQ = query(collection(db, 'companies'));
+      const companiesSnapshot = await getDocs(companiesQ);
+      const companiesMap = new Map();
+      companiesSnapshot.docs.forEach(doc => {
+         companiesMap.set(doc.id, doc.data().companyName);
+      });
+
       const q = query(collection(db, 'users'));
       const snapshot = await getDocs(q);
       const userList = snapshot.docs.map(doc => {
         const data = doc.data();
         const parent = allParents.find(l => l.id === data.parent_id);
+        const customerName = data.customer_id ? companiesMap.get(data.customer_id) || 'Unknown' : 'N/A';
         return {
           uid: doc.id,
           email: data.email,
           role: data.role,
           parent_id: data.parent_id,
-          lpoName: parent?.name || 'N/A'
+          lpoName: parent?.name || 'N/A',
+          customer_id: data.customer_id,
+          customerName
         } as UserRecord;
       });
       setUsers(userList);
@@ -187,6 +200,30 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const handleRecreateSecurityCode = async (email: string) => {
+    if (!window.confirm(`Are you sure you want to recreate the security code for ${email}?`)) return;
+    try {
+      const adminRecreateSecurityCode = httpsCallable(functions, 'adminRecreateSecurityCode');
+      await adminRecreateSecurityCode({ email });
+      alert("Security code recreated successfully.");
+    } catch (err: any) {
+      console.error("Error recreating security code:", err);
+      alert(`Failed to recreate security code: ${err.message}`);
+    }
+  };
+
+  const handleResendAuthEmail = async (email: string) => {
+    if (!window.confirm(`Are you sure you want to resend the authentication email for ${email}?`)) return;
+    try {
+      const adminResendAuthEmail = httpsCallable(functions, 'adminResendAuthEmail');
+      await adminResendAuthEmail({ email });
+      alert("Authentication email sent successfully.");
+    } catch (err: any) {
+      console.error("Error resending auth email:", err);
+      alert(`Failed to resend auth email: ${err.message}`);
+    }
+  };
+
   const filteredUsers = users.filter(u => 
     u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.lpoName?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -240,6 +277,7 @@ const UserManagement: React.FC = () => {
                   <th>User Details</th>
                   <th>Role</th>
                   <th>Assigned Parent</th>
+                  <th>Linked Customer</th>
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>
@@ -275,6 +313,11 @@ const UserManagement: React.FC = () => {
                         )}
                       </div>
                     </td>
+                    <td>
+                      <div className="lpo-cell">
+                         <span>{u.customerName}</span>
+                      </div>
+                    </td>
                     <td className="text-right">
                       <div className="table-actions">
                         {isSuperAdmin && (
@@ -299,6 +342,20 @@ const UserManagement: React.FC = () => {
                               title="Reset Password"
                             >
                               <Key size={18} />
+                            </button>
+                            <button 
+                              className="btn-icon-warning" 
+                              onClick={() => handleRecreateSecurityCode(u.email)}
+                              title="Recreate Security Code"
+                            >
+                              <RefreshCw size={18} />
+                            </button>
+                            <button 
+                              className="btn-icon-warning" 
+                              onClick={() => handleResendAuthEmail(u.email)}
+                              title="Resend Auth Email"
+                            >
+                              <Mail size={18} />
                             </button>
                           </>
                         )}

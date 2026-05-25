@@ -16,7 +16,7 @@ import {
   Database,
   Sparkles
 } from 'lucide-react';
-import { useJsApiLoader, GoogleMap, Marker, DirectionsRenderer } from '@react-google-maps/api';
+import { useJsApiLoader, GoogleMap, Marker, Polyline } from '@react-google-maps/api';
 import { formatDateForInput, getDefaultBookingDate } from '../../utils/scheduling';
 import { useLpo } from '../../context/LpoContext';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc, increment } from 'firebase/firestore';
@@ -50,12 +50,14 @@ interface JobData {
   preferredTime?: string;
 }
 
-const LIBRARIES: ("places" | "maps" | "routes")[] = ["places", "routes"];
+const LIBRARIES: ("places" | "maps" | "routes" | "geometry")[] = ["places", "routes", "geometry"];
 
-const JobMap: React.FC<{ stops: any[] }> = ({ stops }) => {
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+const JobMap: React.FC<{ stops: any[], onDistanceCalculated?: (distance: string) => void }> = ({ stops, onDistanceCalculated }) => {
+  const [encodedPath, setEncodedPath] = useState<string | null>(null);
   const [markerPositions, setMarkerPositions] = useState<({lat: number, lng: number} | null)[]>([]);
 
+  const stopsStr = JSON.stringify(stops);
+  
   useEffect(() => {
     if (stops.length === 0) return;
 
@@ -91,44 +93,63 @@ const JobMap: React.FC<{ stops: any[] }> = ({ stops }) => {
     };
 
     fetchPositions();
-  }, [stops]);
+  }, [stopsStr]);
+
+  const markerPosStr = JSON.stringify(markerPositions);
 
   useEffect(() => {
     if (stops.length < 2 || markerPositions.length < 2) return;
     
-    // We try directions using string addresses (or lat/lng) just in case
-    const getPoint = (stop: any, idx: number) => {
+    const getPoint = (idx: number) => {
       const pos = markerPositions[idx];
-      if (pos) return new window.google.maps.LatLng(pos.lat, pos.lng);
-      return `${stop.address || ''} ${stop.suburb || ''} ${stop.state || ''} ${stop.postcode || ''}`.trim();
+      return pos ? { location: { latLng: { latitude: pos.lat, longitude: pos.lng } } } : null;
     };
     
-    const origin = getPoint(stops[0], 0);
-    const destination = getPoint(stops[stops.length - 1], stops.length - 1);
-    const waypoints = stops.slice(1, -1).map((stop, idx) => ({
-      location: getPoint(stop, idx + 1),
-      stopover: true
-    }));
-
+    const origin = getPoint(0);
+    const destination = getPoint(stops.length - 1);
+    
     if (!origin || !destination) return;
 
-    const directionsService = new window.google.maps.DirectionsService();
-    directionsService.route(
-      {
-        origin,
-        destination,
-        waypoints,
-        travelMode: window.google.maps.TravelMode.DRIVING,
+    const intermediates = [];
+    for (let i = 1; i < stops.length - 1; i++) {
+      const pt = getPoint(i);
+      if (pt) intermediates.push(pt);
+    }
+
+    const payload: any = {
+      origin,
+      destination,
+      travelMode: 'DRIVE'
+    };
+    if (intermediates.length > 0) {
+      payload.intermediates = intermediates;
+    }
+
+    fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': googleMapsApiKey,
+        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
       },
-      (result, status) => {
-        if (status === window.google.maps.DirectionsStatus.OK && result) {
-          setDirections(result);
-        } else {
-          console.error("Directions request failed:", status);
+      body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        setEncodedPath(route.polyline?.encodedPolyline || null);
+        if (onDistanceCalculated && route.distanceMeters) {
+          onDistanceCalculated((route.distanceMeters / 1000).toFixed(1) + ' km');
         }
+      } else {
+         console.error("Routes API response invalid:", JSON.stringify(data));
       }
-    );
-  }, [stops, markerPositions]);
+    })
+    .catch(err => {
+      console.error("Routes API request failed:", err);
+    });
+  }, [stopsStr, markerPosStr]);
 
   if (stops.length === 0) {
     return (
@@ -152,20 +173,44 @@ const JobMap: React.FC<{ stops: any[] }> = ({ stops }) => {
         zoomControl: true,
       }}
     >
-      {directions ? (
-        <DirectionsRenderer
-          options={{ 
-            directions: directions,
-            suppressMarkers: false
+      {markerPositions.map((pos, idx) => {
+        if (pos) {
+          const isPickup = stops[idx]?.type === 'pickup';
+          return (
+            <Marker 
+              key={idx} 
+              position={{ lat: pos.lat, lng: pos.lng }} 
+              label={{ 
+                text: (idx + 1).toString(),
+                color: 'white',
+                fontWeight: 'bold',
+                fontSize: '12px'
+              }}
+              options={{
+                icon: {
+                  path: window.google?.maps?.SymbolPath?.CIRCLE,
+                  scale: 14,
+                  fillColor: isPickup ? '#E81C2E' : '#1A73E8',
+                  fillOpacity: 1,
+                  strokeWeight: 2,
+                  strokeColor: '#FFFFFF'
+                }
+              }}
+            />
+          );
+        }
+        return null;
+      })}
+      
+      {encodedPath && window.google?.maps?.geometry?.encoding && (
+        <Polyline
+          path={window.google.maps.geometry.encoding.decodePath(encodedPath)}
+          options={{
+            strokeColor: '#1A73E8',
+            strokeWeight: 4,
+            strokeOpacity: 0.8
           }}
         />
-      ) : (
-        markerPositions.map((pos, idx) => {
-          if (pos) {
-            return <Marker key={idx} position={{ lat: pos.lat, lng: pos.lng }} label={(idx + 1).toString()} />;
-          }
-          return null;
-        })
       )}
     </GoogleMap>
   );
@@ -183,6 +228,7 @@ const NewJobForm: React.FC = () => {
   const [isAwaitingTC, setIsAwaitingTC] = useState(false);
   const [isExistingCustomer, setIsExistingCustomer] = useState(false);
   const [createdRequestId, setCreatedRequestId] = useState<string | null>(null);
+  const [routeDistance, setRouteDistance] = useState<string | null>(null);
   
   // Processing States
   const [isProcessing, setIsProcessing] = useState(false);
@@ -420,9 +466,9 @@ const NewJobForm: React.FC = () => {
         if (userData?.parent_id) {
           // Parent user - fetch sub-customers
           q = query(collection(db, `lpo/${userData.parent_id}/customers`));
-        } else if (userData?.uid && userData?.role === 'customer') {
+        } else if (userData?.customer_id && userData?.role === 'customer') {
           // Independent customer - fetch from their address book
-          q = query(collection(db, `users/${userData.uid}/address_book`));
+          q = query(collection(db, `companies/${userData.customer_id}/address_book`));
         } else {
           return;
         }
@@ -448,10 +494,10 @@ const NewJobForm: React.FC = () => {
   }, [userData, parent]);
 
   useEffect(() => {
-    const term = formData.customer.company.toLowerCase();
+    const term = (userData?.role === 'customer' ? recipientData.company : formData.customer.company).toLowerCase();
     if (term.length > 2) {
       const results = allCustomers.filter(c => {
-        const name = (c.companyName || c.company_name || '').toLowerCase();
+        const name = (c.companyName || c.company_name || c.first_name || '').toLowerCase();
         const city = (c.city || c.address?.suburb || '').toLowerCase();
         const zip = (c.zip || c.address?.postcode || '').toLowerCase();
         return name.includes(term) || city.includes(term) || zip.includes(term);
@@ -460,7 +506,26 @@ const NewJobForm: React.FC = () => {
     } else {
       setSearchResults([]);
     }
-  }, [formData.customer.company, allCustomers]);
+  }, [formData.customer.company, recipientData.company, allCustomers, userData?.role]);
+
+  const selectRecipient = (c: any) => {
+    const displayName = c.companyName || c.company_name || '';
+    const parts = displayName.split(' ');
+    
+    setRecipientData({
+      company: displayName,
+      firstName: c.first_name || c.firstName || parts[0] || '',
+      lastName: c.last_name || c.lastName || (parts.length > 1 ? parts.slice(1).join(' ') : ''),
+      email: c.email || '',
+      phone: c.phone || '',
+      address: c.address1 || c.address?.street || c.address || '',
+      suburb: c.city || c.address?.suburb || c.suburb || '',
+      state: c.state || c.address?.state || c.state || '',
+      postcode: c.zip || c.address?.postcode || c.postcode || '',
+      coordinates: c.coordinates || null
+    });
+    setSearchResults([]);
+  };
 
 
 
@@ -790,7 +855,7 @@ const NewJobForm: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!parent && !customer) return;
+    if (!parent && !customer && userData?.role !== 'customer') return;
 
     if (userData?.role === 'customer' && !isExistingCustomer) {
       try {
@@ -824,60 +889,64 @@ const NewJobForm: React.FC = () => {
 
       // 1. NetSuite API Integration (Stage 1) - Only for NEW customers
       if (!isExistingCustomer) {
-        setProcessingProgress(25);
-        setProcessingMessage('Registering new customer...');
-        const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2527&deploy=1&compid=1048144&ns-at=AAEJ7tMQJX8dMLsjS5TGMacB9-M8pUB6q50I_ptxbLYqKZ_HR3c";
-        
-        const params = new URLSearchParams({
-          parent_id: parent?.id || "",
-          company: formData.customer.company,
-          firstName: formData.customer.firstName,
-          lastName: formData.customer.lastName,
-          email: formData.customer.email,
-          phone: formData.customer.phone,
-          address: formData.customer.address,
-          suburb: formData.customer.suburb,
-          state: formData.customer.state,
-          postcode: formData.customer.postcode,
-          lat: (formData.customer.coordinates?.lat || "").toString(),
-          lng: (formData.customer.coordinates?.lng || "").toString(),
-          service_name: formData.service || "null",
-          service_internal_id: formData.serviceInternalId || "null",
-          billing: formData.billing,
-          jobType: formData.jobType,
-          startDate: formData.date,
-          frequency: getShorthandFrequency(formData.frequency),
-          preferredTime: formData.preferredTime || ""
-        });
+        if (userData?.role !== 'customer') {
+          setProcessingProgress(25);
+          setProcessingMessage('Registering new customer...');
+          const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2527&deploy=1&compid=1048144&ns-at=AAEJ7tMQJX8dMLsjS5TGMacB9-M8pUB6q50I_ptxbLYqKZ_HR3c";
+          
+          const params = new URLSearchParams({
+            parent_id: parent?.id || "",
+            company: formData.customer.company,
+            firstName: formData.customer.firstName,
+            lastName: formData.customer.lastName,
+            email: formData.customer.email,
+            phone: formData.customer.phone,
+            address: formData.customer.address,
+            suburb: formData.customer.suburb,
+            state: formData.customer.state,
+            postcode: formData.customer.postcode,
+            lat: (formData.customer.coordinates?.lat || "").toString(),
+            lng: (formData.customer.coordinates?.lng || "").toString(),
+            service_name: formData.service || "null",
+            service_internal_id: formData.serviceInternalId || "null",
+            billing: formData.billing,
+            jobType: formData.jobType,
+            startDate: formData.date,
+            frequency: getShorthandFrequency(formData.frequency),
+            preferredTime: formData.preferredTime || ""
+          });
 
-        const nsResponse = await fetch(`${NETSUITE_API}&${params.toString()}`);
-        nsResult = await nsResponse.json();
-        
-        console.log("NetSuite Script 2527 Response:", nsResult);
+          const nsResponse = await fetch(`${NETSUITE_API}&${params.toString()}`);
+          nsResult = await nsResponse.json();
+          
+          console.log("NetSuite Script 2527 Response:", nsResult);
 
-        if (!nsResult.success || !nsResult.isServiceable) {
-          setValidationError(nsResult.message || "The address provided is not currently serviceable by our fleet. Please verify the details or contact support.");
-          setIsProcessing(false);
-          setStep(1); // Redirect to step 1
-          return;
+          if (!nsResult.success || !nsResult.isServiceable) {
+            setValidationError(nsResult.message || "The address provided is not currently serviceable by our fleet. Please verify the details or contact support.");
+            setIsProcessing(false);
+            setStep(1); // Redirect to step 1
+            return;
+          }
+
+          // Check if we need to pause for T&C
+          const initialStatus = formData.billing === 'lpo' ? 'Active' : "Awaiting T&C's to be Accepted";
+          setCustomerStatus(initialStatus);
+        } else {
+          setCustomerStatus('Active');
         }
-
-        // Check if we need to pause for T&C
-        const initialStatus = formData.billing === 'lpo' ? 'Active' : "Awaiting T&C's to be Accepted";
-        setCustomerStatus(initialStatus);
       }
 
       setProcessingProgress(50);
       setProcessingMessage('Securing job request in database...');
       
       // 2. Local Firestore Job Request
-      if (!parent?.id && !customer?.id) {
+      if (!parent?.id && !customer?.id && !userData?.customer_id) {
         throw new Error("Entity ID is missing. Cannot save request.");
       }
       
       // 2.1 Refetch customer status for existing customers
       let currentCustomerStatus = customerStatus;
-      if (isExistingCustomer && parent?.id) {
+      if (isExistingCustomer && parent?.id && userData?.role !== 'customer') {
         try {
           const custQ = query(
             collection(db, `lpo/${parent.id}/customers`), 
@@ -894,8 +963,9 @@ const NewJobForm: React.FC = () => {
       }
 
       let finalRequestId = requestId;
-      const isActuallyActive = (isExistingCustomer && currentCustomerStatus === 'Active') || 
-                               (!isExistingCustomer && formData.billing === 'lpo');
+      const isActuallyActive = userData?.role === 'customer' 
+        ? true 
+        : ((isExistingCustomer && currentCustomerStatus === 'Active') || (!isExistingCustomer && formData.billing === 'lpo'));
       
       const initialRequestStatus = isActuallyActive ? 'pending' : 'awaiting-activation';
 
@@ -951,25 +1021,28 @@ const NewJobForm: React.FC = () => {
         setCreatedRequestId(finalRequestId);
 
         // If independent customer and new address, save to address book
-        if (!isExistingCustomer && userData?.role === 'customer' && userData?.uid) {
-          try {
-            await addDoc(collection(db, `users/${userData.uid}/address_book`), {
-              companyName: formData.customer.company,
-              first_name: formData.customer.firstName,
-              last_name: formData.customer.lastName,
-              email: formData.customer.email,
-              phone: formData.customer.phone,
-              address: {
-                street: formData.customer.address,
-                suburb: formData.customer.suburb,
-                state: formData.customer.state,
-                postcode: formData.customer.postcode
-              },
-              coordinates: formData.customer.coordinates || null,
-              createdAt: serverTimestamp()
-            });
-          } catch (e) {
-            console.error("Failed to save to address book:", e);
+        if (userData?.role === 'customer' && userData?.customer_id) {
+          const isNewRecipient = !allCustomers.some(c => (c.companyName || c.company_name || '').toLowerCase() === recipientData.company.toLowerCase());
+          if (isNewRecipient && recipientData.company) {
+            try {
+              await addDoc(collection(db, `companies/${userData.customer_id}/address_book`), {
+                companyName: recipientData.company,
+                first_name: recipientData.firstName,
+                last_name: recipientData.lastName,
+                email: recipientData.email,
+                phone: recipientData.phone,
+                address: {
+                  street: recipientData.address,
+                  suburb: recipientData.suburb,
+                  state: recipientData.state,
+                  postcode: recipientData.postcode
+                },
+                coordinates: recipientData.coordinates || null,
+                createdAt: serverTimestamp()
+              });
+            } catch (e) {
+              console.error("Failed to save to address book:", e);
+            }
           }
         }
 
@@ -989,10 +1062,17 @@ const NewJobForm: React.FC = () => {
       setProcessingMessage('Synchronising job data...');
 
       // 3. Second NetSuite API (Job Confirmation with Request ID)
-      const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2528&deploy=1&compid=1048144&ns-at=AAEJ7tMQM_E8dKF2qjDMy9ESy5q883g7xrb8uKwfgGOku62wheU";
       try {
-        const customer_id = nsResult.customerInternalId || formData.customer.netsuiteId || "";
-        const confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&parent_id=${parent?.id || ""}&customer_id=${customer_id}`);
+        let confirmResponse;
+        if (userData?.role === 'customer') {
+          const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2646&deploy=1&compid=1048144&ns-at=AAEJ7tMQGy_V6q4A1r9Jg30iQSZhzKVAi6M4UjCI17mvD37SfLM";
+          const customer_id = userData?.customer_id || "";
+          confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&customer_id=${customer_id}`);
+        } else {
+          const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2528&deploy=1&compid=1048144&ns-at=AAEJ7tMQM_E8dKF2qjDMy9ESy5q883g7xrb8uKwfgGOku62wheU";
+          const customer_id = nsResult.customerInternalId || formData.customer.netsuiteId || "";
+          confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&parent_id=${parent?.id || ""}&customer_id=${customer_id}`);
+        }
         const confirmResult = await confirmResponse.json();
         if (confirmResult.success && confirmResult.message) {
           setNetsuiteMessage(confirmResult.message);
@@ -1210,7 +1290,7 @@ const NewJobForm: React.FC = () => {
                                 <MapPin size={16} />
                                 <span>Sender Address</span>
                               </div>
-                              <div className="searchable-address-area">
+                              <div className="searchable-address-area has-suggestions">
                                 <input 
                                   type="text" 
                                   placeholder="Sender Company Name"
@@ -1218,7 +1298,35 @@ const NewJobForm: React.FC = () => {
                                   value={recipientData.company}
                                   onChange={(e) => setRecipientData({...recipientData, company: e.target.value})}
                                 />
-                                <div className="search-input-wrapper">
+                                {searchResults.length > 0 && (
+                                  <div className="search-dropdown glass floating-dropdown">
+                                    <div className="dropdown-header">
+                                      <Database size={12} />
+                                      <span>MATCHED FROM ADDRESS BOOK</span>
+                                    </div>
+                                    {searchResults.map(c => (
+                                      <div key={c.id} className="search-item-premium" onClick={() => selectRecipient(c)}>
+                                        <div className="item-info">
+                                          <div className="company-name">{c.companyName || c.company_name}</div>
+                                          <div className="sub">{(c.city || c.address?.suburb)}, {(c.zip || c.address?.postcode)}</div>
+                                        </div>
+                                        <div className="item-action">
+                                          <span>SELECT</span>
+                                          <ChevronRight size={14} />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
+                                  <input type="text" placeholder="First Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.firstName} onChange={(e) => setRecipientData({...recipientData, firstName: e.target.value})} />
+                                  <input type="text" placeholder="Last Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.lastName} onChange={(e) => setRecipientData({...recipientData, lastName: e.target.value})} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
+                                  <input type="email" placeholder="Email" className="transparent-input" style={{ flex: 1 }} value={recipientData.email} onChange={(e) => setRecipientData({...recipientData, email: e.target.value})} />
+                                  <input type="tel" placeholder="Phone" className="transparent-input" style={{ flex: 1 }} value={recipientData.phone} onChange={(e) => setRecipientData({...recipientData, phone: e.target.value})} />
+                                </div>
+                                <div className="search-input-wrapper" style={{ marginTop: '8px' }}>
                                   <input 
                                     type="text" 
                                     placeholder="Search Sender Address..."
@@ -1230,6 +1338,20 @@ const NewJobForm: React.FC = () => {
                                       fetchAddressPredictions(val);
                                     }}
                                   />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px', opacity: 0.8 }}>
+                                  <div style={{ flex: 2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
+                                    <input type="text" placeholder="Suburb" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.suburb || ''} readOnly />
+                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  </div>
+                                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
+                                    <input type="text" placeholder="State" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.state || ''} readOnly />
+                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  </div>
+                                  <div style={{ flex: 1.2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
+                                    <input type="text" placeholder="Postcode" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.postcode || ''} readOnly />
+                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  </div>
                                 </div>
                               </div>
                             </>
@@ -1283,7 +1405,7 @@ const NewJobForm: React.FC = () => {
                                 <MapPin size={16} />
                                 <span>Recipient Address</span>
                               </div>
-                              <div className="searchable-address-area">
+                              <div className="searchable-address-area has-suggestions">
                                 <input 
                                   type="text" 
                                   placeholder="Recipient Company Name"
@@ -1291,7 +1413,35 @@ const NewJobForm: React.FC = () => {
                                   value={recipientData.company}
                                   onChange={(e) => setRecipientData({...recipientData, company: e.target.value})}
                                 />
-                                <div className="search-input-wrapper">
+                                {searchResults.length > 0 && (
+                                  <div className="search-dropdown glass floating-dropdown">
+                                    <div className="dropdown-header">
+                                      <Database size={12} />
+                                      <span>MATCHED FROM ADDRESS BOOK</span>
+                                    </div>
+                                    {searchResults.map(c => (
+                                      <div key={c.id} className="search-item-premium" onClick={() => selectRecipient(c)}>
+                                        <div className="item-info">
+                                          <div className="company-name">{c.companyName || c.company_name}</div>
+                                          <div className="sub">{(c.city || c.address?.suburb)}, {(c.zip || c.address?.postcode)}</div>
+                                        </div>
+                                        <div className="item-action">
+                                          <span>SELECT</span>
+                                          <ChevronRight size={14} />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
+                                  <input type="text" placeholder="First Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.firstName} onChange={(e) => setRecipientData({...recipientData, firstName: e.target.value})} />
+                                  <input type="text" placeholder="Last Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.lastName} onChange={(e) => setRecipientData({...recipientData, lastName: e.target.value})} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
+                                  <input type="email" placeholder="Email" className="transparent-input" style={{ flex: 1 }} value={recipientData.email} onChange={(e) => setRecipientData({...recipientData, email: e.target.value})} />
+                                  <input type="tel" placeholder="Phone" className="transparent-input" style={{ flex: 1 }} value={recipientData.phone} onChange={(e) => setRecipientData({...recipientData, phone: e.target.value})} />
+                                </div>
+                                <div className="search-input-wrapper" style={{ marginTop: '8px' }}>
                                   <input 
                                     type="text" 
                                     placeholder="Search Recipient Address..."
@@ -1303,6 +1453,20 @@ const NewJobForm: React.FC = () => {
                                       fetchAddressPredictions(val);
                                     }}
                                   />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px', opacity: 0.8 }}>
+                                  <div style={{ flex: 2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
+                                    <input type="text" placeholder="Suburb" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.suburb || ''} readOnly />
+                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  </div>
+                                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
+                                    <input type="text" placeholder="State" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.state || ''} readOnly />
+                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  </div>
+                                  <div style={{ flex: 1.2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
+                                    <input type="text" placeholder="Postcode" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.postcode || ''} readOnly />
+                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  </div>
                                 </div>
                               </div>
                             </>
@@ -1510,7 +1674,10 @@ const NewJobForm: React.FC = () => {
                   <div className="split-view">
                     <div className="map-element">
                       {isLoaded ? (
-                        <JobMap stops={generateStops(formData, parent || customer)} />
+                        <JobMap 
+                          stops={generateStops(formData, parent || customer)} 
+                          onDistanceCalculated={(dist) => setRouteDistance(dist)}
+                        />
                       ) : (
                         <div className="map-placeholder" style={{ background: '#eee', borderRadius: '12px', height: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>
                            <span style={{ fontWeight: 600 }}>Loading Map...</span>
@@ -1542,6 +1709,12 @@ const NewJobForm: React.FC = () => {
                             <span className="v-label">SERVICE</span>
                             <span className="v-val">{formData.service.replace(/-/g, ' ').toUpperCase()}</span>
                           </div>
+                          {routeDistance && (
+                            <div className="v-row">
+                              <span className="v-label">EST. DISTANCE</span>
+                              <span className="v-val">{routeDistance}</span>
+                            </div>
+                          )}
                           <div className="v-row">
                             <span className="v-label">{formData.jobType === 'scheduled' ? 'START DATE' : 'SCHEDULED'}</span>
                             <span className="v-val">{formData.date}</span>

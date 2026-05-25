@@ -117,24 +117,38 @@ const Dashboard: React.FC = () => {
         // Fallback for missing indexes
         let jobsBaseQ = collection(db, 'jobs');
         let reqBaseQ = collection(db, 'requests');
+        let schedBaseQ = collection(db, 'scheduled_jobs');
         
-        const jobsQ = selectedParentId !== 'all' ? query(jobsBaseQ, where('parent_id', '==', selectedParentId)) : jobsBaseQ;
-        const jobsSnapshot = await getDocs(jobsQ as any);
+        let fbJobsQ, fbReqQ, fbSchedQ;
+        
+        if (userData?.role === 'customer' && userData?.customer_id) {
+          fbJobsQ = query(jobsBaseQ, where('customer_id', '==', userData.customer_id));
+          fbReqQ = query(reqBaseQ, where('customer_id', '==', userData.customer_id));
+          fbSchedQ = query(schedBaseQ, where('customer_id', '==', userData.customer_id));
+        } else if (selectedParentId !== 'all') {
+          fbJobsQ = query(jobsBaseQ, where('parent_id', '==', selectedParentId));
+          fbReqQ = query(reqBaseQ, where('parent_id', '==', selectedParentId));
+          fbSchedQ = query(schedBaseQ, where('parent_id', '==', selectedParentId));
+        } else {
+          fbJobsQ = jobsBaseQ;
+          fbReqQ = reqBaseQ;
+          fbSchedQ = schedBaseQ;
+        }
+
+        const jobsSnapshot = await getDocs(fbJobsQ as any);
         setJobs(jobsSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
         
-        const reqQ = selectedParentId !== 'all' ? query(reqBaseQ, where('parent_id', '==', selectedParentId)) : reqBaseQ;
-        const reqSnapshot = await getDocs(reqQ as any);
+        const reqSnapshot = await getDocs(fbReqQ as any);
         setRequests(reqSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
 
-        const schedQ = selectedParentId !== 'all' ? query(collection(db, 'scheduled_jobs'), where('parent_id', '==', selectedParentId)) : collection(db, 'scheduled_jobs');
-        const schedSnapshot = await getDocs(schedQ);
+        const schedSnapshot = await getDocs(fbSchedQ as any);
         setSchedules(schedSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
       } finally {
         setLoading(false);
       }
     };
 
-    if (parent || isAdmin || customer) {
+    if (parent || isAdmin || customer || userData?.role === 'customer') {
       fetchData();
     }
   }, [parent, customer, isAdmin, selectedParentId, userData]);

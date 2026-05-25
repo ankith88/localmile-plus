@@ -22,6 +22,7 @@ import Profile from './pages/Auth/Profile';
 import ResetPassword from './pages/Auth/ResetPassword';
 import UserManagement from './pages/Admin/UserManagement';
 import AdminCommunications from './pages/Admin/AdminCommunications';
+import ActivateAccount from './pages/Auth/ActivateAccount';
 
 import OnboardingTour from './components/OnboardingTour';
 
@@ -70,6 +71,7 @@ const App: React.FC = () => {
           <Route path="/signin" element={<SignIn />} />
           <Route path="/register" element={<SignUp />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/activate/:uid" element={<ActivateAccount />} />
           
           <Route path="/dashboard" element={
             <PrivateRoute>

@@ -2347,7 +2347,7 @@ const apiApp = express();
 apiApp.use(cors({ origin: true }));
 apiApp.use(express.json());
 
-apiApp.post("/v1/accounts/provision", async (req: express.Request, res: express.Response) => {
+apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: express.Response) => {
   // 1. Security Check
   const providedKey = req.headers["x-api-key"] || req.query.api_key;
   if (!providedKey || providedKey !== netsuiteApiKey.value()) {
@@ -2357,10 +2357,21 @@ apiApp.post("/v1/accounts/provision", async (req: express.Request, res: express.
   }
 
   try {
-    const payload = req.body;
+    let payload = req.body;
     
+    // Normalize Firestore document format if wrapped in "fields"
+    if (payload && payload.fields) {
+      const flat: Record<string, any> = {};
+      for (const [key, valueObj] of Object.entries(payload.fields)) {
+        const val = valueObj as any;
+        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ?? 
+                    (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
+      }
+      payload = flat;
+    }
+
     // Validate required fields
-    if (!payload.companyId || !payload.email || !payload.customerEmail) {
+    if (!payload.companyId || !payload.email || payload.customerEmail === undefined) {
       res.status(400).send({ success: false, message: "Missing required fields: companyId, email, customerEmail" });
       return;
     }
@@ -2457,6 +2468,50 @@ apiApp.post("/v1/accounts/provision", async (req: express.Request, res: express.
   } catch (error: any) {
     console.error("Provisioning API Error:", error);
     res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+export const activateAccount = onCall({ invoker: "public" }, async (request) => {
+  const { uid, code, newPassword } = request.data;
+
+  if (!uid || !code || !newPassword) {
+    throw new HttpsError("invalid-argument", "Missing required fields.");
+  }
+
+  const db = getDB();
+  const tokenRef = db.collection("verification_tokens").doc(uid);
+  const tokenDoc = await tokenRef.get();
+
+  if (!tokenDoc.exists) {
+    throw new HttpsError("not-found", "Invalid or expired activation link.");
+  }
+
+  const tokenData = tokenDoc.data();
+  if (tokenData?.code !== code) {
+    throw new HttpsError("permission-denied", "Invalid activation code.");
+  }
+
+  if (tokenData?.expiresAt.toDate() < new Date()) {
+    throw new HttpsError("permission-denied", "Activation link has expired.");
+  }
+
+  try {
+    // 1. Update password
+    await admin.auth().updateUser(uid, { password: newPassword });
+
+    // 2. Mark user active
+    await db.collection("users").doc(uid).update({ status: "Active" });
+
+    // 3. Delete token
+    await tokenRef.delete();
+
+    // 4. Generate custom token for auto-login
+    const customToken = await admin.auth().createCustomToken(uid);
+
+    return { success: true, customToken };
+  } catch (error: any) {
+    console.error("Account Activation Error:", error);
+    throw new HttpsError("internal", "Failed to activate account.");
   }
 });
 

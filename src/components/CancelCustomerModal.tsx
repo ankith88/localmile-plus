@@ -40,10 +40,13 @@ const CancelCustomerModal: React.FC<CancelCustomerModalProps> = ({
 
     setIsSaving(true);
     try {
-      if (customer.role === 'customer' && customer.uid) {
+      if (customer.role === 'customer' && (customer.customer_id || customer.uid)) {
         // For address book, we just delete it
         const { deleteDoc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, `users/${customer.uid}/address_book`, customer.id));
+        const refPath = customer.customer_id 
+            ? `companies/${customer.customer_id}/address_book` 
+            : `users/${customer.uid}/address_book`;
+        await deleteDoc(doc(db, refPath, customer.id));
         onUpdate({ ...customer, id: 'deleted' }); // Signal deletion
       } else {
         const customerRef = doc(db, `lpo/${customer.parent_id}/customers`, customer.id);

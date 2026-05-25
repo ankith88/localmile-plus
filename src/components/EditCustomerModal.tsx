@@ -51,7 +51,9 @@ const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
     setIsSaving(true);
     try {
       let customerRef;
-      if (customer.role === 'customer' && customer.uid) {
+      if (customer.role === 'customer' && customer.customer_id) {
+        customerRef = doc(db, `companies/${customer.customer_id}/address_book`, customer.id);
+      } else if (customer.role === 'customer' && customer.uid) {
         customerRef = doc(db, `users/${customer.uid}/address_book`, customer.id);
       } else {
         customerRef = doc(db, `lpo/${customer.parent_id}/customers`, customer.id);

@@ -44,9 +44,9 @@ const CustomerHub: React.FC = () => {
         let allRequests: any[] = [];
 
         // Check if independent customer
-        if (userData?.role === 'customer' && userData?.uid) {
+        if (userData?.role === 'customer' && userData?.customer_id) {
           const q = query(
-            collection(db, `users/${userData.uid}/address_book`),
+            collection(db, `companies/${userData.customer_id}/address_book`),
             orderBy('companyName', 'asc')
           );
           const snapshot = await getDocs(q);
@@ -54,7 +54,8 @@ const CustomerHub: React.FC = () => {
             ...doc.data(), 
             id: doc.id,
             status: 'Active', // Address book entries are always active
-            role: 'customer' // tag it for modal logic
+            role: 'customer', // tag it for modal logic
+            customer_id: userData.customer_id
           }));
         } else {
           // Parent/Admin logic

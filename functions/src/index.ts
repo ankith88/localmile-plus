@@ -2415,6 +2415,7 @@ apiApp.post("/v1/accounts/provision", async (req: express.Request, res: express.
       state: payload.state || "",
       street: payload.street || "",
       zip: payload.zip || "",
+      trial_credits_balance: 5,
     }, { merge: true });
 
     // users Collection
@@ -2430,7 +2431,6 @@ apiApp.post("/v1/accounts/provision", async (req: express.Request, res: express.
       parent_id: payload.parent_id || "",
       role: payload.role || "customer",
       uid: uid,
-      trial_credits_balance: 5,
       status: "Pending_Activation"
     }, { merge: true });
 

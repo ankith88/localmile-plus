@@ -19,7 +19,7 @@ import {
 import { useJsApiLoader, GoogleMap, Marker, DirectionsRenderer } from '@react-google-maps/api';
 import { formatDateForInput, getDefaultBookingDate } from '../../utils/scheduling';
 import { useLpo } from '../../context/LpoContext';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc, increment } from 'firebase/firestore';
 import { db, googleMapsApiKey } from '../../firebase/config';
 
 type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip';
@@ -791,6 +791,25 @@ const NewJobForm: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!parent && !customer) return;
+
+    if (userData?.role === 'customer' && !isExistingCustomer) {
+      try {
+        const companyId = userData.customer_id;
+        if (companyId) {
+          const compDoc = await getDoc(doc(db, 'companies', companyId));
+          if (compDoc.exists()) {
+            const balance = compDoc.data().trial_credits_balance;
+            if (typeof balance === 'number' && balance <= 0) {
+              setValidationError("You have no remaining trial credits. Please upgrade your account to book more jobs.");
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Trial verification error:", err);
+      }
+    }
+
     setIsProcessing(true);
     setProcessingProgress(10);
     setProcessingMessage('Validating request details...');
@@ -951,6 +970,17 @@ const NewJobForm: React.FC = () => {
             });
           } catch (e) {
             console.error("Failed to save to address book:", e);
+          }
+        }
+
+        // Decrement trial balance for customer job requests
+        if (userData?.role === 'customer' && userData?.customer_id) {
+          try {
+            await updateDoc(doc(db, 'companies', userData.customer_id), {
+              trial_credits_balance: increment(-1)
+            });
+          } catch (e) {
+            console.error("Failed to decrement trial balance:", e);
           }
         }
       }

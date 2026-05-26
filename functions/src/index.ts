@@ -25,6 +25,7 @@ const getDB = () => getFirestore();
 // Secrets
 const gmailAppPassword = defineSecret("GMAIL_APP_PASSWORD");
 const netsuiteApiKey = defineSecret("NETSUITE_API_KEY");
+const prospectplusApiKey = defineSecret("PROSPECTPLUS_API_KEY");
 const geminiApiKey = defineSecret("GEMINI_API_KEY"); // For AI summarization
 
 // Communication Helpers
@@ -2612,7 +2613,7 @@ export const adminRecreateSecurityCode = onCall({ invoker: "public" }, async (re
 });
 
 // Admin Callable Function: Resend Auth Email
-export const adminResendAuthEmail = onCall({ invoker: "public", secrets: [netsuiteApiKey, gmailAppPassword] }, async (request) => {
+export const adminResendAuthEmail = onCall({ invoker: "public", secrets: [prospectplusApiKey] }, async (request) => {
   const { email } = request.data;
   if (!email) {
     throw new HttpsError("invalid-argument", "Missing email.");
@@ -2648,58 +2649,29 @@ export const adminResendAuthEmail = onCall({ invoker: "public", secrets: [netsui
         contactFirstName = userDoc.data()?.firstName || "Valued Customer";
     }
     
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: "bookings@localmile.plus",
-        pass: gmailAppPassword.value(),
-      },
+    const response = await fetch('https://prospectplus.com.au/api/localmile/resend-auth', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-API-KEY': prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+            contactEmail: email,
+            contactFirstName,
+            securityCode,
+            localMilePlusAuthLink
+        })
     });
 
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>MailPlus - Authenticate Your Access</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-	<style>
-		body, html { margin: 0; padding: 0; width: 100% !important; background-color: #f4f7f8; }
-		.email-container { font-family: 'Inter', system-ui, -apple-system, sans-serif; max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(9, 92, 123, 0.08); border: 1px solid #e1e8ed; }
-		.content-body { padding: 40px; }
-		h1 { color: #095c7b; font-size: 24px; font-weight: 700; margin-top: 0; margin-bottom: 24px; letter-spacing: -0.5px; }
-		p { font-size: 16px; line-height: 1.6; color: #3c4858; margin-bottom: 20px; }
-		.auth-card { background: linear-gradient(145deg, #f8fafc, #ffffff); border: 1px solid #e1e8ed; border-radius: 12px; padding: 32px; text-align: center; margin: 32px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
-		.code-label { display: block; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: #8492a6; margin-bottom: 12px; }
-		.security-code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 42px; font-weight: 700; color: #095c7b; letter-spacing: 8px; margin: 0; }
-		.auth-button { display: inline-block; background-color: #095c7b; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; padding: 16px 36px; border-radius: 8px; margin-top: 24px; }
-	</style>
-</head>
-<body>
-	<div class="email-container">
-		<div class="content-body">
-			<h1>Secure Your Account</h1>
-			<p>Hi ${contactFirstName},</p>
-			<p>An administrator has requested to re-authenticate your access to LocalMile.Plus. Please use the secure code below to activate your account.</p>
-			<div class="auth-card">
-				<span class="code-label">Your Security Code</span>
-				<p class="security-code">${securityCode}</p>
-				<a href="${localMilePlusAuthLink}" class="auth-button">Authenticate Now</a>
-			</div>
-			<p>If you did not expect this email, please contact our support team.</p>
-		</div>
-	</div>
-</body>
-</html>`;
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`ProspectPlus API failed with status ${response.status}: ${errText}`);
+    }
 
-    await transporter.sendMail({
-      from: '"LocalMile.Plus Support" <bookings@localmile.plus>',
-      to: email,
-      subject: "Your LocalMile.Plus Access",
-      html,
-    });
+    const data = await response.json() as any;
+    if (!data.success) {
+        throw new Error(data.message || 'Unknown error from ProspectPlus API');
+    }
 
     return { success: true };
   } catch (error: any) {

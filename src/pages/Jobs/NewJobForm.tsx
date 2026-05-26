@@ -14,12 +14,15 @@ import {
   Clock,
   Mail,
   Database,
-  Sparkles
+  Sparkles,
+  Calendar,
+  Search,
+  Circle
 } from 'lucide-react';
 import { useJsApiLoader, GoogleMap, Marker, Polyline } from '@react-google-maps/api';
 import { formatDateForInput, getDefaultBookingDate } from '../../utils/scheduling';
 import { useLpo } from '../../context/LpoContext';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc, increment } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
 import { db, googleMapsApiKey } from '../../firebase/config';
 
 type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip';
@@ -237,6 +240,7 @@ const NewJobForm: React.FC = () => {
 
   // Independent Customer States
   const [independentServiceType, setIndependentServiceType] = useState<'outbound' | 'inbound'>('outbound');
+  const [saveAsDefaultAusPost, setSaveAsDefaultAusPost] = useState(false);
   const [recipientData, setRecipientData] = useState({
     company: '',
     firstName: '',
@@ -249,6 +253,28 @@ const NewJobForm: React.FC = () => {
     postcode: '',
     coordinates: null as { lat: number, lng: number } | null
   });
+
+  const [trialCredits, setTrialCredits] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (userData?.role === 'customer' && userData?.customer_id) {
+      const customerId = userData.customer_id;
+      const fetchCredits = async () => {
+        try {
+          const compDoc = await getDoc(doc(db, 'companies', customerId));
+          if (compDoc.exists()) {
+            const data = compDoc.data();
+            if (typeof data.trial_credits_balance === 'number') {
+              setTrialCredits(data.trial_credits_balance);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch trial credits", e);
+        }
+      };
+      fetchCredits();
+    }
+  }, [userData]);
 
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   
@@ -290,7 +316,8 @@ const NewJobForm: React.FC = () => {
 
   const hasPMPO = Boolean(companyData?.servicePMPOInternalID && companyData?.servicePMPOInternalID !== 'null');
   const hasAMPO = Boolean(companyData?.serviceAMPOInternalID && companyData?.serviceAMPOInternalID !== 'null');
-  const canSwap = !companyData || (hasPMPO && hasAMPO) || (!hasPMPO && !hasAMPO);
+  const hasH2H = Boolean(companyData?.serviceH2HInternalID && companyData?.serviceH2HInternalID !== 'null');
+  const canSwap = !companyData || hasH2H || (hasPMPO && hasAMPO) || (!hasPMPO && !hasAMPO);
 
   useEffect(() => {
     if (userData?.role === 'customer' && companyData) {
@@ -301,6 +328,20 @@ const NewJobForm: React.FC = () => {
       }
     }
   }, [hasPMPO, hasAMPO, companyData, userData?.role, independentServiceType]);
+
+  useEffect(() => {
+    if (userData?.role === 'customer' && !hasH2H) {
+      try {
+        const saved = localStorage.getItem(`defaultAusPost_${userData.customer_id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && !recipientData.address) {
+            setRecipientData(parsed);
+          }
+        }
+      } catch (e) {}
+    }
+  }, [userData, hasH2H]);
 
   // Independent Customer Pre-population
   useEffect(() => {
@@ -677,10 +718,15 @@ const NewJobForm: React.FC = () => {
       autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
     }
 
+    let searchInput = input;
+    if (!hasH2H && !input.toLowerCase().includes('australia post')) {
+      searchInput = `${input} Australia Post`;
+    }
+
     const request: google.maps.places.AutocompletionRequest = {
-      input,
+      input: searchInput,
       componentRestrictions: { country: 'AU' },
-      types: ['address']
+      types: !hasH2H ? ['establishment'] : ['address']
     };
 
     // Add location bias if Parent coordinates are available
@@ -748,6 +794,7 @@ const NewJobForm: React.FC = () => {
         if (userData?.role === 'customer') {
           setRecipientData(prev => ({
             ...prev,
+            company: !hasH2H ? (place.name || 'Australia Post') : prev.company,
             address: fullStreet,
             suburb: suburb,
             state: state,
@@ -1020,6 +1067,10 @@ const NewJobForm: React.FC = () => {
         finalRequestId = docRef.id;
         setCreatedRequestId(finalRequestId);
 
+        if (saveAsDefaultAusPost && !hasH2H && userData?.customer_id) {
+          localStorage.setItem(`defaultAusPost_${userData.customer_id}`, JSON.stringify(recipientData));
+        }
+
         // If independent customer and new address, save to address book
         if (userData?.role === 'customer' && userData?.customer_id) {
           const isNewRecipient = !allCustomers.some(c => (c.companyName || c.company_name || '').toLowerCase() === recipientData.company.toLowerCase());
@@ -1046,16 +1097,6 @@ const NewJobForm: React.FC = () => {
           }
         }
 
-        // Decrement trial balance for customer job requests
-        if (userData?.role === 'customer' && userData?.customer_id) {
-          try {
-            await updateDoc(doc(db, 'companies', userData.customer_id), {
-              trial_credits_balance: increment(-1)
-            });
-          } catch (e) {
-            console.error("Failed to decrement trial balance:", e);
-          }
-        }
       }
 
       setProcessingProgress(80);
@@ -1239,7 +1280,13 @@ const NewJobForm: React.FC = () => {
                 <Rocket size={20} />
               </div>
               <h1>Book a Job</h1>
-              <p>Create a service job for your customers in seconds.</p>
+              <p>{userData?.role === 'customer' ? 'Create a service job in seconds.' : 'Create a service job for your customers in seconds.'}</p>
+              {trialCredits !== null && (
+                <div className="trial-badge" style={{ marginTop: '12px', display: 'inline-flex', alignItems: 'center', background: '#eaf044', color: '#095c7b', padding: '6px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                  <Sparkles size={14} style={{ marginRight: '6px' }} />
+                  {trialCredits} Free Trial{trialCredits !== 1 ? 's' : ''} Remaining
+                </div>
+              )}
             </header>
 
             <div className="step-tracker">
@@ -1262,107 +1309,124 @@ const NewJobForm: React.FC = () => {
 
                   {userData?.role === 'customer' ? (
                     <div className="independent-step-1 fade-in">
-                      <div className="unified-route-card">
-                        {/* FROM SECTION */}
-                        <div className={`route-segment ${independentServiceType === 'outbound' ? 'locked-segment dark-theme' : 'active-segment elevated'}`}>
-                          {independentServiceType === 'outbound' ? (
-                            <>
-                              <div className="bg-glow"></div>
-                              <div className="locked-header-row">
-                                <div className="route-title">
-                                  <MapPin size={18} />
-                                  <span>FROM (ORIGIN)</span>
+                      <div className="floating-route-container">
+                        
+                        {/* TOP SEGMENT */}
+                        <div className={`floating-route-segment glass ${independentServiceType === 'outbound' ? 'locked-segment' : 'searchable-segment'}`}>
+                            {independentServiceType === 'outbound' ? (
+                              <>
+                                <div className="locked-header-row">
+                                  <div className="route-title">
+                                    <Circle size={14} fill="currentColor" strokeWidth={3} style={{ opacity: 0.3 }} />
+                                    <span>PICKUP POINT</span>
+                                  </div>
+                                  <div className="hub-badge" style={{ color: userData?.role === 'customer' ? '#A8763A' : undefined }}><Lock size={12} style={{marginRight: '4px'}}/> {userData?.role === 'customer' ? 'MY LOCATION' : 'REGISTERED HUB'}</div>
                                 </div>
-                                <div className="hub-badge">PRIMARY HUB</div>
-                              </div>
-                              <div className="locked-address-display">
-                                <strong>{formData.customer.company}</strong>
-                                <p>{formData.customer.address}</p>
-                                <div className="address-bottom">
-                                  <span>{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
+                                <div className="locked-address-display compact">
+                                  <strong>{formData.customer.company}</strong>
+                                  <div className="inline-address">
+                                    <p>{formData.customer.address},</p>
+                                    <span className="address-bottom">{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
+                                  </div>
                                 </div>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <label className="route-label">PICKUP FROM</label>
-                              <div className="address-header">
-                                <MapPin size={16} />
-                                <span>Sender Address</span>
-                              </div>
-                              <div className="searchable-address-area has-suggestions">
-                                <input 
-                                  type="text" 
-                                  placeholder="Sender Company Name"
-                                  className="transparent-input company"
-                                  value={recipientData.company}
-                                  onChange={(e) => setRecipientData({...recipientData, company: e.target.value})}
-                                />
-                                {searchResults.length > 0 && (
-                                  <div className="search-dropdown glass floating-dropdown">
-                                    <div className="dropdown-header">
-                                      <Database size={12} />
-                                      <span>MATCHED FROM ADDRESS BOOK</span>
-                                    </div>
-                                    {searchResults.map(c => (
-                                      <div key={c.id} className="search-item-premium" onClick={() => selectRecipient(c)}>
-                                        <div className="item-info">
-                                          <div className="company-name">{c.companyName || c.company_name}</div>
-                                          <div className="sub">{(c.city || c.address?.suburb)}, {(c.zip || c.address?.postcode)}</div>
-                                        </div>
-                                        <div className="item-action">
-                                          <span>SELECT</span>
-                                          <ChevronRight size={14} />
-                                        </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="locked-header-row">
+                                  <div className="route-title">
+                                    <Circle size={14} fill="currentColor" strokeWidth={3} style={{ opacity: 0.3 }} />
+                                    <span>PICKUP POINT</span>
+                                  </div>
+                                  <div className="hub-badge search-badge">{hasH2H ? 'SEARCH ADDRESS' : 'SEARCH AUSTRALIA POST'}</div>
+                                </div>
+                                <div className="searchable-address-area minimal-layout">
+                                  <div className="minimal-input-row">
+                                    {hasH2H && (
+                                      <div style={{ position: 'relative', flex: 1 }}>
+                                        <input 
+                                          type="text" 
+                                          placeholder="Sender Company Name"
+                                          className="transparent-input bottom-border"
+                                          value={recipientData.company}
+                                          onChange={(e) => setRecipientData({...recipientData, company: e.target.value})}
+                                        />
+                                        {searchResults.length > 0 && (
+                                          <div className="search-dropdown glass floating-dropdown">
+                                            <div className="dropdown-header">
+                                              <Database size={12} />
+                                              <span>MATCHED FROM ADDRESS BOOK</span>
+                                            </div>
+                                            {searchResults.map(c => (
+                                              <div key={c.id} className="search-item-premium" onClick={() => selectRecipient(c)}>
+                                                <div className="item-info">
+                                                  <div className="company-name">{c.companyName || c.company_name}</div>
+                                                  <div className="sub">{(c.city || c.address?.suburb)}, {(c.zip || c.address?.postcode)}</div>
+                                                </div>
+                                                <div className="item-action">
+                                                  <span>SELECT</span>
+                                                  <ChevronRight size={14} />
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
-                                    ))}
+                                    )}
+                                    <div className="search-input-wrapper bottom-border" style={{ flex: 1 }}>
+                                      <input 
+                                        type="text" 
+                                        placeholder={hasH2H ? "Search Sender Suburb, Postcode..." : "Search Australia Post Location..."}
+                                        className="transparent-input address"
+                                        value={recipientData.address}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setRecipientData(prev => ({ ...prev, address: val }));
+                                          fetchAddressPredictions(val);
+                                        }}
+                                      />
+                                      <Search size={16} style={{ opacity: 0.5 }} />
+                                    </div>
                                   </div>
-                                )}
-                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
-                                  <input type="text" placeholder="First Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.firstName} onChange={(e) => setRecipientData({...recipientData, firstName: e.target.value})} />
-                                  <input type="text" placeholder="Last Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.lastName} onChange={(e) => setRecipientData({...recipientData, lastName: e.target.value})} />
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
-                                  <input type="email" placeholder="Email" className="transparent-input" style={{ flex: 1 }} value={recipientData.email} onChange={(e) => setRecipientData({...recipientData, email: e.target.value})} />
-                                  <input type="tel" placeholder="Phone" className="transparent-input" style={{ flex: 1 }} value={recipientData.phone} onChange={(e) => setRecipientData({...recipientData, phone: e.target.value})} />
-                                </div>
-                                <div className="search-input-wrapper" style={{ marginTop: '8px' }}>
-                                  <input 
-                                    type="text" 
-                                    placeholder="Search Sender Address..."
-                                    className="transparent-input address"
-                                    value={recipientData.address}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setRecipientData(prev => ({ ...prev, address: val }));
-                                      fetchAddressPredictions(val);
-                                    }}
-                                  />
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px', opacity: 0.8 }}>
-                                  <div style={{ flex: 2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
-                                    <input type="text" placeholder="Suburb" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.suburb || ''} readOnly />
-                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  
+                                  {hasH2H && (
+                                    <div className="minimal-input-row extra-fields">
+                                      <input type="text" placeholder="First Name" className="transparent-input bottom-border" value={recipientData.firstName} onChange={(e) => setRecipientData({...recipientData, firstName: e.target.value})} />
+                                      <input type="text" placeholder="Last Name" className="transparent-input bottom-border" value={recipientData.lastName} onChange={(e) => setRecipientData({...recipientData, lastName: e.target.value})} />
+                                      <input type="email" placeholder="Email" className="transparent-input bottom-border" value={recipientData.email} onChange={(e) => setRecipientData({...recipientData, email: e.target.value})} />
+                                      <input type="tel" placeholder="Phone" className="transparent-input bottom-border" value={recipientData.phone} onChange={(e) => setRecipientData({...recipientData, phone: e.target.value})} />
+                                    </div>
+                                  )}
+                                  
+                                  <div className="minimal-input-row extra-fields read-only-fields">
+                                    <input type="text" placeholder="Suburb" className="transparent-input bottom-border no-icon" value={recipientData.suburb || ''} readOnly />
+                                    <input type="text" placeholder="State" className="transparent-input bottom-border no-icon" value={recipientData.state || ''} readOnly />
+                                    <input type="text" placeholder="Postcode" className="transparent-input bottom-border no-icon" value={recipientData.postcode || ''} readOnly />
                                   </div>
-                                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
-                                    <input type="text" placeholder="State" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.state || ''} readOnly />
-                                    <Lock size={12} style={{ opacity: 0.5 }} />
-                                  </div>
-                                  <div style={{ flex: 1.2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
-                                    <input type="text" placeholder="Postcode" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.postcode || ''} readOnly />
-                                    <Lock size={12} style={{ opacity: 0.5 }} />
-                                  </div>
+                                  {!hasH2H && (
+                                    <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <input 
+                                        type="checkbox" 
+                                        id="saveDefaultAusPostSender" 
+                                        checked={saveAsDefaultAusPost}
+                                        onChange={(e) => setSaveAsDefaultAusPost(e.target.checked)}
+                                        style={{ accentColor: 'var(--ink)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                      />
+                                      <label htmlFor="saveDefaultAusPostSender" style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', cursor: 'pointer', margin: 0 }}>
+                                        Save this Australia Post location as default
+                                      </label>
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            </>
-                          )}
+                              </>
+                            )}
                         </div>
 
-                        {/* SWAP BUTTON */}
-                        <div className="swap-button-container">
+                        {/* ROUTE CONNECTOR / SWAP */}
+                        <div className="floating-route-connector">
+                          <div className="connector-line"></div>
                           {canSwap && (
                             <button 
-                              className="swap-route-btn shadow-teal"
+                              className="floating-swap-btn"
                               onClick={() => {
                                 if (independentServiceType === 'outbound') {
                                   setIndependentServiceType('inbound');
@@ -1373,104 +1437,119 @@ const NewJobForm: React.FC = () => {
                                 }
                               }}
                             >
-                              <ArrowDownUp size={20} />
+                              <ArrowDownUp size={14} />
                             </button>
                           )}
                         </div>
 
-                        {/* TO SECTION */}
-                        <div className={`route-segment ${independentServiceType === 'inbound' ? 'locked-segment dark-theme' : 'active-segment elevated'}`}>
-                          {independentServiceType === 'inbound' ? (
-                            <>
-                              <div className="bg-glow"></div>
-                              <div className="locked-header-row">
-                                <div className="route-title">
-                                  <MapPin size={18} />
-                                  <span>TO (DESTINATION)</span>
+                        {/* BOTTOM SEGMENT */}
+                        <div className={`floating-route-segment glass ${independentServiceType === 'inbound' ? 'locked-segment' : 'searchable-segment'}`}>
+                            {independentServiceType === 'inbound' ? (
+                              <>
+                                <div className="locked-header-row">
+                                  <div className="route-title">
+                                    <MapPin size={14} />
+                                    <span>DROPOFF DESTINATION</span>
+                                  </div>
+                                  <div className="hub-badge" style={{ color: userData?.role === 'customer' ? '#A8763A' : undefined }}><Lock size={12} style={{marginRight: '4px'}}/> {userData?.role === 'customer' ? 'MY LOCATION' : 'REGISTERED HUB'}</div>
                                 </div>
-                                <div className="hub-badge">PRIMARY HUB</div>
-                              </div>
-                              <div className="locked-address-display">
-                                <strong>{formData.customer.company}</strong>
-                                <p>{formData.customer.address}</p>
-                                <div className="address-bottom">
-                                  <span>{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
+                                <div className="locked-address-display compact">
+                                  <strong>{formData.customer.company}</strong>
+                                  <div className="inline-address">
+                                    <p>{formData.customer.address},</p>
+                                    <span className="address-bottom">{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
+                                  </div>
                                 </div>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <label className="route-label">DELIVER TO</label>
-                              <div className="address-header">
-                                <MapPin size={16} />
-                                <span>Recipient Address</span>
-                              </div>
-                              <div className="searchable-address-area has-suggestions">
-                                <input 
-                                  type="text" 
-                                  placeholder="Recipient Company Name"
-                                  className="transparent-input company"
-                                  value={recipientData.company}
-                                  onChange={(e) => setRecipientData({...recipientData, company: e.target.value})}
-                                />
-                                {searchResults.length > 0 && (
-                                  <div className="search-dropdown glass floating-dropdown">
-                                    <div className="dropdown-header">
-                                      <Database size={12} />
-                                      <span>MATCHED FROM ADDRESS BOOK</span>
-                                    </div>
-                                    {searchResults.map(c => (
-                                      <div key={c.id} className="search-item-premium" onClick={() => selectRecipient(c)}>
-                                        <div className="item-info">
-                                          <div className="company-name">{c.companyName || c.company_name}</div>
-                                          <div className="sub">{(c.city || c.address?.suburb)}, {(c.zip || c.address?.postcode)}</div>
-                                        </div>
-                                        <div className="item-action">
-                                          <span>SELECT</span>
-                                          <ChevronRight size={14} />
-                                        </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="locked-header-row">
+                                  <div className="route-title">
+                                    <MapPin size={14} />
+                                    <span>DROPOFF DESTINATION</span>
+                                  </div>
+                                  <div className="hub-badge search-badge">{hasH2H ? 'SEARCH ADDRESS' : 'SEARCH AUSTRALIA POST'}</div>
+                                </div>
+                                <div className="searchable-address-area minimal-layout">
+                                  <div className="minimal-input-row">
+                                    {hasH2H && (
+                                      <div style={{ position: 'relative', flex: 1 }}>
+                                        <input 
+                                          type="text" 
+                                          placeholder="Recipient Company Name"
+                                          className="transparent-input bottom-border"
+                                          value={recipientData.company}
+                                          onChange={(e) => setRecipientData({...recipientData, company: e.target.value})}
+                                        />
+                                        {searchResults.length > 0 && (
+                                          <div className="search-dropdown glass floating-dropdown">
+                                            <div className="dropdown-header">
+                                              <Database size={12} />
+                                              <span>MATCHED FROM ADDRESS BOOK</span>
+                                            </div>
+                                            {searchResults.map(c => (
+                                              <div key={c.id} className="search-item-premium" onClick={() => selectRecipient(c)}>
+                                                <div className="item-info">
+                                                  <div className="company-name">{c.companyName || c.company_name}</div>
+                                                  <div className="sub">{(c.city || c.address?.suburb)}, {(c.zip || c.address?.postcode)}</div>
+                                                </div>
+                                                <div className="item-action">
+                                                  <span>SELECT</span>
+                                                  <ChevronRight size={14} />
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
-                                    ))}
+                                    )}
+                                    <div className="search-input-wrapper bottom-border" style={{ flex: 1 }}>
+                                      <input 
+                                        type="text" 
+                                        placeholder={hasH2H ? "Search Recipient Suburb, Postcode..." : "Search Australia Post Location..."}
+                                        className="transparent-input address"
+                                        value={recipientData.address}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setRecipientData(prev => ({ ...prev, address: val }));
+                                          fetchAddressPredictions(val);
+                                        }}
+                                      />
+                                      <Search size={16} style={{ opacity: 0.5 }} />
+                                    </div>
                                   </div>
-                                )}
-                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
-                                  <input type="text" placeholder="First Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.firstName} onChange={(e) => setRecipientData({...recipientData, firstName: e.target.value})} />
-                                  <input type="text" placeholder="Last Name" className="transparent-input" style={{ flex: 1 }} value={recipientData.lastName} onChange={(e) => setRecipientData({...recipientData, lastName: e.target.value})} />
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px' }}>
-                                  <input type="email" placeholder="Email" className="transparent-input" style={{ flex: 1 }} value={recipientData.email} onChange={(e) => setRecipientData({...recipientData, email: e.target.value})} />
-                                  <input type="tel" placeholder="Phone" className="transparent-input" style={{ flex: 1 }} value={recipientData.phone} onChange={(e) => setRecipientData({...recipientData, phone: e.target.value})} />
-                                </div>
-                                <div className="search-input-wrapper" style={{ marginTop: '8px' }}>
-                                  <input 
-                                    type="text" 
-                                    placeholder="Search Recipient Address..."
-                                    className="transparent-input address"
-                                    value={recipientData.address}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setRecipientData(prev => ({ ...prev, address: val }));
-                                      fetchAddressPredictions(val);
-                                    }}
-                                  />
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', padding: '0 12px', marginTop: '8px', opacity: 0.8 }}>
-                                  <div style={{ flex: 2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
-                                    <input type="text" placeholder="Suburb" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.suburb || ''} readOnly />
-                                    <Lock size={12} style={{ opacity: 0.5 }} />
+                                  
+                                  {hasH2H && (
+                                    <div className="minimal-input-row extra-fields">
+                                      <input type="text" placeholder="First Name" className="transparent-input bottom-border" value={recipientData.firstName} onChange={(e) => setRecipientData({...recipientData, firstName: e.target.value})} />
+                                      <input type="text" placeholder="Last Name" className="transparent-input bottom-border" value={recipientData.lastName} onChange={(e) => setRecipientData({...recipientData, lastName: e.target.value})} />
+                                      <input type="email" placeholder="Email" className="transparent-input bottom-border" value={recipientData.email} onChange={(e) => setRecipientData({...recipientData, email: e.target.value})} />
+                                      <input type="tel" placeholder="Phone" className="transparent-input bottom-border" value={recipientData.phone} onChange={(e) => setRecipientData({...recipientData, phone: e.target.value})} />
+                                    </div>
+                                  )}
+                                  
+                                  <div className="minimal-input-row extra-fields read-only-fields">
+                                    <input type="text" placeholder="Suburb" className="transparent-input bottom-border no-icon" value={recipientData.suburb || ''} readOnly />
+                                    <input type="text" placeholder="State" className="transparent-input bottom-border no-icon" value={recipientData.state || ''} readOnly />
+                                    <input type="text" placeholder="Postcode" className="transparent-input bottom-border no-icon" value={recipientData.postcode || ''} readOnly />
                                   </div>
-                                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
-                                    <input type="text" placeholder="State" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.state || ''} readOnly />
-                                    <Lock size={12} style={{ opacity: 0.5 }} />
-                                  </div>
-                                  <div style={{ flex: 1.2, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--cream-warm)', padding: '4px 0' }}>
-                                    <input type="text" placeholder="Postcode" className="transparent-input no-icon" style={{ flex: 1, fontSize: '0.85rem' }} value={recipientData.postcode || ''} readOnly />
-                                    <Lock size={12} style={{ opacity: 0.5 }} />
-                                  </div>
+                                  {!hasH2H && (
+                                    <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <input 
+                                        type="checkbox" 
+                                        id="saveDefaultAusPostRecipient" 
+                                        checked={saveAsDefaultAusPost}
+                                        onChange={(e) => setSaveAsDefaultAusPost(e.target.checked)}
+                                        style={{ accentColor: 'var(--ink)', width: '16px', height: '16px', cursor: 'pointer' }}
+                                      />
+                                      <label htmlFor="saveDefaultAusPostRecipient" style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', cursor: 'pointer', margin: 0 }}>
+                                        Save this Australia Post location as default
+                                      </label>
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            </>
-                          )}
+                              </>
+                            )}
                         </div>
                       </div>
 
@@ -1651,8 +1730,45 @@ const NewJobForm: React.FC = () => {
                     </div>
                   )}
 
+                  <div className="scheduling-section" style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--cream-warm)', marginBottom: '32px' }}>
+                    <div style={{ display: 'flex', gap: '16px', marginBottom: '8px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>BOOKING DATE</label>
+                        <div className="input-pill">
+                          <Calendar size={18} />
+                          <input 
+                            type="date"
+                            min={formatDateForInput(getDefaultBookingDate())}
+                            value={formData.date}
+                            onChange={(e) => setFormData({...formData, date: e.target.value})}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ flex: 2 }}>
+                        <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>TIME CONSTRAINTS (OPTIONAL)</label>
+                        <div className="input-pill">
+                          <Clock size={18} />
+                          <select 
+                            value={formData.preferredTime || ''}
+                            onChange={(e) => setFormData({...formData, preferredTime: e.target.value})}
+                            style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: '1rem', color: 'var(--slate-800)', fontFamily: 'var(--font-heading)', cursor: 'pointer' }}
+                          >
+                            <option value="">Select time</option>
+                            <option value="Before 10:00 AM">Before 10:00 AM</option>
+                            <option value="Before 12:00 PM">Before 12:00 PM</option>
+                            <option value="After 12:00 PM">After 12:00 PM</option>
+                            <option value="After 2:00 PM">After 2:00 PM</option>
+                            <option value="After 4:00 PM">After 4:00 PM</option>
+                          </select>
+                        </div>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--slate-500)', marginTop: '8px', lineHeight: 1.4 }}>
+                          Are there any timing restrictions for this job? Leave blank if the operator can attend anytime during business hours.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                   {validationError && (
-                    <div className="error-pill glass">
+                    <div className="error-pill glass" style={{ marginBottom: '32px' }}>
                       <Info size={16} />
                       {validationError}
                     </div>
@@ -1781,13 +1897,13 @@ const NewJobForm: React.FC = () => {
           50% { border-radius: 40% 60% 54% 46% / 49% 60% 40% 51%; }
         }
 
-        .form-container { position: relative; z-index: 1; max-width: 800px; margin: 0 auto; padding: 60px 24px; }
-        .form-header { text-align: center; margin-bottom: 48px; }
+        .form-container { position: relative; z-index: 1; max-width: 800px; margin: 0 auto; padding: 30px 24px; }
+        .form-header { text-align: center; margin-bottom: 24px; }
         .header-icon-pill { width: 48px; height: 48px; background: white; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: var(--ink); box-shadow: 0 8px 24px rgba(26,61,51,0.05); }
         .form-header h1 { font-family: var(--font-headings); font-size: 2.8rem; font-weight: 400; color: var(--ink); letter-spacing: -0.025em; margin-bottom: 8px; }
         .form-header p { font-size: 1.1rem; color: var(--ink-soft); font-weight: 400; }
 
-        .step-tracker { display: flex; justify-content: space-between; max-width: 500px; margin: 0 auto 60px; position: relative; }
+        .step-tracker { display: flex; justify-content: space-between; max-width: 500px; margin: 0 auto 32px; position: relative; }
         .step-item { display: flex; flex-direction: column; align-items: center; gap: 12px; position: relative; z-index: 2; flex: 1; }
         .step-circle { width: 40px; height: 40px; border-radius: 50%; background: var(--cream-warm); color: var(--ink-soft); display: flex; align-items: center; justify-content: center; font-weight: 500; transition: all 0.3s; border: 2px solid white; font-family: var(--font-ui); }
         .step-item.active .step-circle { background: var(--ink); color: white; transform: scale(1.1); box-shadow: 0 8px 20px rgba(26, 61, 51, 0.2); }
@@ -1797,8 +1913,8 @@ const NewJobForm: React.FC = () => {
         .step-connector { position: absolute; top: 20px; left: calc(50% + 20px); width: calc(100% - 40px); height: 2px; background: var(--cream-warm); z-index: 1; }
         .step-item.completed .step-connector { background: var(--ink); }
 
-        .glass-card { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 32px; padding: 40px; box-shadow: 0 20px 60px rgba(26, 61, 51, 0.05); }
-        .card-top-info { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; color: var(--ink); }
+        .glass-card { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 32px; padding: 24px; box-shadow: 0 20px 60px rgba(26, 61, 51, 0.05); }
+        .card-top-info { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; color: var(--ink); }
         .card-top-info h3 { font-family: var(--font-headings); font-weight: 500; font-size: 1.25rem; margin: 0; }
 
         .search-dropdown { position: absolute; top: calc(100% + 8px); left: 0; right: 0; max-height: 280px; overflow-y: auto; background: white; border-radius: 20px; padding: 12px; z-index: 1000; box-shadow: 0 20px 50px rgba(26,61,51,0.15); border: 1px solid rgba(26,61,51,0.08); animation: dropdownSlide 0.3s cubic-bezier(0.19, 1, 0.22, 1) forwards; }
@@ -1824,8 +1940,8 @@ const NewJobForm: React.FC = () => {
         .sparkle-icon { animation: sparkleSpin 2s infinite linear; }
         @keyframes sparkleSpin { 0% { transform: rotate(0); } 50% { transform: scale(1.2); } 100% { transform: rotate(360deg); } }
 
-        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
-        .input-pill { display: flex; align-items: center; gap: 12px; background: white; border-radius: 18px; padding: 12px 20px; border: 1px solid var(--cream-warm); transition: border-color 0.2s; }
+        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        .input-pill { display: flex; align-items: center; gap: 12px; background: white; border-radius: 18px; padding: 10px 16px; border: 1px solid var(--cream-warm); transition: border-color 0.2s; }
         .input-pill:focus-within { border-color: var(--ink); }
         
         .locked-badge { display: inline-flex; align-items: center; gap: 8px; background: var(--cream-warm); color: var(--ink); padding: 8px 16px; border-radius: 12px; font-size: 0.65rem; font-weight: 800; margin-bottom: 24px; border: 1px solid rgba(26, 61, 51, 0.05); }
@@ -1880,9 +1996,9 @@ const NewJobForm: React.FC = () => {
         .v-row.total .v-val { font-size: 1.5rem; }
         .voucher-footer { text-align: center; font-size: 0.75rem; color: var(--ink-soft); margin-top: 24px; }
 
-        .form-actions { display: flex; gap: 16px; margin-top: 40px; }
-        .btn-primary { background: var(--ink); color: white; border: none; padding: 16px 32px; border-radius: 18px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; }
-        .btn-secondary { background: white; color: var(--ink); border: 1px solid var(--cream-warm); padding: 16px 32px; border-radius: 18px; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 12px; }
+        .form-actions { display: flex; gap: 16px; margin-top: 24px; }
+        .btn-primary { background: var(--ink); color: white; border: none; padding: 14px 32px; border-radius: 18px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; }
+        .btn-secondary { background: white; color: var(--ink); border: 1px solid var(--cream-warm); padding: 14px 32px; border-radius: 18px; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 12px; }
         .btn-text { background: transparent; border: none; color: var(--ink-soft); font-weight: 700; cursor: pointer; }
 
         .success-card.tc-waiting { border-top: 6px solid var(--gold); }
@@ -1935,6 +2051,9 @@ const NewJobForm: React.FC = () => {
 
           .form-actions { margin-top: 24px; flex-direction: column; gap: 12px; }
           .btn-primary, .btn-secondary { padding: 14px 24px; border-radius: 14px; font-size: 0.9rem; }
+          .unified-route-card { flex-direction: column; padding: 16px; }
+          .swap-button-container { transform: translate(-50%, -50%) rotate(90deg); }
+          .swap-route-btn:hover { transform: translate(-50%, -50%) rotate(90deg) scale(1.1); }
         }
 
         /* Processing Loader Styles */
@@ -1962,17 +2081,54 @@ const NewJobForm: React.FC = () => {
         .step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cream-warm); transition: all 0.3s; }
         .step-dot.active { background: var(--ink); transform: scale(1.5); box-shadow: 0 0 10px rgba(26,61,51,0.2); }
         .step-dot.done { background: var(--ink); opacity: 0.5; }
-        .unified-route-card { display: flex; flex-direction: column; position: relative; gap: 16px; margin: 32px 0; padding: 24px; background: rgba(255, 255, 255, 0.4); border-radius: 24px; border: 1px dashed var(--cream-warm); }
-        .route-segment { position: relative; padding: 24px; border-radius: 16px; border: 1px solid var(--cream-warm); transition: all 0.3s; display: flex; flex-direction: column; gap: 12px; }
-        .locked-segment.dark-theme { background: var(--ink); color: white; border: none; }
-        .locked-segment.dark-theme .route-label { color: rgba(255,255,255,0.6); }
-        .locked-segment.dark-theme .lock-icon { color: rgba(255,255,255,0.6); }
-        .locked-segment.dark-theme .address-header { border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; }
-        .active-segment.elevated { background: white; box-shadow: 0 12px 30px rgba(26,61,51,0.08); border-color: transparent; }
+        .floating-route-container { display: flex; flex-direction: column; margin: 32px 0; position: relative; }
+        .floating-route-segment { padding: 24px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.4); box-shadow: 0 8px 32px rgba(0,0,0,0.04); position: relative; z-index: 2; }
+        .floating-route-segment.locked-segment { background: rgba(248, 250, 252, 0.8); backdrop-filter: blur(12px); }
+        .floating-route-segment.searchable-segment { background: #095c7b; color: white; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 16px 40px rgba(9, 92, 123, 0.25); }
+        .floating-route-segment.searchable-segment .route-title span { color: rgba(255, 255, 255, 0.9); }
+        .floating-route-segment.searchable-segment svg { color: white; }
+        .floating-route-segment.searchable-segment .transparent-input { color: white; border-bottom-color: rgba(255, 255, 255, 0.2); }
+        .floating-route-segment.searchable-segment .transparent-input:focus { border-bottom-color: var(--gold, #FACC15); }
+        .floating-route-segment.searchable-segment .transparent-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+        .floating-route-segment.searchable-segment label { color: rgba(255, 255, 255, 0.8) !important; }
+        .floating-route-segment.searchable-segment .hub-badge { background: rgba(255, 255, 255, 0.15); color: #EAF044; }
+        .floating-route-connector { position: relative; height: 48px; display: flex; align-items: center; justify-content: center; z-index: 1; }
+        .connector-line { position: absolute; top: -32px; bottom: -32px; width: 2px; background: linear-gradient(to bottom, transparent, #cbd5e1, transparent); left: 50%; transform: translateX(-50%); }
+        .floating-swap-btn { position: relative; z-index: 3; width: 40px; height: 40px; border-radius: 50%; background: white; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; color: var(--ink); cursor: pointer; transition: all 0.2s; }
+        .floating-swap-btn:hover { transform: scale(1.1); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
         
-        .swap-button-container { position: absolute; right: 48px; top: 50%; transform: translateY(-50%); z-index: 10; }
-        .swap-route-btn { width: 56px; height: 56px; border-radius: 50%; background: white; border: 1px solid var(--cream-warm); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
-        .swap-route-btn:hover { transform: scale(1.1); }
+        @media (max-width: 768px) {
+          .floating-route-segment { padding: 16px; }
+        }
+        
+        .locked-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; position: relative; z-index: 1; }
+        .route-title { display: flex; align-items: center; gap: 8px; }
+        .route-title span { color: #64748b; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; }
+        .hub-badge { background: #e2e8f0; color: #475569; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; display: flex; align-items: center; letter-spacing: 0.05em; font-family: var(--font-main, inherit); }
+        .hub-badge.search-badge { background: #d1fae5; color: #059669; }
+        
+        .locked-address-display.compact { position: relative; z-index: 1; }
+        .locked-address-display.compact strong { font-size: 1.15rem; display: block; margin-bottom: 4px; color: #0f172a; font-weight: 700; line-height: 1.3; }
+        .locked-address-display.compact .inline-address { display: flex; align-items: center; gap: 4px; color: #64748b; font-size: 0.95rem; }
+        .locked-address-display.compact .inline-address p { margin: 0; }
+        
+        .minimal-input-row { display: flex; gap: 16px; align-items: center; position: relative; }
+        .transparent-input.bottom-border { border: none; border-bottom: 1px solid #e2e8f0; padding: 8px 0; font-size: 0.95rem; color: #0f172a; width: 100%; background: transparent; outline: none; transition: border-color 0.3s; }
+        .transparent-input.bottom-border:focus { border-bottom-color: #059669; }
+        .transparent-input.bottom-border::placeholder { color: #94a3b8; font-weight: 500; }
+        .search-input-wrapper.bottom-border { display: flex; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 8px 0; background: transparent; border-radius: 0; transition: border-color 0.3s; }
+        .search-input-wrapper.bottom-border:focus-within { border-bottom-color: #059669; }
+        .search-input-wrapper.bottom-border input { flex: 1; border: none; outline: none; font-size: 0.95rem; color: #0f172a; background: transparent; }
+        .search-input-wrapper.bottom-border input::placeholder { color: #94a3b8; font-weight: 500; }
+        
+        .minimal-input-row.extra-fields { gap: 12px; margin-top: 12px; }
+        .minimal-input-row.extra-fields .bottom-border { font-size: 0.85rem; padding: 4px 0; color: #475569; }
+        
+        .read-only-fields .no-icon { border-bottom: 1px dashed #e2e8f0; font-size: 0.85rem; color: #94a3b8; }
+        
+        .swap-button-container { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; }
+        .swap-route-btn { width: 48px; height: 48px; border-radius: 50%; background: white; border: 1px solid var(--cream-warm); color: var(--ink); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+        .swap-route-btn:hover { transform: translate(-50%, -50%) scale(1.1); }
         
         .address-header { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 24px; color: var(--ink-soft); }
         .active-segment.elevated .route-label { color: var(--gold); margin-bottom: 12px; font-size: 0.75rem; letter-spacing: 0.1em; font-weight: 800; }
@@ -1986,25 +2142,9 @@ const NewJobForm: React.FC = () => {
         .transparent-input.company { font-size: 1.25rem; font-weight: 600; padding: 8px 0; border-bottom: 1px solid var(--cream-warm); margin-bottom: 20px; transition: border-color 0.3s; color: var(--ink); }
         .transparent-input.company:focus { border-bottom-color: var(--ink); }
         
-        .transparent-input.address { font-size: 1rem; color: var(--ink); }
+        .transparent-input.address { font-size: 1rem; color: inherit; }
         .search-input-wrapper { display: flex; align-items: center; background: #f7fafc; padding: 14px 20px; border-radius: 12px; border: 1px solid transparent; transition: all 0.3s; }
         .search-input-wrapper:focus-within { background: white; border-color: var(--ink); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        
-        .dark-theme .transparent-input { color: white; }
-        .dark-theme .transparent-input::placeholder { color: rgba(255,255,255,0.5); }
-
-        /* Premium Locked Segment styling */
-        .locked-segment.dark-theme { background: #1f362a; color: white; border: none; overflow: hidden; padding: 24px 32px; border-radius: 20px; box-shadow: 0 12px 24px rgba(31,54,42,0.15); }
-        .locked-segment.dark-theme .bg-glow { position: absolute; top: -50px; right: -50px; width: 250px; height: 250px; background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 70%); border-radius: 50%; pointer-events: none; }
-        
-        .locked-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; position: relative; z-index: 1; }
-        .route-title { display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); font-weight: 600; font-size: 0.9rem; letter-spacing: 0.05em; text-transform: uppercase; }
-        .hub-badge { background: rgba(255,255,255,0.1); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; backdrop-filter: blur(4px); }
-        
-        .locked-address-display { position: relative; z-index: 1; }
-        .locked-address-display strong { font-size: 1.4rem; display: block; margin-bottom: 8px; color: white; }
-        .locked-address-display p { font-size: 1.05rem; color: rgba(255,255,255,0.8); margin: 0 0 24px 0; }
-        .address-bottom span { color: #d6b484; font-size: 0.95rem; font-weight: 500; }
 
       `}</style>
     </div>

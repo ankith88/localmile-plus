@@ -10,7 +10,9 @@ import {
   arrayUnion,
   query,
   where,
-  getDocs
+  getDocs,
+  getDoc,
+  increment
 } from 'firebase/firestore';
 import { 
   Building2, 
@@ -465,6 +467,20 @@ const RequestPage: React.FC = () => {
         await updateDoc(doc(db, 'requests', request.id), {
           status: 'scheduled'
         });
+
+        // Decrement trial balance for customer job requests
+        if (request.customer_id) {
+          try {
+            const compDoc = await getDoc(doc(db, 'companies', request.customer_id));
+            if (compDoc.exists() && typeof compDoc.data().trial_credits_balance === 'number') {
+              await updateDoc(doc(db, 'companies', request.customer_id), {
+                trial_credits_balance: increment(-1)
+              });
+            }
+          } catch (e) {
+            console.error("Failed to decrement trial balance:", e);
+          }
+        }
 
         setAcceptProgress(100);
         setAcceptStatus("Job accepted successfully!");

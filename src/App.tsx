@@ -46,12 +46,14 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 import { DevContextSwitcher } from './components/DevContextSwitcher';
+import TermsAndConditionsModal from './components/TermsAndConditionsModal';
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isSidebarPinned } = useLpo();
   
   return (
     <div className={`app-container ${!isSidebarPinned ? 'sidebar-unpinned' : ''}`}>
+      <TermsAndConditionsModal />
       <OnboardingTour />
       <DevContextSwitcher />
       <Sidebar />

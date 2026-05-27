@@ -45,6 +45,7 @@ export interface UserMetadata {
   customer_id?: string;
   role: 'superadmin' | 'admin' | 'lpoadmin' | 'operator' | 'customer' | 'parent';
   hasCompletedTour: boolean;
+  hasAcceptedTC?: boolean;
 }
 
 export interface ImpersonationState {
@@ -364,6 +365,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       customer_id: customerId || "",
       role: assignedRole,
       hasCompletedTour: isSuperAdmin ? true : false,
+      hasAcceptedTC: isSuperAdmin ? true : false,
     };
 
     await setDoc(userDocRef, newUserData);

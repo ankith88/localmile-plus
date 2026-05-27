@@ -64,10 +64,10 @@ const RequestPage: React.FC = () => {
   const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
   const [proposedTime, setProposedTime] = useState('');
 
-  // Identity: If parent exists, person is the Parent User.
-  // Otherwise, they are an External User.
-  const isParentUser = !!parent;
-  const isExternalUser = !parent;
+  // Identity: If userData exists, person is the Customer (Logged in user).
+  // Otherwise, they are a Franchisee (Not logged in).
+  const isParentUser = !!userData;
+  const isExternalUser = !userData;
 
   const today = formatDateForInput(new Date());
   const isHistory = request?.date < today;
@@ -252,11 +252,7 @@ const RequestPage: React.FC = () => {
     if (!request) return;
     if (isParentUser && !parent) return;
 
-    const parentId = parent?.id || request.parent_id;
-    if (!parentId) {
-      alert("Error: Parent Account information missing for this request.");
-      return;
-    }
+    const parentId = parent?.id || request.parent_id || "";
 
     if (request.status === 'awaiting-activation') {
       alert("This customer is still awaiting T&C activation. You cannot accept the job until they are Active.");
@@ -269,6 +265,19 @@ const RequestPage: React.FC = () => {
       setAcceptStatus("Initializing acceptance flow...");
 
       try {
+        // Fetch trial balance early to pass to APIs
+        let isFreeJob = false;
+        if (request.customer_id) {
+          try {
+            const compDoc = await getDoc(doc(db, 'companies', request.customer_id));
+            if (compDoc.exists() && typeof compDoc.data().trial_credits_balance === 'number' && compDoc.data().trial_credits_balance > 0) {
+              isFreeJob = true;
+            }
+          } catch (e) {
+            console.error("Failed to check trial balance:", e);
+          }
+        }
+
         // 1. Create Job or Scheduled Template
         let jobDocRef;
         const today = formatDateForInput(new Date());
@@ -286,22 +295,24 @@ const RequestPage: React.FC = () => {
           setAcceptStatus("Fetching customer service metadata...");
           
           try {
-            const custQ = query(
-              collection(db, `lpo/${parentId}/customers`),
-              where('companyName', '==', request.customer.company)
-            );
-            const custSnap = await getDocs(custQ);
-            if (!custSnap.empty) {
-              const c = custSnap.docs[0].data();
-              if (request.service === 'lpo-to-site') {
-                serviceInternalId = c.lpoServiceAMPOInternalID || '';
-                serviceRate = c.lpoServiceAMPORate || '';
-              } else if (request.service === 'site-to-lpo') {
-                serviceInternalId = c.lpoServicePMPOInternalID || '';
-                serviceRate = c.lpoServicePMPORate || '';
-              } else if (request.service === 'round-trip') {
-                serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
-                serviceRate = c.lpoServiceAMPOPMPORate || '';
+            if (parentId) {
+              const custQ = query(
+                collection(db, `lpo/${parentId}/customers`),
+                where('companyName', '==', request.customer.company)
+              );
+              const custSnap = await getDocs(custQ);
+              if (!custSnap.empty) {
+                const c = custSnap.docs[0].data();
+                if (request.service === 'lpo-to-site') {
+                  serviceInternalId = c.lpoServiceAMPOInternalID || '';
+                  serviceRate = c.lpoServiceAMPORate || '';
+                } else if (request.service === 'site-to-lpo') {
+                  serviceInternalId = c.lpoServicePMPOInternalID || '';
+                  serviceRate = c.lpoServicePMPORate || '';
+                } else if (request.service === 'round-trip') {
+                  serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
+                  serviceRate = c.lpoServiceAMPOPMPORate || '';
+                }
               }
             }
           } catch (err) {
@@ -407,7 +418,7 @@ const RequestPage: React.FC = () => {
         if (request.date === today && jobDocRef) {
           setAcceptProgress(65);
           setAcceptStatus("Syncing instance...");
-          const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2529&deploy=1&compid=1048144&ns-at=AAEJ7tMQUHvAyCn2ri9BfAPTI9fsSABUWunIfqrEj4J_2hC-e3o";
+          const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2650&deploy=1&compid=1048144&ns-at=AAEJ7tMQwOy-VLSQwqUcq11USKGh9PAqMVQtMt6Mu_VXgYTiUyM";
           
           const params = new URLSearchParams({
             job_id: jobDocRef.id,
@@ -420,24 +431,42 @@ const RequestPage: React.FC = () => {
             preferred_time: request.preferredTime || "",
             service_name: request.service || "null",
             service_internal_id: serviceInternalId || "null",
-            date: request.date || "null"
+            date: request.date || "null",
+            service_pmpo_internal_id: request.servicePMPOInternalID || "null",
+            service_pmpo_rate: request.servicePMPORate || "null",
+            service_ampo_internal_id: request.serviceAMPOInternalID || "null",
+            service_ampo_rate: request.serviceAMPORate || "null",
+            service_h2h_internal_id: request.serviceH2HInternalID || "null",
+            service_h2h_rate: request.serviceH2HRate || "null",
+            auspost_first_name: request.auspostContact?.firstName || "null",
+            auspost_last_name: request.auspostContact?.lastName || "null",
+            auspost_phone: request.auspostContact?.phone || "null",
+            auspost_email: request.auspostContact?.email || "null",
+            auspost_company: (request.service === 'lpo-to-site' ? request.customer?.company : request.recipient?.company) || "null",
+            auspost_address: (request.service === 'lpo-to-site' ? request.customer?.address : request.recipient?.address) || "null",
+            auspost_state: (request.service === 'lpo-to-site' ? request.customer?.state : request.recipient?.state) || "null",
+            auspost_suburb: (request.service === 'lpo-to-site' ? request.customer?.suburb : request.recipient?.suburb) || "null",
+            auspost_postcode: (request.service === 'lpo-to-site' ? request.customer?.postcode : request.recipient?.postcode) || "null",
+            auspost_lat: (request.service === 'lpo-to-site' ? request.customer?.coordinates?.lat : request.recipient?.coordinates?.lat)?.toString() || "null",
+            auspost_lng: (request.service === 'lpo-to-site' ? request.customer?.coordinates?.lng : request.recipient?.coordinates?.lng)?.toString() || "null",
+            is_free_job: isFreeJob.toString()
           });
 
           try {
             const res = await fetch(`${NETSUITE_API}&${params.toString()}`);
             const data = await res.json();
-            console.log("NetSuite Script 2529 Response:", data);
+            console.log("NetSuite Script 2650 Response:", data);
           } catch (err) {
-            console.error("NetSuite Script 2529 Error:", err);
+            console.error("NetSuite Script 2650 Error:", err);
           }
         }
 
         // 1.6 Secondary NetSuite Sync (Confirmation)
-        const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2536&deploy=1&compid=1048144&ns-at=AAEJ7tMQhaB4QYR7Pw-EtSlrxcIMl2il8br6cxfmm6xmf7VP-1w";
+        const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2649&deploy=1&compid=1048144&ns-at=AAEJ7tMQX4gDftlZvyZi8scPrWJRKTOWGovx9I5Cz06qXdzpiRU";
         if (finalJobId) {
           setAcceptProgress(85);
           setAcceptStatus("Sending confirmation...");
-          const params2536 = new URLSearchParams({
+          const params2649 = new URLSearchParams({
             job_id: finalJobId,
             parent_id: parentId,
             customer_id: netsuiteCustomerId,
@@ -445,20 +474,32 @@ const RequestPage: React.FC = () => {
             firstName: request.customer?.firstName || "",
             service: request.service || "",
             date: request.date || "null",
-            frequency: request.jobType === 'scheduled' ? (request.frequency?.join(',') || "null") : "null"
+            frequency: request.jobType === 'scheduled' ? (request.frequency?.join(',') || "null") : "null",
+            service_pmpo_internal_id: request.servicePMPOInternalID || "null",
+            service_pmpo_rate: request.servicePMPORate || "null",
+            service_ampo_internal_id: request.serviceAMPOInternalID || "null",
+            service_ampo_rate: request.serviceAMPORate || "null",
+            service_h2h_internal_id: request.serviceH2HInternalID || "null",
+            service_h2h_rate: request.serviceH2HRate || "null",
+            auspost_first_name: request.auspostContact?.firstName || "null",
+            auspost_last_name: request.auspostContact?.lastName || "null",
+            auspost_phone: request.auspostContact?.phone || "null",
+            auspost_email: request.auspostContact?.email || "null",
+            auspost_company: (request.service === 'lpo-to-site' ? request.customer?.company : request.recipient?.company) || "null",
+            is_free_job: isFreeJob.toString()
           });
 
-          console.log("Triggering NetSuite 2536 with:", Object.fromEntries(params2536));
+          console.log("Triggering NetSuite 2649 with:", Object.fromEntries(params2649));
 
           try {
-            const res = await fetch(`${SECOND_NETSUITE_API}&${params2536.toString()}`);
+            const res = await fetch(`${SECOND_NETSUITE_API}&${params2649.toString()}`);
             const data = await res.json();
-            console.log("NetSuite Script 2536 Response:", data);
+            console.log("NetSuite Script 2649 Response:", data);
           } catch (err) {
-            console.error("NetSuite Script 2536 Error:", err);
+            console.error("NetSuite Script 2649 Error:", err);
           }
         } else {
-          console.warn("NetSuite 2536 not triggered: finalJobId is empty");
+          console.warn("NetSuite 2649 not triggered: finalJobId is empty");
         }
 
         // 2. Update Request Status
@@ -469,14 +510,11 @@ const RequestPage: React.FC = () => {
         });
 
         // Decrement trial balance for customer job requests
-        if (request.customer_id) {
+        if (isFreeJob && request.customer_id) {
           try {
-            const compDoc = await getDoc(doc(db, 'companies', request.customer_id));
-            if (compDoc.exists() && typeof compDoc.data().trial_credits_balance === 'number') {
-              await updateDoc(doc(db, 'companies', request.customer_id), {
-                trial_credits_balance: increment(-1)
-              });
-            }
+            await updateDoc(doc(db, 'companies', request.customer_id), {
+              trial_credits_balance: increment(-1)
+            });
           } catch (e) {
             console.error("Failed to decrement trial balance:", e);
           }
@@ -682,14 +720,6 @@ const RequestPage: React.FC = () => {
                    <button className="btn-reject" onClick={handleCancelRequest}>
                      <XCircle size={18} /> CANCEL REQUEST
                    </button>
-                   {request.status === 'new-time-proposed' && (
-                     <button className="btn-accept shadow-teal" onClick={handleAccept}>
-                        <div className="accept-content">
-                          <CheckCircle2 size={18} /> 
-                          <span>ACCEPT NEW TIME</span>
-                        </div>
-                     </button>
-                   )}
                  </>
                ) : (
                  <>
@@ -972,11 +1002,6 @@ const RequestPage: React.FC = () => {
                 <button className="btn-reject" style={{ width: '100%' }} onClick={handleCancelRequest}>
                   <XCircle size={18} /> CANCEL REQUEST
                 </button>
-                {request.status === 'new-time-proposed' && (
-                  <button className="btn-accept shadow-teal" onClick={handleAccept}>
-                    <CheckCircle2 size={18} /> ACCEPT NEW TIME
-                  </button>
-                )}
               </>
             ) : (
               <>

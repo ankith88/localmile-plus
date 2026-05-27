@@ -15,7 +15,6 @@ import {
   Mail,
   Database,
   Sparkles,
-  Calendar,
   Search,
   Circle
 } from 'lucide-react';
@@ -24,6 +23,8 @@ import { formatDateForInput, getDefaultBookingDate } from '../../utils/schedulin
 import { useLpo } from '../../context/LpoContext';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
 import { db, googleMapsApiKey } from '../../firebase/config';
+import CustomDatePicker from '../../components/CustomDatePicker';
+import CustomTimePicker from '../../components/CustomTimePicker';
 
 type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip';
 type BillingOption = 'customer' | 'lpo';
@@ -51,6 +52,12 @@ interface JobData {
   jobType: 'one-off' | 'scheduled';
   frequency: string[];
   preferredTime?: string;
+  auspostContact?: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    email?: string;
+  } | null;
 }
 
 const LIBRARIES: ("places" | "maps" | "routes" | "geometry")[] = ["places", "routes", "geometry"];
@@ -251,7 +258,8 @@ const NewJobForm: React.FC = () => {
     suburb: '',
     state: '',
     postcode: '',
-    coordinates: null as { lat: number, lng: number } | null
+    coordinates: null as { lat: number, lng: number } | null,
+    id: undefined as string | undefined
   });
 
   const [trialCredits, setTrialCredits] = useState<number | null>(null);
@@ -563,7 +571,8 @@ const NewJobForm: React.FC = () => {
       suburb: c.city || c.address?.suburb || c.suburb || '',
       state: c.state || c.address?.state || c.state || '',
       postcode: c.zip || c.address?.postcode || c.postcode || '',
-      coordinates: c.coordinates || null
+      coordinates: c.coordinates || null,
+      id: c.id
     });
     setSearchResults([]);
   };
@@ -766,7 +775,7 @@ const NewJobForm: React.FC = () => {
 
     placesServiceRef.current.getDetails({
       placeId: prediction.place_id,
-      fields: ['address_components', 'geometry']
+      fields: ['address_components', 'geometry', 'formatted_phone_number']
     }, (place, status) => {
       if (status === google.maps.places.PlacesServiceStatus.OK && place) {
         let streetNumber = '';
@@ -792,20 +801,47 @@ const NewJobForm: React.FC = () => {
         } : undefined;
 
         if (userData?.role === 'customer') {
+          const isAusPost = !hasH2H || (prediction.description || '').toLowerCase().includes('australia post');
+          
+          let additionalData = {};
+          if (isAusPost) {
+            additionalData = {
+              firstName: 'Australia',
+              lastName: 'Post',
+              phone: place.formatted_phone_number || '13 13 18',
+              email: 'no-reply@auspost.com.au'
+            };
+          }
+
           setRecipientData(prev => ({
             ...prev,
-            company: !hasH2H ? (place.name || 'Australia Post') : prev.company,
+            company: isAusPost ? (prediction.structured_formatting?.main_text || place.name || 'Australia Post') : prev.company,
             address: fullStreet,
             suburb: suburb,
             state: state,
             postcode: postcode,
-            coordinates: coordinates || null
+            coordinates: coordinates || null,
+            ...additionalData,
+            id: undefined
           }));
         } else {
+          const isAusPost = !hasH2H || (prediction.description || '').toLowerCase().includes('australia post');
+          let additionalData = {};
+          if (isAusPost) {
+            additionalData = {
+              firstName: 'Australia',
+              lastName: 'Post',
+              phone: place.formatted_phone_number || '13 13 18',
+              email: 'no-reply@auspost.com.au'
+            };
+          }
+
           setFormData(prev => ({
             ...prev,
+            auspostContact: isAusPost ? additionalData : null,
             customer: {
               ...prev.customer,
+              company: isAusPost ? (prediction.structured_formatting?.main_text || place.name || 'Australia Post') : prev.customer.company,
               address: fullStreet,
               suburb: suburb,
               state: state,
@@ -904,14 +940,17 @@ const NewJobForm: React.FC = () => {
   const handleSubmit = async () => {
     if (!parent && !customer && userData?.role !== 'customer') return;
 
-    if (userData?.role === 'customer' && !isExistingCustomer) {
+    let isFreeJob = false;
+    const companyIdForTrial = customer?.id || userData?.customer_id;
+    if (companyIdForTrial) {
       try {
-        const companyId = userData.customer_id;
-        if (companyId) {
-          const compDoc = await getDoc(doc(db, 'companies', companyId));
-          if (compDoc.exists()) {
-            const balance = compDoc.data().trial_credits_balance;
-            if (typeof balance === 'number' && balance <= 0) {
+        const compDoc = await getDoc(doc(db, 'companies', companyIdForTrial));
+        if (compDoc.exists()) {
+          const balance = compDoc.data().trial_credits_balance;
+          if (typeof balance === 'number') {
+            if (balance > 0) {
+              isFreeJob = true;
+            } else if (userData?.role === 'customer' && !isExistingCustomer) {
               setValidationError("You have no remaining trial credits. Please upgrade your account to book more jobs.");
               return;
             }
@@ -1016,6 +1055,28 @@ const NewJobForm: React.FC = () => {
       
       const initialRequestStatus = isActuallyActive ? 'pending' : 'awaiting-activation';
 
+      let conditionalServiceData = {};
+      if (userData?.role === 'customer' && companyData) {
+        const isAusPost = recipientData?.company?.toLowerCase().includes('australia post');
+        
+        if (formData.service === 'site-to-lpo' && isAusPost) {
+          conditionalServiceData = {
+            servicePMPOInternalID: companyData.servicePMPOInternalID || null,
+            servicePMPORate: companyData.servicePMPORate || null
+          };
+        } else if (formData.service === 'lpo-to-site' && isAusPost) {
+          conditionalServiceData = {
+            serviceAMPOInternalID: companyData.serviceAMPOInternalID || null,
+            serviceAMPORate: companyData.serviceAMPORate || null
+          };
+        } else {
+          conditionalServiceData = {
+            serviceH2HInternalID: companyData.serviceH2HInternalID || null,
+            serviceH2HRate: companyData.serviceH2HRate || null
+          };
+        }
+      }
+
       if (isEditing && requestId) {
         const cleanUpdate = JSON.parse(JSON.stringify({
           ...formData,
@@ -1024,7 +1085,17 @@ const NewJobForm: React.FC = () => {
           netsuiteCustomerId: nsResult.customerInternalId || formData.customer.netsuiteId || null,
           appJobGroupId: null,
           syncedWithNetSuite: null,
-          status: initialRequestStatus
+          status: initialRequestStatus,
+          auspostContact: userData?.role === 'customer' 
+            ? { 
+                firstName: recipientData.firstName || 'Australia', 
+                lastName: recipientData.lastName || 'Post', 
+                phone: recipientData.phone || '13 13 18', 
+                email: recipientData.email || 'no-reply@auspost.com.au'
+              } 
+            : formData.auspostContact,
+          is_free_job: isFreeJob,
+          ...conditionalServiceData
         }));
 
         const sysMessage = {
@@ -1053,7 +1124,17 @@ const NewJobForm: React.FC = () => {
           status: initialRequestStatus,
           skippedDates: [],
           recurrenceStatus: 'active',
-          chat: []
+          chat: [],
+          auspostContact: userData?.role === 'customer' 
+            ? { 
+                firstName: recipientData.firstName || 'Australia', 
+                lastName: recipientData.lastName || 'Post', 
+                phone: recipientData.phone || '13 13 18', 
+                email: recipientData.email || 'no-reply@auspost.com.au'
+              } 
+            : formData.auspostContact,
+          is_free_job: isFreeJob,
+          ...conditionalServiceData
         }));
 
         const requestPayload = {
@@ -1093,6 +1174,26 @@ const NewJobForm: React.FC = () => {
               });
             } catch (e) {
               console.error("Failed to save to address book:", e);
+            }
+          } else if (recipientData.id) {
+            try {
+              await updateDoc(doc(db, `companies/${userData.customer_id}/address_book`, recipientData.id), {
+                companyName: recipientData.company,
+                first_name: recipientData.firstName,
+                last_name: recipientData.lastName,
+                email: recipientData.email,
+                phone: recipientData.phone,
+                address: {
+                  street: recipientData.address,
+                  suburb: recipientData.suburb,
+                  state: recipientData.state,
+                  postcode: recipientData.postcode
+                },
+                coordinates: recipientData.coordinates || null,
+                updatedAt: serverTimestamp()
+              });
+            } catch (e) {
+              console.error("Failed to update address book:", e);
             }
           }
         }
@@ -1734,33 +1835,18 @@ const NewJobForm: React.FC = () => {
                     <div style={{ display: 'flex', gap: '16px', marginBottom: '8px' }}>
                       <div style={{ flex: 1 }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>BOOKING DATE</label>
-                        <div className="input-pill">
-                          <Calendar size={18} />
-                          <input 
-                            type="date"
-                            min={formatDateForInput(getDefaultBookingDate())}
-                            value={formData.date}
-                            onChange={(e) => setFormData({...formData, date: e.target.value})}
-                          />
-                        </div>
+                        <CustomDatePicker
+                          value={formData.date}
+                          onChange={(val) => setFormData({...formData, date: val})}
+                          min={formatDateForInput(getDefaultBookingDate())}
+                        />
                       </div>
                       <div style={{ flex: 2 }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>TIME CONSTRAINTS (OPTIONAL)</label>
-                        <div className="input-pill">
-                          <Clock size={18} />
-                          <select 
-                            value={formData.preferredTime || ''}
-                            onChange={(e) => setFormData({...formData, preferredTime: e.target.value})}
-                            style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: '1rem', color: 'var(--slate-800)', fontFamily: 'var(--font-heading)', cursor: 'pointer' }}
-                          >
-                            <option value="">Select time</option>
-                            <option value="Before 10:00 AM">Before 10:00 AM</option>
-                            <option value="Before 12:00 PM">Before 12:00 PM</option>
-                            <option value="After 12:00 PM">After 12:00 PM</option>
-                            <option value="After 2:00 PM">After 2:00 PM</option>
-                            <option value="After 4:00 PM">After 4:00 PM</option>
-                          </select>
-                        </div>
+                        <CustomTimePicker
+                          value={formData.preferredTime}
+                          onChange={(val) => setFormData({...formData, preferredTime: val})}
+                        />
                         <p style={{ fontSize: '0.85rem', color: 'var(--slate-500)', marginTop: '8px', lineHeight: 1.4 }}>
                           Are there any timing restrictions for this job? Leave blank if the operator can attend anytime during business hours.
                         </p>
@@ -1948,7 +2034,7 @@ const NewJobForm: React.FC = () => {
         .locked-group { pointer-events: none; margin-top: 8px; }
         .field-hint.mini { font-size: 0.7rem; margin-top: 8px; }
         .input-pill.full { grid-column: span 2; }
-        .input-pill input, .input-pill textarea { border: none; background: transparent; width: 100%; font-size: 0.95rem; color: var(--ink); font-weight: 500; }
+        .input-pill input, .input-pill textarea, .input-pill select { border: none; background: transparent; width: 100%; font-size: 0.95rem; color: var(--ink); font-weight: 500; outline: none; }
         .input-pill.area textarea { resize: none; margin-top: 8px; }
         .input-pill.read-only { background: var(--paper); }
         .lock-icon { color: var(--ink-soft); }
@@ -2092,6 +2178,9 @@ const NewJobForm: React.FC = () => {
         .floating-route-segment.searchable-segment .transparent-input::placeholder { color: rgba(255, 255, 255, 0.4); }
         .floating-route-segment.searchable-segment label { color: rgba(255, 255, 255, 0.8) !important; }
         .floating-route-segment.searchable-segment .hub-badge { background: rgba(255, 255, 255, 0.15); color: #EAF044; }
+        .floating-route-segment.searchable-segment .search-input-wrapper.bottom-border:focus-within { background: transparent !important; box-shadow: none !important; }
+        .floating-route-segment.searchable-segment .search-input-wrapper.bottom-border input { color: white !important; }
+        .floating-route-segment.searchable-segment .transparent-input { color: white !important; }
         .floating-route-connector { position: relative; height: 48px; display: flex; align-items: center; justify-content: center; z-index: 1; }
         .connector-line { position: absolute; top: -32px; bottom: -32px; width: 2px; background: linear-gradient(to bottom, transparent, #cbd5e1, transparent); left: 50%; transform: translateX(-50%); }
         .floating-swap-btn { position: relative; z-index: 3; width: 40px; height: 40px; border-radius: 50%; background: white; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; color: var(--ink); cursor: pointer; transition: all 0.2s; }

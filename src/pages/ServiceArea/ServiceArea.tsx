@@ -8,9 +8,10 @@ import {
   Layers,
   Search as SearchIcon
 } from 'lucide-react';
-import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Marker, Polygon } from '@react-google-maps/api';
 import { useLpo } from '../../context/LpoContext';
-import { googleMapsApiKey } from '../../firebase/config';
+import { db, googleMapsApiKey } from '../../firebase/config';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Hardcoded coordinates for common demo suburbs to ensure pins show up
 const COORDINATES_MAP: Record<string, { lat: number, lng: number }> = {
@@ -47,7 +48,7 @@ const mapStyles = [
 ];
 
 const ServiceArea: React.FC = () => {
-  const { parent } = useLpo();
+  const { parent, companyData } = useLpo();
   const [searchTerm, setSearchTerm] = useState('');
   const [hoveredSuburb, setHoveredSuburb] = useState<string | null>(null);
   
@@ -57,18 +58,40 @@ const ServiceArea: React.FC = () => {
   });
 
   const territories = useMemo(() => {
-    if (!parent?.franchiseeTerritoryJSON) return [];
+    // If the user context has companyData (they are acting as a customer), use that. Otherwise use parent.
+    let territoryJSON: any = companyData?.franchiseeTerritoryJSON || parent?.franchiseeTerritoryJSON;
+
+    if (!territoryJSON || (Array.isArray(territoryJSON) && territoryJSON.length === 0) || territoryJSON === '[]') {
+      return [];
+    }
     
     let rawData: any[] = [];
-    if (Array.isArray(parent.franchiseeTerritoryJSON)) {
-      rawData = parent.franchiseeTerritoryJSON;
-    } else {
+    if (Array.isArray(territoryJSON)) {
+      rawData = territoryJSON;
+    } else if (typeof territoryJSON === 'string') {
       try {
-        rawData = JSON.parse(parent.franchiseeTerritoryJSON);
+        let parsed = JSON.parse(territoryJSON);
+        if (typeof parsed === 'string') {
+          parsed = JSON.parse(parsed);
+        }
+        if (Array.isArray(parsed)) {
+          rawData = parsed;
+        } else {
+          // If it's an object, try wrapping it in array
+          rawData = [parsed];
+        }
       } catch (e) {
-        console.error("Failed to parse territory JSON", e);
-        return [];
+        console.error("JSON parse failed, trying regex fallback", e);
+        // Fallback: Extract everything in quotes
+        const matches = territoryJSON.match(/"([^"]+)"/g);
+        if (matches) {
+          rawData = matches.map(s => s.replace(/"/g, ''));
+        }
       }
+    }
+
+    if (!Array.isArray(rawData) || rawData.length === 0) {
+      return [];
     }
 
     return rawData.map(item => {
@@ -79,11 +102,13 @@ const ServiceArea: React.FC = () => {
         const restParts = rest.split(' ');
         const state = restParts[0] || '';
         const postcode = restParts[restParts.length - 1] || '';
+        const date = parts[2]?.trim() || '';
 
         return {
           suburb,
           state,
           postcode,
+          date,
           lat: COORDINATES_MAP[suburb.toUpperCase()]?.lat,
           lng: COORDINATES_MAP[suburb.toUpperCase()]?.lng,
         };
@@ -94,9 +119,140 @@ const ServiceArea: React.FC = () => {
         lng: item.lng || COORDINATES_MAP[item.suburb.toUpperCase()]?.lng,
       };
     });
-  }, [parent]);
+  }, [parent, companyData]);
 
-  const filteredTerritories = territories.filter(t => 
+  const [geocodedTerritories, setGeocodedTerritories] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    if (!isLoaded || !window.google || territories.length === 0) {
+      setGeocodedTerritories(territories);
+      return;
+    }
+
+    let isMounted = true;
+    const geocoder = new window.google.maps.Geocoder();
+    
+    const geocodeMissing = async () => {
+      const updated = [...territories];
+      let changed = false;
+
+      for (let i = 0; i < updated.length; i++) {
+        if (!updated[i].lat || !updated[i].lng || !updated[i].boundaryPaths) {
+          const address = `${updated[i].suburb}, ${updated[i].state} ${updated[i].postcode}`;
+          // Create safe document ID (e.g. EASTLAKES_NSW_2018)
+          const cacheDocId = address.toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+          
+          let cacheHit = false;
+
+          try {
+            // Check cache first
+            const cacheRef = doc(db, 'suburb_boundaries', cacheDocId);
+            const cacheDoc = await getDoc(cacheRef);
+            
+            if (cacheDoc.exists()) {
+              const data = cacheDoc.data();
+              updated[i].lat = data.lat;
+              updated[i].lng = data.lng;
+              updated[i].boundaryPaths = data.boundaryPaths;
+              cacheHit = true;
+              changed = true;
+            }
+          } catch (e) {
+            console.error("Cache read failed", e);
+          }
+
+          if (!cacheHit) {
+            // First, get Google coordinates
+            if (!updated[i].lat || !updated[i].lng) {
+              try {
+                const results = await new Promise<google.maps.GeocoderResult[]>((resolve) => {
+                  geocoder.geocode({ address }, (res, status) => {
+                    if (status === 'OK' && res) resolve(res);
+                    else resolve([]);
+                  });
+                });
+                if (results && results.length > 0) {
+                  updated[i].lat = results[0].geometry.location.lat();
+                  updated[i].lng = results[0].geometry.location.lng();
+                }
+              } catch (e) {
+                console.error("Geocoding failed for", address, e);
+              }
+            }
+
+            // Then, get boundary from Nominatim
+            if (!updated[i].boundaryPaths) {
+              try {
+                const nomRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&polygon_geojson=1`);
+                const nomData = await nomRes.json();
+                
+                if (nomData && nomData.length > 0 && nomData[0].geojson) {
+                  const geojson = nomData[0].geojson;
+                  let paths: any[] = [];
+                  
+                  if (geojson.type === 'Polygon') {
+                    paths = [geojson.coordinates[0].map((coord: any) => ({ lat: parseFloat(coord[1]), lng: parseFloat(coord[0]) }))];
+                  } else if (geojson.type === 'MultiPolygon') {
+                    paths = geojson.coordinates.map((poly: any) => 
+                      poly[0].map((coord: any) => ({ lat: parseFloat(coord[1]), lng: parseFloat(coord[0]) }))
+                    );
+                  }
+                  
+                  if (paths.length > 0) {
+                    updated[i].boundaryPaths = paths;
+                  }
+                }
+              } catch (e) {
+                console.error("Boundary fetch failed for", address, e);
+              }
+              
+              // Save to cache for future
+              if (updated[i].lat && updated[i].lng && updated[i].boundaryPaths) {
+                try {
+                  await setDoc(doc(db, 'suburb_boundaries', cacheDocId), {
+                    lat: updated[i].lat,
+                    lng: updated[i].lng,
+                    boundaryPaths: updated[i].boundaryPaths,
+                    address
+                  });
+                } catch(e) {
+                  console.error("Cache write failed", e);
+                }
+              }
+
+              // Required 1-second delay for Nominatim Usage Policy
+              await new Promise(r => setTimeout(r, 1100));
+            } else {
+              // Small delay for Google API rate limit if only geocoding was done
+              await new Promise(r => setTimeout(r, 200));
+            }
+            
+            changed = true;
+          }
+          
+          // Update state incrementally so user sees boundaries appearing
+          if (isMounted && changed) {
+            setGeocodedTerritories([...updated]);
+            changed = false;
+          }
+        }
+      }
+      
+      if (isMounted && changed) {
+        setGeocodedTerritories(updated);
+      } else if (isMounted && !changed) {
+        setGeocodedTerritories(territories);
+      }
+    };
+    
+    geocodeMissing();
+    
+    return () => { isMounted = false; };
+  }, [territories, isLoaded]);
+
+  const displayTerritories = geocodedTerritories.length > 0 ? geocodedTerritories : territories;
+
+  const filteredTerritories = displayTerritories.filter(t => 
     t.suburb.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.postcode.includes(searchTerm)
   );
@@ -116,6 +272,15 @@ const ServiceArea: React.FC = () => {
         <div className="blob blob-2"></div>
         <div className="blob blob-3"></div>
       </div>
+      
+      {/* Temporary Debug output for diagnostic purposes */}
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 9999, background: 'rgba(0,0,0,0.8)', color: '#0f0', padding: 10, fontSize: '10px', borderRadius: 4, maxWidth: 350, wordBreak: 'break-all' }}>
+        <p>Has Parent: {parent ? 'Yes' : 'No'}</p>
+        <p>Has Company: {companyData ? 'Yes' : 'No'}</p>
+        <p>Parsed Territories: {territories.length}</p>
+        <p>Display Territories: {displayTerritories.length}</p>
+        <p>Raw Input: {JSON.stringify(companyData?.franchiseeTerritoryJSON || parent?.franchiseeTerritoryJSON)}</p>
+      </div>
 
       <div className="split-layout">
         {/* Left Panel: Content & List */}
@@ -125,7 +290,7 @@ const ServiceArea: React.FC = () => {
               <Navigation size={14} /> COVERAGE MAP
             </div>
             <h1>Service Areas</h1>
-            <p>Managing service availability across <strong>{territories.length}</strong> active regions within your service territory.</p>
+            <p>Managing service availability across <strong>{displayTerritories.length}</strong> active regions within your service territory.</p>
 
             <div className="search-pill">
               <SearchIcon size={18} />
@@ -151,6 +316,7 @@ const ServiceArea: React.FC = () => {
                   <div className="card-meta">
                     <span className="state-tag">{t.state}</span>
                     <span className="postcode-tag">{t.postcode}</span>
+                    {t.date && <span className="date-tag">{t.date}</span>}
                   </div>
                 </div>
                 <div className="active-badge">ACTIVE</div>
@@ -192,16 +358,31 @@ const ServiceArea: React.FC = () => {
                   gestureHandling: 'greedy'
                 }}
               >
-                {territories.map((t, index) => (
-                  t.lat && t.lng && (
-                    <Marker 
-                      key={index} 
-                      position={{ lat: t.lat, lng: t.lng }}
-                      title={t.suburb}
-                      opacity={hoveredSuburb && hoveredSuburb !== t.suburb ? 0.4 : 1}
-                      animation={hoveredSuburb === t.suburb ? google.maps.Animation.BOUNCE : undefined}
-                    />
-                  )
+                {displayTerritories.map((t, index) => (
+                  <React.Fragment key={index}>
+                    {t.boundaryPaths && t.boundaryPaths.map((path: any, pIdx: number) => (
+                      <Polygon
+                        key={`poly-${index}-${pIdx}`}
+                        paths={path}
+                        options={{
+                          fillColor: hoveredSuburb === t.suburb ? '#C99E5C' : '#1A3D33',
+                          fillOpacity: hoveredSuburb === t.suburb ? 0.4 : 0.15,
+                          strokeColor: hoveredSuburb === t.suburb ? '#C99E5C' : '#1A3D33',
+                          strokeOpacity: 0.8,
+                          strokeWeight: 2,
+                          clickable: false
+                        }}
+                      />
+                    ))}
+                    {t.lat && t.lng && (
+                      <Marker 
+                        position={{ lat: t.lat, lng: t.lng }}
+                        title={t.suburb}
+                        opacity={hoveredSuburb && hoveredSuburb !== t.suburb ? 0.4 : 1}
+                        animation={hoveredSuburb === t.suburb ? google.maps.Animation.BOUNCE : undefined}
+                      />
+                    )}
+                  </React.Fragment>
                 ))}
               </GoogleMap>
               
@@ -397,6 +578,17 @@ const ServiceArea: React.FC = () => {
           font-weight: 500;
           color: var(--ink);
           background: var(--cream-warm);
+          padding: 2px 8px;
+          border-radius: 6px;
+          letter-spacing: 0.05em;
+        }
+
+        .date-tag {
+          font-family: var(--font-ui);
+          font-size: 0.7rem;
+          font-weight: 500;
+          color: var(--ink-soft);
+          background: rgba(0,0,0,0.05);
           padding: 2px 8px;
           border-radius: 6px;
           letter-spacing: 0.05em;

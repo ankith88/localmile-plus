@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useLpo } from '../context/LpoContext';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../firebase/config';
 
 const TermsAndConditionsModal: React.FC = () => {
   const { userData, updateUserData } = useLpo();
@@ -19,17 +21,28 @@ const TermsAndConditionsModal: React.FC = () => {
       // NetSuite API call
       const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2651&deploy=1&compid=1048144&ns-at=AAEJ7tMQw7tByDrNz9mBKJClYrkviPQk8RDvPIPPvfM4H6eU7vo";
       const customerId = userData.customer_id || "";
+      const url = `${NETSUITE_API}&customer_id=${encodeURIComponent(customerId)}`;
       
-      const response = await fetch(`${NETSUITE_API}&customer_id=${encodeURIComponent(customerId)}`);
+      const callNetSuite = httpsCallable(functions, 'callNetSuiteProxy');
+      const response = await callNetSuite({ url });
       
-      if (!response.ok) {
-        throw new Error(`NetSuite API error: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
+      let data = response.data as any;
       console.log("NetSuite T&C Acceptance Sync:", data);
 
-      if (data.success === true && data.message === "Status Updated Successfully") {
+      // Handle the case where our backend had to pass back raw text
+      if (data && typeof data._rawText === 'string') {
+        try {
+          data = JSON.parse(data._rawText.trim());
+        } catch(e) {
+          // ignore
+        }
+      }
+
+      if (
+        (data.success === true || data.success === "true") && 
+        data.message && 
+        data.message.includes("Status Updated Successfully")
+      ) {
         // Update user metadata in Firestore only on success
         await updateUserData({ hasAcceptedTC: true });
       } else {
@@ -37,8 +50,8 @@ const TermsAndConditionsModal: React.FC = () => {
       }
 
     } catch (err) {
-      console.error("Error accepting Terms and Conditions:", err);
-      setError("An error occurred while accepting the Terms and Conditions. Please try again.");
+      console.error("Error accepting Terms & Conditions:", err);
+      setError("An error occurred while accepting the Terms & Conditions. Please try again.");
     } finally {
       setIsAccepting(false);
     }
@@ -47,9 +60,9 @@ const TermsAndConditionsModal: React.FC = () => {
   return (
     <div className="tc-modal-overlay">
       <div className="tc-modal-content">
-        <h2>Welcome to LocalMile.Plus</h2>
+        <h2>Welcome to LocalMile</h2>
         <p>
-          Before you can start using the application, you must review and accept our Terms and Conditions.
+          Before you can start using the application, you must review and accept our Terms & Conditions.
         </p>
         <a 
           href="https://mailplus.com.au/terms-conditions/" 
@@ -57,7 +70,7 @@ const TermsAndConditionsModal: React.FC = () => {
           rel="noopener noreferrer"
           className="tc-link"
         >
-          Read Terms and Conditions
+          Read Terms & Conditions
         </a>
         
         {error && <div className="tc-error">{error}</div>}
@@ -67,7 +80,7 @@ const TermsAndConditionsModal: React.FC = () => {
           disabled={isAccepting}
           className="tc-accept-btn"
         >
-          {isAccepting ? 'Accepting...' : 'Accept Terms and Conditions'}
+          {isAccepting ? 'Accepting...' : 'Accept Terms & Conditions'}
         </button>
       </div>
 

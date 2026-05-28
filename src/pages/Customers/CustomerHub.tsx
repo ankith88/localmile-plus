@@ -23,7 +23,7 @@ import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
 
 const CustomerHub: React.FC = () => {
-  const { parent, isAdmin, allParents, selectedParentId, setSelectedParentId, userData } = useLpo();
+  const { parent, isAdmin, allParents, selectedParentId, setSelectedParentId, userData, companyData } = useLpo();
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,6 +35,14 @@ const CustomerHub: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [cancellingCustomer, setCancellingCustomer] = useState<any | null>(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+
+  const handleBookJob = (url = '/new-job') => {
+    if (userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435')) {
+       alert("The MailPlus team is working to get the account setup. You will be notified once done.");
+       return;
+    }
+    window.location.href = url;
+  };
 
   useEffect(() => {
     const fetchCustomers = async () => {
@@ -211,7 +219,7 @@ const CustomerHub: React.FC = () => {
                   className="lpo-select-custom"
                 />
               )}
-              <button className="btn-premium-action" onClick={() => window.location.href = '/new-job'}>
+              <button className="btn-premium-action" onClick={() => handleBookJob()}>
                 <Plus size={20} />
                 <span>{userData?.role === 'customer' ? 'BOOK NEW JOB' : 'NEW JOB FOR CUSTOMER'}</span>
               </button>
@@ -391,7 +399,7 @@ const CustomerHub: React.FC = () => {
                              <span>{customer.lastJobDate ? (customer.lastJobDate.includes('-') ? customer.lastJobDate.split('-').reverse().join('/') : new Date(customer.lastJobDate).toLocaleDateString()) : 'N/A'}</span>
                             </div>
                          </div>
-                         <button className="view-details" onClick={() => window.location.href = `/new-job?rebook=true&customerId=${customer.id}`} title="Book New Job">
+                         <button className="view-details" onClick={() => handleBookJob(`/new-job?rebook=true&customerId=${customer.id}`)} title="Book New Job">
                             <Plus size={18} />
                          </button>
                       </div>

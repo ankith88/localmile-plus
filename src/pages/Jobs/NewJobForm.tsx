@@ -1275,6 +1275,23 @@ const NewJobForm: React.FC = () => {
     }
   };
 
+  if (userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435')) {
+     return (
+        <div className="new-job-premium" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '20px' }}>
+             <div className="glass-card empty-state" style={{ padding: '60px 40px', textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
+                <div className="empty-icon" style={{ background: 'var(--brand-blue)', color: 'white', margin: '0 auto 24px', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Lock size={40} /></div>
+                <h2 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginBottom: '16px' }}>Account Setup in Progress</h2>
+                <p style={{ fontSize: '16px', color: 'var(--ink)', opacity: 0.8, maxWidth: '500px', margin: '0 auto 32px' }}>
+                  The MailPlus team is working to get the account setup. You will be notified once done.
+                </p>
+                <button onClick={() => window.location.href = '/dashboard'} className="btn-primary-glass">
+                  Return to Dashboard
+                </button>
+             </div>
+        </div>
+     );
+  }
+
   return (
     <div className="new-job-premium">
       <div className="mesh-bg">

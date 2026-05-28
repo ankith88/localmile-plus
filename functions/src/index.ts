@@ -585,7 +585,7 @@ export const sendEmailFromNetSuite = onRequest({
 });
 
 // Logic: callNetSuite
-export const callNetSuite = onCall(async (request) => {
+export const callNetSuiteProxy = onCall({ invoker: "public" }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
   }
@@ -598,8 +598,15 @@ export const callNetSuite = onCall(async (request) => {
   console.log(`Calling NetSuite URL: ${url}`);
   try {
     const response = await fetch(url);
-    const result = await response.json();
-    return result;
+    const text = await response.text();
+    try {
+      const result = JSON.parse(text.trim());
+      return result;
+    } catch (e) {
+      console.warn("NetSuite Proxy JSON parse warning:", e, "Raw text:", text);
+      // If it's not valid JSON but it's not an HTTP error, we can return the text directly
+      return { _rawText: text };
+    }
   } catch (error) {
     console.error("NetSuite Proxy Error:", error);
     throw new HttpsError("internal", "Failed to communicate with NetSuite API.");
@@ -2522,6 +2529,60 @@ apiApp.post("/api/v1/accounts/recreate-code", async (req: express.Request, res: 
 
   } catch (error: any) {
     console.error("Recreate Code API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.patch("/api/v1/companies/:companyId", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Companies Update API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    let payload = req.body;
+
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required param: companyId" });
+      return;
+    }
+
+    if (payload && payload.fields) {
+      const flat: Record<string, any> = {};
+      for (const [key, valueObj] of Object.entries(payload.fields)) {
+        const val = valueObj as any;
+        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ?? 
+                    (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
+      }
+      payload = flat;
+    }
+
+    if (!payload || Object.keys(payload).length === 0) {
+      res.status(400).send({ success: false, message: "Empty payload provided" });
+      return;
+    }
+
+    const db = getDB();
+    const companyRef = db.collection("companies").doc(String(companyId));
+    
+    const doc = await companyRef.get();
+    if (!doc.exists) {
+      res.status(404).send({ success: false, message: "Company not found" });
+      return;
+    }
+
+    await companyRef.update(payload);
+
+    res.status(200).send({
+      success: true,
+      message: "Company updated successfully."
+    });
+
+  } catch (error: any) {
+    console.error("Companies Update API Error:", error);
     res.status(500).send({ success: false, message: error.message });
   }
 });

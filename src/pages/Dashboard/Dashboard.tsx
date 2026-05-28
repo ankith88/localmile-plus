@@ -38,7 +38,7 @@ import CustomSelect from '../../components/CustomSelect';
 
 
 const Dashboard: React.FC = () => {
-  const { parent, customer, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
+  const { parent, customer, isAdmin, selectedParentId, setSelectedParentId, allParents, userData, companyData } = useLpo();
   const [jobs, setJobs] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -76,6 +76,14 @@ const Dashboard: React.FC = () => {
       newExpanded.add(jobId);
     }
     setExpandedJobIds(newExpanded);
+  };
+
+  const handleBookJob = (url = '/new-job') => {
+    if (userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435')) {
+       alert("The MailPlus team is working to get the account setup. You will be notified once done.");
+       return;
+    }
+    window.location.href = url;
   };
 
   useEffect(() => {
@@ -281,7 +289,7 @@ const Dashboard: React.FC = () => {
 
   const handleRebook = (job: any) => {
     localStorage.setItem('rebook_draft', JSON.stringify(job));
-    window.location.href = '/new-job?rebook=true';
+    handleBookJob('/new-job?rebook=true');
   };
 
   const handleDelete = async (id: string) => {
@@ -369,7 +377,7 @@ const Dashboard: React.FC = () => {
 
   const handleEditRequest = (request: any) => {
     localStorage.setItem('edit_request_draft', JSON.stringify(request));
-    window.location.href = `/new-job?edit=true&id=${request.id}`;
+    handleBookJob(`/new-job?edit=true&id=${request.id}`);
   };
 
   const getServiceIcon = (type: string) => {
@@ -416,7 +424,7 @@ const Dashboard: React.FC = () => {
               </div>
            </div>
            <div className="header-right">
-              <button onClick={() => window.location.href = '/new-job'} className="btn-premium-action" id="tour-new-job">
+              <button onClick={() => handleBookJob()} className="btn-premium-action" id="tour-new-job">
                 <Plus size={20} />
                 <span>BOOK NEW JOB</span>
               </button>
@@ -587,7 +595,7 @@ const Dashboard: React.FC = () => {
                    <div className="empty-icon"><Layers size={48} /></div>
                    <h3>No Active Jobs Found</h3>
                    <p>Your manifest is currently empty. Start by booking a new job.</p>
-                   <button onClick={() => window.location.href = '/new-job'} className="btn-primary-glass">
+                   <button onClick={() => handleBookJob()} className="btn-primary-glass">
                      BOOK YOUR FIRST JOB
                    </button>
                  </div>

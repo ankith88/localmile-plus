@@ -23,7 +23,8 @@ import {
   User,
   Mail,
   Phone,
-  Repeat
+  Repeat,
+  Lock
 } from 'lucide-react';
 import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
@@ -67,6 +68,8 @@ const Dashboard: React.FC = () => {
   // Cancellation Modal State
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [selectedJobForCancel, setSelectedJobForCancel] = useState<any>(null);
+
+  const isRestricted = userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435');
 
   const toggleExpand = (jobId: string) => {
     const newExpanded = new Set(expandedJobIds);
@@ -430,6 +433,20 @@ const Dashboard: React.FC = () => {
               </button>
            </div>
         </header>
+
+        {isRestricted && (
+          <div style={{ background: 'rgba(232, 28, 46, 0.1)', border: '1px solid var(--brand-red)', borderRadius: '12px', padding: '16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ background: 'var(--brand-red)', color: 'white', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Lock size={20} />
+            </div>
+            <div>
+              <h3 style={{ margin: '0 0 4px 0', color: 'var(--ink)', fontSize: '16px', fontWeight: 600 }}>Account Setup in Progress</h3>
+              <p style={{ margin: 0, color: 'var(--ink)', opacity: 0.8, fontSize: '14px' }}>
+                The MailPlus team is working in the background to get your account ready. You will receive an email once ready.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="dashboard-grid">
            {/* Stats Section */}

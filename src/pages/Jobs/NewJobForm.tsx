@@ -1275,22 +1275,7 @@ const NewJobForm: React.FC = () => {
     }
   };
 
-  if (userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435')) {
-     return (
-        <div className="new-job-premium" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '20px' }}>
-             <div className="glass-card empty-state" style={{ padding: '60px 40px', textAlign: 'center', maxWidth: '600px', margin: '0 auto' }}>
-                <div className="empty-icon" style={{ background: 'var(--brand-blue)', color: 'white', margin: '0 auto 24px', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Lock size={40} /></div>
-                <h2 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginBottom: '16px' }}>Account Setup in Progress</h2>
-                <p style={{ fontSize: '16px', color: 'var(--ink)', opacity: 0.8, maxWidth: '500px', margin: '0 auto 32px' }}>
-                  The MailPlus team is working to get the account setup. You will be notified once done.
-                </p>
-                <button onClick={() => window.location.href = '/dashboard'} className="btn-primary-glass">
-                  Return to Dashboard
-                </button>
-             </div>
-        </div>
-     );
-  }
+  const isRestricted = userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435');
 
   return (
     <div className="new-job-premium">
@@ -1407,15 +1392,31 @@ const NewJobForm: React.FC = () => {
               )}
             </header>
 
-            <div className="step-tracker">
-              {[1, 2].map((s) => (
-                <div key={s} className={`step-item ${step === s ? 'active' : step > s ? 'completed' : ''}`}>
-                  <div className="step-circle">{step > s ? <CheckCircle2 size={16} /> : s}</div>
-                  <span className="step-label">{s === 1 ? 'Route & Address' : 'Map & Quote'}</span>
-                  {s < 2 && <div className="step-connector"></div>}
+            {isRestricted && (
+              <div style={{ background: 'rgba(232, 28, 46, 0.1)', border: '1px solid var(--brand-red)', borderRadius: '12px', padding: '16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ background: 'var(--brand-red)', color: 'white', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Lock size={20} />
                 </div>
-              ))}
-            </div>
+                <div>
+                  <h3 style={{ margin: '0 0 4px 0', color: 'var(--ink)', fontSize: '16px', fontWeight: 600 }}>Account Setup in Progress</h3>
+                  <p style={{ margin: 0, color: 'var(--ink)', opacity: 0.8, fontSize: '14px' }}>
+                    The MailPlus team is working in the background to get your account ready. You will receive an email once ready.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!isRestricted && (
+              <>
+                <div className="step-tracker">
+                  {[1, 2].map((s) => (
+                    <div key={s} className={`step-item ${step === s ? 'active' : step > s ? 'completed' : ''}`}>
+                      <div className="step-circle">{step > s ? <CheckCircle2 size={16} /> : s}</div>
+                      <span className="step-label">{s === 1 ? 'Route & Address' : 'Map & Quote'}</span>
+                      {s < 2 && <div className="step-connector"></div>}
+                    </div>
+                  ))}
+                </div>
 
             <div className={`step-container ${animating ? 'fade-out' : 'fade-in'}`}>
               {step === 1 && (
@@ -1969,6 +1970,8 @@ const NewJobForm: React.FC = () => {
                 </div>
               )}
             </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -2253,6 +2256,7 @@ const NewJobForm: React.FC = () => {
         .search-input-wrapper:focus-within { background: white; border-color: var(--ink); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
 
       `}</style>
+
     </div>
   );
 };

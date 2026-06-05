@@ -60,7 +60,7 @@ const logCommunication = async (data: {
       const cid = metadata.customerId;
       const cidStr = cid.toString();
       const cidNum = parseInt(cidStr);
-      
+
       let custData: any = null;
 
       if (metadata.parentId) {
@@ -104,11 +104,11 @@ const injectMetadataTag = (html: string, metadata: any) => {
   return html + tag;
 };
 
-// Logic: onJobRequestCreated (Email Automation)
+// Logic: onJobRequestCreated (Email Automation / ProspectPlus Integration)
 export const onJobRequestCreated = onDocumentCreated({
   document: "requests/{requestId}",
   database: "(default)",
-  secrets: [gmailAppPassword],
+  secrets: [gmailAppPassword, prospectplusApiKey],
 }, async (event) => {
   const snapshot = event.data;
   const requestId = event.params.requestId;
@@ -118,10 +118,64 @@ export const onJobRequestCreated = onDocumentCreated({
     console.error(`[Trigger Error] No snapshot data for request ${requestId}`);
     return;
   }
-  // const data = snapshot.data();
+  
+  const afterData = snapshot.data();
+  if (!afterData) return;
+
+  const uid = afterData.uid;
+  const db = getDB();
+  let leadId = afterData.customer_id;
+
+  if (!leadId && uid) {
+    try {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists) {
+        leadId = userDoc.data()?.customer_id;
+      }
+    } catch (err) {
+      console.error("[onJobRequestCreated] Error getting user customer_id:", err);
+    }
+  }
+
+  if (leadId) {
+    const pickupStop = afterData.stops?.find((s: any) => s.type === "pickup");
+    const deliveryStop = afterData.stops?.find((s: any) => s.type === "delivery");
+    const pickupSuburb = pickupStop?.suburb || "";
+    const deliverySuburb = deliveryStop?.suburb || "";
+    const price = afterData.serviceRate || (afterData.service === "round-trip" ? "20.00" : "10.00");
+
+    console.log(`[onJobRequestCreated] Job created for leadId ${leadId}. Pushing to ProspectPlus API...`);
+    try {
+      const response = await fetch(`https://prospectplus.com.au/api/localmile/jobs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+          leadId,
+          jobId: requestId,
+          service: afterData.service || "Outgoing Mail Lodgement",
+          pickupSuburb,
+          deliverySuburb,
+          price
+        })
+      });
+
+      if (!response.ok) {
+        console.error("[onJobRequestCreated] Failed to push created job:", await response.text());
+      } else {
+        console.log(`[onJobRequestCreated] Successfully logged created job for leadId ${leadId}`);
+      }
+    } catch (error) {
+      console.error("[onJobRequestCreated] Error pushing created job:", error);
+    }
+  } else {
+    console.warn(`[onJobRequestCreated] No leadId found for job request ${requestId}. Skipping ProspectPlus API call.`);
+  }
 
   /*
-    const customerEmail = data.customer?.email;
+    const customerEmail = afterData.customer?.email;
     const companyName = data.customer?.company || "Unknown Company";
     const firstName = data.customer?.firstName || "there";
     const serviceType = data.service || "Standard Service";
@@ -305,6 +359,113 @@ export const onJobRequestCreated = onDocumentCreated({
       }
     }
   */
+});
+
+// Logic: onJobStatusChangedForLeadUpdate
+export const onJobStatusChangedForLeadUpdate = onDocumentUpdated({
+  document: "requests/{requestId}",
+  database: "(default)",
+  secrets: [prospectplusApiKey],
+}, async (event) => {
+  const afterData = event.data?.after.data();
+  const beforeData = event.data?.before.data();
+
+  if (!afterData || !beforeData) return;
+
+  const statusAfter = afterData.status;
+  const statusBefore = beforeData.status;
+
+  const targetStatuses = ["completed", "in-progress", "in progress"];
+  const becameTargetStatus = targetStatuses.includes(statusAfter) && !targetStatuses.includes(statusBefore);
+
+  if (becameTargetStatus) {
+    const uid = afterData.uid;
+    if (!uid) return;
+
+    const db = getDB();
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) return;
+
+    const userData = userDoc.data();
+    if (userData?.role !== "customer") return;
+    if (userData?.leadBucketUpdated) return; // Prevent duplicate calls for subsequent jobs
+
+    // Mark as updated so future jobs won't trigger this again for the same user
+    await userRef.update({ leadBucketUpdated: true });
+
+    const leadId = userData.customer_id || afterData.customer_id;
+    if (!leadId) {
+      console.warn(`[Lead Update] No leadId found for user ${uid}. Skipping API call.`);
+      return;
+    }
+
+    console.log(`[Lead Update] 1st job for customer ${uid} reached ${statusAfter}. Calling ProspectPlus API for lead ${leadId}.`);
+
+    try {
+      const response = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+          bucket: "Account Manager"
+        })
+      });
+
+      if (!response.ok) {
+        console.error("[Lead Update] Failed to update lead bucket:", await response.text());
+      } else {
+        console.log(`[Lead Update] Successfully updated lead bucket for leadId ${leadId}`);
+      }
+    } catch (error) {
+      console.error("[Lead Update] Error updating lead bucket:", error);
+    }
+  }
+
+  // Push completed jobs to ProspectPlus API to decrement LocalMile Trials Remaining
+  if (statusAfter === "completed" && statusBefore !== "completed") {
+    const uid = afterData.uid;
+    const db = getDB();
+    let leadId = afterData.customer_id;
+
+    if (!leadId && uid) {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists) {
+        leadId = userDoc.data()?.customer_id;
+      }
+    }
+
+    if (leadId) {
+      console.log(`[Trial Tracking] Job completed for leadId ${leadId}. Pushing to ProspectPlus API...`);
+      try {
+        const response = await fetch(`https://prospectplus.com.au/api/localmile/jobs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": prospectplusApiKey.value()
+          },
+          body: JSON.stringify({
+            leadId,
+            jobId: event.params.requestId,
+            status: statusAfter,
+            service: afterData.service || "Outgoing Mail Lodgement",
+            completedAt: new Date().toISOString()
+          })
+        });
+
+        if (!response.ok) {
+          console.error("[Trial Tracking] Failed to push completed job:", await response.text());
+        } else {
+          console.log(`[Trial Tracking] Successfully logged completed job for leadId ${leadId}`);
+        }
+      } catch (error) {
+        console.error("[Trial Tracking] Error pushing completed job:", error);
+      }
+    }
+  }
 });
 
 // Logic: onCustomerActive
@@ -1705,7 +1866,7 @@ async function fetchDailyJobReportData(statuses: string[]) {
     allDocs.push(...requestsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, docSource: 'requests' })));
   }
 
-  const jobsData = [];
+  const jobsData: any[] = [];
   const lpoCache: { [key: string]: string } = {};
   const customerCache: { [key: string]: any } = {};
 
@@ -1726,7 +1887,7 @@ async function fetchDailyJobReportData(statuses: string[]) {
     if (!franchisee || franchisee === "N/A") {
       const parentId = data.parent_id;
       const cid = data.netsuiteCustomerId || data.customer?.netsuiteId || data.customerId;
-      
+
       if (parentId && cid) {
         const cacheKey = `${parentId}_${cid}`;
         if (customerCache[cacheKey]) {
@@ -1736,7 +1897,7 @@ async function fetchDailyJobReportData(statuses: string[]) {
             const cidStr = cid.toString();
             const cidNum = parseInt(cidStr);
             const custQuery = db.collection("lpo").doc(parentId).collection("customers");
-            
+
             let custSnap = await custQuery.where("companyId", "in", [cidStr, cidNum]).limit(1).get();
             if (custSnap.empty) {
               custSnap = await custQuery.where("customerInternalId", "in", [cidStr, cidNum]).limit(1).get();
@@ -2279,19 +2440,19 @@ export const verifyAddressServiceability = onCall({ invoker: "public" }, async (
     throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
   }
 
-  const { 
-    street, 
-    suite, 
-    city, 
-    state, 
-    zip, 
-    companyName, 
-    parentId, 
-    payment, 
-    firstName, 
-    lastName, 
-    email, 
-    phone 
+  const {
+    street,
+    suite,
+    city,
+    state,
+    zip,
+    companyName,
+    parentId,
+    payment,
+    firstName,
+    lastName,
+    email,
+    phone
   } = request.data;
 
   if (!street || !city || !state || !zip || !firstName || !lastName || !email || !phone) {
@@ -2366,14 +2527,14 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
 
   try {
     let payload = req.body;
-    
+
     // Normalize Firestore document format if wrapped in "fields"
     if (payload && payload.fields) {
       const flat: Record<string, any> = {};
       for (const [key, valueObj] of Object.entries(payload.fields)) {
         const val = valueObj as any;
-        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ?? 
-                    (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
+        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ??
+          (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
       }
       payload = flat;
     }
@@ -2390,7 +2551,7 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
     // 2. Auth Provisioning
     const randomPassword = crypto.randomBytes(16).toString("hex") + "Aa1!";
     let authUser;
-    
+
     try {
       authUser = await admin.auth().getUserByEmail(userEmail);
     } catch (error: any) {
@@ -2554,8 +2715,8 @@ apiApp.patch("/api/v1/companies/:companyId", async (req: express.Request, res: e
       const flat: Record<string, any> = {};
       for (const [key, valueObj] of Object.entries(payload.fields)) {
         const val = valueObj as any;
-        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ?? 
-                    (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
+        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ??
+          (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
       }
       payload = flat;
     }
@@ -2567,7 +2728,7 @@ apiApp.patch("/api/v1/companies/:companyId", async (req: express.Request, res: e
 
     const db = getDB();
     const companyRef = db.collection("companies").doc(String(companyId));
-    
+
     const doc = await companyRef.get();
     if (!doc.exists) {
       res.status(404).send({ success: false, message: "Company not found" });
@@ -2583,6 +2744,160 @@ apiApp.patch("/api/v1/companies/:companyId", async (req: express.Request, res: e
 
   } catch (error: any) {
     console.error("Companies Update API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== prospectplusApiKey.value()) {
+    console.warn("Unauthorized attempt to call Scheduled Jobs API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required param: companyId" });
+      return;
+    }
+
+    const db = getDB();
+    const companyRef = db.collection("companies").doc(String(companyId));
+    const companyDoc = await companyRef.get();
+    if (!companyDoc.exists) {
+      res.status(404).send({ success: false, message: `Company ${companyId} not found.` });
+      return;
+    }
+
+    const companyData = companyDoc.data() || {};
+    const parentId = String(req.body.parentId || companyData.franchisee || "");
+    if (!parentId) {
+      res.status(400).send({ success: false, message: "Missing LPO/Franchisee parentId. Please specify parentId in the payload or ensure the company has a franchisee field set." });
+      return;
+    }
+
+    const lpoDoc = await db.collection("lpo").doc(parentId).get();
+    if (!lpoDoc.exists) {
+      res.status(404).send({ success: false, message: `LPO/Franchisee with ID ${parentId} not found.` });
+      return;
+    }
+    const lpoData = lpoDoc.data() || {};
+
+    const { startDate, frequency, service, customer, preferredTime, billing, recipient, auspostContact } = req.body;
+    if (!startDate || !frequency || !Array.isArray(frequency) || !service || !customer) {
+      res.status(400).send({ success: false, message: "Missing required fields. Required: startDate, frequency (array), service, customer." });
+      return;
+    }
+
+    if (!customer.company || !customer.address || !customer.suburb || !customer.state || !customer.postcode || !customer.email || !customer.phone) {
+      res.status(400).send({ success: false, message: "Missing required customer fields (company, address, suburb, state, postcode, email, phone)." });
+      return;
+    }
+
+    const rawParentLat = lpoData.latitude ?? lpoData.coordinates?.lat;
+    const rawParentLng = lpoData.longitude ?? lpoData.coordinates?.lng;
+
+    const parentLoc = {
+      name: lpoData.name || '',
+      address: lpoData.address1 || lpoData.address || '',
+      suburb: lpoData.city || lpoData.location || lpoData.suburb || '',
+      state: lpoData.state || 'NSW',
+      postcode: lpoData.zip || lpoData.postcode || '',
+      lat: rawParentLat ? parseFloat(rawParentLat) : undefined,
+      lng: rawParentLng ? parseFloat(rawParentLng) : undefined
+    };
+
+    const customerLoc = {
+      name: customer.company,
+      address: customer.address,
+      suburb: customer.suburb,
+      state: customer.state,
+      postcode: customer.postcode,
+      lat: customer.coordinates?.lat ? parseFloat(customer.coordinates.lat) : undefined,
+      lng: customer.coordinates?.lng ? parseFloat(customer.coordinates.lng) : undefined
+    };
+
+    const stops: any[] = [];
+    if (service === 'site-to-lpo') {
+      stops.push(
+        { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+        { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+      );
+    } else if (service === 'lpo-to-site') {
+      stops.push(
+        { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+        { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+      );
+    } else if (service === 'round-trip') {
+      stops.push(
+        { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+        { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null },
+        { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 3, status: 'pending', appJobId: null },
+        { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 4, status: 'pending', appJobId: null }
+      );
+    }
+
+    let serviceInternalId = '';
+    let serviceRate = '';
+    if (service === 'lpo-to-site') {
+      serviceInternalId = companyData.serviceAMPOInternalID || '';
+      serviceRate = companyData.serviceAMPORate || '';
+    } else if (service === 'site-to-lpo') {
+      serviceInternalId = companyData.servicePMPOInternalID || '';
+      serviceRate = companyData.servicePMPORate || '';
+    }
+
+    const newScheduledJob = {
+      customer_id: companyId,
+      parent_id: parentId,
+      status: 'scheduled',
+      recurrenceStatus: 'active',
+      skippedDates: [],
+      frequency,
+      preferredTime: preferredTime || null,
+      billing: billing || 'credit',
+      date: startDate,
+      jobType: 'scheduled',
+      service,
+      customer: {
+        company: customer.company,
+        address: customer.address,
+        suburb: customer.suburb,
+        state: customer.state,
+        postcode: customer.postcode,
+        email: customer.email,
+        phone: customer.phone,
+        firstName: customer.firstName || '',
+        lastName: customer.lastName || '',
+        coordinates: customer.coordinates || null
+      },
+      recipient: recipient || null,
+      auspostContact: auspostContact || null,
+      stops,
+      serviceInternalId: req.body.serviceInternalId || serviceInternalId || null,
+      serviceRate: req.body.serviceRate || serviceRate || null,
+      createdAt: admin.firestore.Timestamp.now(),
+      originalRequestId: req.body.originalRequestId || null,
+      operatorNetSuiteId: null,
+      operatorName: null,
+      operatorEmail: null,
+      operatorPhone: null
+    };
+
+    const docRef = await db.collection("scheduled_jobs").add(newScheduledJob);
+
+    res.status(201).send({
+      success: true,
+      message: "Scheduled job created successfully.",
+      data: {
+        id: docRef.id
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Scheduled Jobs Creation API Error:", error);
     res.status(500).send({ success: false, message: error.message });
   }
 });
@@ -2631,7 +2946,7 @@ export const activateAccount = onCall({ invoker: "public" }, async (request) => 
   }
 });
 
-export const api = onRequest({ secrets: [netsuiteApiKey], cors: true }, apiApp);
+export const api = onRequest({ secrets: [netsuiteApiKey, prospectplusApiKey], cors: true }, apiApp);
 
 // Admin Callable Function: Recreate Security Code
 export const adminRecreateSecurityCode = onCall({ invoker: "public" }, async (request) => {
@@ -2639,11 +2954,11 @@ export const adminRecreateSecurityCode = onCall({ invoker: "public" }, async (re
   if (!email) {
     throw new HttpsError("invalid-argument", "Missing email.");
   }
-  
+
   if (!request.auth || !request.auth.token.email) {
     throw new HttpsError("unauthenticated", "You must be authenticated.");
   }
-  
+
   // Verify superadmin
   const callerUser = await admin.auth().getUser(request.auth.uid);
   const callerRole = callerUser.customClaims?.role;
@@ -2679,11 +2994,11 @@ export const adminResendAuthEmail = onCall({ invoker: "public", secrets: [prospe
   if (!email) {
     throw new HttpsError("invalid-argument", "Missing email.");
   }
-  
+
   if (!request.auth || !request.auth.token.email) {
     throw new HttpsError("unauthenticated", "You must be authenticated.");
   }
-  
+
   // Verify superadmin
   const callerUser = await admin.auth().getUser(request.auth.uid);
   const callerRole = callerUser.customClaims?.role;
@@ -2702,36 +3017,36 @@ export const adminResendAuthEmail = onCall({ invoker: "public", secrets: [prospe
     }
     const securityCode = tokenDoc.data()?.code;
     const localMilePlusAuthLink = `https://localmile.plus/activate/${uid}`;
-    
+
     // Get user details to get customerName
     const userDoc = await db.collection("users").doc(uid).get();
     let contactFirstName = "Valued Customer";
     if (userDoc.exists) {
-        contactFirstName = userDoc.data()?.firstName || "Valued Customer";
+      contactFirstName = userDoc.data()?.firstName || "Valued Customer";
     }
-    
+
     const response = await fetch('https://prospectplus.com.au/api/localmile/resend-auth', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': prospectplusApiKey.value()
-        },
-        body: JSON.stringify({
-            contactEmail: email,
-            contactFirstName,
-            securityCode,
-            localMilePlusAuthLink
-        })
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-KEY': prospectplusApiKey.value()
+      },
+      body: JSON.stringify({
+        contactEmail: email,
+        contactFirstName,
+        securityCode,
+        localMilePlusAuthLink
+      })
     });
 
     if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`ProspectPlus API failed with status ${response.status}: ${errText}`);
+      const errText = await response.text();
+      throw new Error(`ProspectPlus API failed with status ${response.status}: ${errText}`);
     }
 
     const data = await response.json() as any;
     if (!data.success) {
-        throw new Error(data.message || 'Unknown error from ProspectPlus API');
+      throw new Error(data.message || 'Unknown error from ProspectPlus API');
     }
 
     return { success: true };

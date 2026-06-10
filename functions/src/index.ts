@@ -104,6 +104,13 @@ const injectMetadataTag = (html: string, metadata: any) => {
   return html + tag;
 };
 
+function extractStringId(refOrString: any): string | undefined {
+  if (!refOrString) return undefined;
+  if (typeof refOrString === 'string') return refOrString;
+  if (typeof refOrString === 'object' && refOrString.id) return refOrString.id;
+  return String(refOrString);
+}
+
 // Logic: onJobRequestCreated (Email Automation / ProspectPlus Integration)
 export const onJobRequestCreated = onDocumentCreated({
   document: "requests/{requestId}",
@@ -137,41 +144,8 @@ export const onJobRequestCreated = onDocumentCreated({
     }
   }
 
-  if (leadId) {
-    const pickupStop = afterData.stops?.find((s: any) => s.type === "pickup");
-    const deliveryStop = afterData.stops?.find((s: any) => s.type === "delivery");
-    const pickupSuburb = pickupStop?.suburb || "";
-    const deliverySuburb = deliveryStop?.suburb || "";
-    const price = afterData.serviceRate || (afterData.service === "round-trip" ? "20.00" : "10.00");
-
-    console.log(`[onJobRequestCreated] Job created for leadId ${leadId}. Pushing to ProspectPlus API...`);
-    try {
-      const response = await fetch(`https://prospectplus.com.au/api/localmile/jobs`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": prospectplusApiKey.value()
-        },
-        body: JSON.stringify({
-          leadId,
-          jobId: requestId,
-          service: afterData.service || "Outgoing Mail Lodgement",
-          pickupSuburb,
-          deliverySuburb,
-          price
-        })
-      });
-
-      if (!response.ok) {
-        console.error("[onJobRequestCreated] Failed to push created job:", await response.text());
-      } else {
-        console.log(`[onJobRequestCreated] Successfully logged created job for leadId ${leadId}`);
-      }
-    } catch (error) {
-      console.error("[onJobRequestCreated] Error pushing created job:", error);
-    }
-  } else {
-    console.warn(`[onJobRequestCreated] No leadId found for job request ${requestId}. Skipping ProspectPlus API call.`);
+  if (!leadId) {
+    console.warn(`[onJobRequestCreated] No leadId found for job request ${requestId}.`);
   }
 
   /*
@@ -361,9 +335,75 @@ export const onJobRequestCreated = onDocumentCreated({
   */
 });
 
-// Logic: onJobStatusChangedForLeadUpdate
-export const onJobStatusChangedForLeadUpdate = onDocumentUpdated({
-  document: "requests/{requestId}",
+// Logic: onJobCreated (ProspectPlus Integration)
+export const onJobCreated = onDocumentCreated({
+  document: "jobs/{jobId}",
+  database: "(default)",
+  secrets: [prospectplusApiKey],
+}, async (event) => {
+  const snapshot = event.data;
+  const jobId = event.params.jobId;
+
+  if (!snapshot) return;
+  const afterData = snapshot.data();
+  if (!afterData) return;
+
+  const uid = afterData.uid;
+  const db = getDB();
+  let leadId = extractStringId(afterData.customer_id);
+
+  if (!leadId && uid) {
+    try {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists) {
+        leadId = extractStringId(userDoc.data()?.customer_id);
+      }
+    } catch (err) {
+      console.error("[onJobCreated] Error getting user customer_id:", err);
+    }
+  }
+
+  if (leadId) {
+    const pickupStop = afterData.stops?.find((s: any) => s.type === "pickup");
+    const deliveryStop = afterData.stops?.find((s: any) => s.type === "delivery");
+    const pickupSuburb = pickupStop?.suburb || "";
+    const deliverySuburb = deliveryStop?.suburb || "";
+    const price = afterData.serviceRate || (afterData.service === "round-trip" ? "20.00" : "10.00");
+
+    console.log(`[onJobCreated] Job created for leadId ${leadId}. Pushing to ProspectPlus API...`);
+    try {
+      const response = await fetch(`https://prospectplus.com.au/api/localmile/jobs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+          leadId,
+          jobId: jobId,
+          service: afterData.service || "Outgoing Mail Lodgement",
+          pickupSuburb,
+          deliverySuburb,
+          price
+        })
+      });
+
+      if (!response.ok) {
+        console.error("[onJobCreated] Failed to push created job:", await response.text());
+      } else {
+        console.log(`[onJobCreated] Successfully logged created job for leadId ${leadId}`);
+      }
+    } catch (error) {
+      console.error("[onJobCreated] Error pushing created job:", error);
+    }
+  } else {
+    console.warn(`[onJobCreated] No leadId found for job ${jobId}. Skipping ProspectPlus API call.`);
+  }
+});
+
+// Logic: onJobStatusUpdated
+export const onJobStatusUpdated = onDocumentUpdated({
+  document: "jobs/{jobId}",
   database: "(default)",
   secrets: [prospectplusApiKey],
 }, async (event) => {
@@ -374,98 +414,98 @@ export const onJobStatusChangedForLeadUpdate = onDocumentUpdated({
 
   const statusAfter = afterData.status;
   const statusBefore = beforeData.status;
+  
+  if (statusAfter === statusBefore) return;
 
   const targetStatuses = ["completed", "in-progress", "in progress"];
-  const becameTargetStatus = targetStatuses.includes(statusAfter) && !targetStatuses.includes(statusBefore);
+  const isTargetStatus = targetStatuses.includes(statusAfter);
 
-  if (becameTargetStatus) {
+  if (isTargetStatus) {
     const uid = afterData.uid;
-    if (!uid) return;
-
     const db = getDB();
-    const userRef = db.collection("users").doc(uid);
-    const userDoc = await userRef.get();
+    let leadId = extractStringId(afterData.customer_id);
 
-    if (!userDoc.exists) return;
+    if (!leadId && uid) {
+      try {
+        const userDoc = await db.collection("users").doc(uid).get();
+        if (userDoc.exists) {
+          leadId = extractStringId(userDoc.data()?.customer_id);
+        }
+      } catch (err) {
+        console.error("[onJobStatusUpdated] Error getting user customer_id:", err);
+      }
+    }
 
-    const userData = userDoc.data();
-    if (userData?.role !== "customer") return;
-    if (userData?.leadBucketUpdated) return; // Prevent duplicate calls for subsequent jobs
-
-    // Mark as updated so future jobs won't trigger this again for the same user
-    await userRef.update({ leadBucketUpdated: true });
-
-    const leadId = userData.customer_id || afterData.customer_id;
     if (!leadId) {
-      console.warn(`[Lead Update] No leadId found for user ${uid}. Skipping API call.`);
+      console.warn(`[Lead Update] No leadId found for job ${event.params.jobId}. Skipping API calls.`);
       return;
     }
 
-    console.log(`[Lead Update] 1st job for customer ${uid} reached ${statusAfter}. Calling ProspectPlus API for lead ${leadId}.`);
+    // 1. Update Lead Bucket
+    if (uid) {
+      const userRef = db.collection("users").doc(uid);
+      const userDoc = await userRef.get();
 
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        if (userData?.role === "customer" && !userData?.leadBucketUpdated) {
+          // Mark as updated so future jobs won't trigger this again for the same user
+          await userRef.update({ leadBucketUpdated: true });
+
+          console.log(`[Lead Update] 1st job for customer ${uid} reached ${statusAfter}. Calling ProspectPlus API for lead ${leadId}.`);
+
+          try {
+            const response = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": prospectplusApiKey.value()
+              },
+              body: JSON.stringify({
+                bucket: "Account Manager"
+              })
+            });
+
+            if (!response.ok) {
+              console.error("[Lead Update] Failed to update lead bucket:", await response.text());
+            } else {
+              console.log(`[Lead Update] Successfully updated lead bucket for leadId ${leadId}`);
+            }
+          } catch (error) {
+            console.error("[Lead Update] Error updating lead bucket:", error);
+          }
+        }
+      }
+    }
+
+    // 2. Push job update to ProspectPlus API (for trial count decrement & status update)
+    console.log(`[Trial Tracking] Job ${event.params.jobId} reached ${statusAfter} for leadId ${leadId}. Pushing to ProspectPlus API...`);
     try {
-      const response = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
-        method: "PATCH",
+      const response = await fetch(`https://prospectplus.com.au/api/localmile/jobs`, {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": prospectplusApiKey.value()
         },
         body: JSON.stringify({
-          bucket: "Account Manager"
+          leadId,
+          jobId: event.params.jobId,
+          status: statusAfter,
+          service: afterData.service || "Outgoing Mail Lodgement",
+          completedAt: new Date().toISOString()
         })
       });
 
       if (!response.ok) {
-        console.error("[Lead Update] Failed to update lead bucket:", await response.text());
+        console.error("[Trial Tracking] Failed to push job update:", await response.text());
       } else {
-        console.log(`[Lead Update] Successfully updated lead bucket for leadId ${leadId}`);
+        console.log(`[Trial Tracking] Successfully logged job update for leadId ${leadId}`);
       }
     } catch (error) {
-      console.error("[Lead Update] Error updating lead bucket:", error);
+      console.error("[Trial Tracking] Error pushing job update:", error);
     }
   }
 
-  // Push completed jobs to ProspectPlus API to decrement LocalMile Trials Remaining
-  if (statusAfter === "completed" && statusBefore !== "completed") {
-    const uid = afterData.uid;
-    const db = getDB();
-    let leadId = afterData.customer_id;
-
-    if (!leadId && uid) {
-      const userDoc = await db.collection("users").doc(uid).get();
-      if (userDoc.exists) {
-        leadId = userDoc.data()?.customer_id;
-      }
-    }
-
-    if (leadId) {
-      console.log(`[Trial Tracking] Job completed for leadId ${leadId}. Pushing to ProspectPlus API...`);
-      try {
-        const response = await fetch(`https://prospectplus.com.au/api/localmile/jobs`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": prospectplusApiKey.value()
-          },
-          body: JSON.stringify({
-            leadId,
-            jobId: event.params.requestId,
-            status: statusAfter,
-            service: afterData.service || "Outgoing Mail Lodgement",
-            completedAt: new Date().toISOString()
-          })
-        });
-
-        if (!response.ok) {
-          console.error("[Trial Tracking] Failed to push completed job:", await response.text());
-        } else {
-          console.log(`[Trial Tracking] Successfully logged completed job for leadId ${leadId}`);
-        }
-      } catch (error) {
-        console.error("[Trial Tracking] Error pushing completed job:", error);
-      }
-    }
-  }
 });
 
 // Logic: onCustomerActive

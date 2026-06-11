@@ -38,11 +38,22 @@ const TermsAndConditionsModal: React.FC = () => {
         }
       }
 
-      if (
-        (data.success === true || data.success === "true") && 
-        data.message && 
-        data.message.includes("Status Updated Successfully")
-      ) {
+      const successStatus = (data.success === true || data.success === "true" || data.success === 1);
+      const messageStr = typeof data.message === "string" ? data.message.toLowerCase() : "";
+      const hasSuccessMessage = messageStr.includes("status updated successfully") || messageStr.includes("success");
+      
+      console.log(`[NetSuite check] success: ${successStatus}, hasSuccessMessage: ${hasSuccessMessage}, raw message: ${data.message}`);
+
+      if (successStatus && hasSuccessMessage) {
+        // Sync with ProspectPlus
+        try {
+          const syncProspectPlusTC = httpsCallable(functions, 'syncProspectPlusTermsAccepted');
+          await syncProspectPlusTC({ customer_id: customerId });
+        } catch (syncErr) {
+          console.error("Error syncing T&C acceptance with ProspectPlus:", syncErr);
+          throw new Error("Failed to sync Terms & Conditions acceptance with the system. Please try again.");
+        }
+
         // Update user metadata in Firestore only on success
         await updateUserData({ hasAcceptedTC: true });
       } else {

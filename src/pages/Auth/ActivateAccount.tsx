@@ -15,7 +15,10 @@ const ActivateAccount: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isActivating, setIsActivating] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [isCodeExpired, setIsCodeExpired] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   
   const [userData, setUserData] = useState<any>(null);
   const [companyData, setCompanyData] = useState<any>(null);
@@ -98,9 +101,30 @@ const ActivateAccount: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Activation Error:', err);
-      setError(err.message || 'Activation failed. The code may be invalid or expired.');
+      const errMsg = err.message || 'Activation failed. The code may be invalid or expired.';
+      setError(errMsg);
+      if (errMsg.toLowerCase().includes('expired')) {
+        setIsCodeExpired(true);
+      }
     } finally {
       setIsActivating(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setIsResending(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      const resendFn = httpsCallable(functions, 'resendActivationCode');
+      await resendFn({ uid });
+      setSuccessMsg('A new activation code has been sent to your email.');
+      setIsCodeExpired(false); // Reset so they can enter the new code
+    } catch (err: any) {
+      console.error('Resend Error:', err);
+      setError(err.message || 'Failed to resend activation code.');
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -244,11 +268,19 @@ const ActivateAccount: React.FC = () => {
             </div>
 
             {error && <div className="error-message">{error}</div>}
+            {successMsg && <div className="success-message" style={{ color: '#2e7d32', backgroundColor: '#e8f5e9', padding: '14px 18px', borderRadius: '14px', marginBottom: '24px', fontWeight: 500, borderLeft: '4px solid #2e7d32' }}>{successMsg}</div>}
 
-            <button type="submit" className="activate-btn" disabled={isActivating}>
-              {isActivating ? <Loader2 className="animate-spin" size={20} /> : 'Activate & Login'}
-              {!isActivating && <ArrowRight size={20} />}
-            </button>
+            {isCodeExpired ? (
+              <button type="button" className="activate-btn" onClick={handleResendCode} disabled={isResending}>
+                {isResending ? <Loader2 className="animate-spin" size={20} /> : 'Resend Activation Email'}
+                {!isResending && <Mail size={20} />}
+              </button>
+            ) : (
+              <button type="submit" className="activate-btn" disabled={isActivating}>
+                {isActivating ? <Loader2 className="animate-spin" size={20} /> : 'Activate & Login'}
+                {!isActivating && <ArrowRight size={20} />}
+              </button>
+            )}
           </form>
         </div>
       </div>

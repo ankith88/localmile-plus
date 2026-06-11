@@ -814,6 +814,54 @@ export const callNetSuiteProxy = onCall({ invoker: "public" }, async (request) =
   }
 });
 
+// Logic: syncProspectPlusTermsAccepted
+export const syncProspectPlusTermsAccepted = onCall({ invoker: "public", secrets: [prospectplusApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
+  }
+
+  const { customer_id } = request.data;
+  if (!customer_id) {
+    throw new HttpsError("invalid-argument", "The function must be called with a 'customer_id' argument.");
+  }
+
+  const leadId = extractStringId(customer_id);
+  if (!leadId) {
+    throw new HttpsError("invalid-argument", "Invalid customer_id format.");
+  }
+
+  console.log(`[ProspectPlus Sync] Syncing T&C acceptance for leadId: ${leadId}`);
+
+  try {
+    const payload = {
+      localMileTermsAccepted: true,
+      localMileTermsAcceptedAt: new Date().toISOString(),
+      customerStatus: "LocalMile Pending"
+    };
+
+    const response = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": prospectplusApiKey.value()
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[ProspectPlus Sync] Failed to sync T&C acceptance:", errorText);
+      throw new HttpsError("internal", "Failed to sync with ProspectPlus API.");
+    }
+
+    console.log(`[ProspectPlus Sync] Successfully synced T&C acceptance for leadId: ${leadId}`);
+    return { success: true };
+  } catch (error) {
+    console.error("[ProspectPlus Sync] Error syncing T&C acceptance:", error);
+    throw new HttpsError("internal", "Failed to sync with ProspectPlus API.");
+  }
+});
+
 // Logic: onChatMessageSent
 export const onChatMessageSent = onDocumentUpdated({
   document: "requests/{requestId}",
@@ -2939,6 +2987,74 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
   } catch (error: any) {
     console.error("Scheduled Jobs Creation API Error:", error);
     res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+// Logic: resendActivationCode (Public)
+export const resendActivationCode = onCall({ invoker: "public", secrets: [prospectplusApiKey] }, async (request) => {
+  const { uid } = request.data;
+  if (!uid) {
+    throw new HttpsError("invalid-argument", "Missing required fields.");
+  }
+
+  const db = getDB();
+
+  try {
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "User not found.");
+    }
+    
+    if (userDoc.data()?.status === "Active") {
+      throw new HttpsError("failed-precondition", "User is already active.");
+    }
+    
+    const email = userDoc.data()?.email;
+    if (!email) {
+      throw new HttpsError("failed-precondition", "User has no email associated.");
+    }
+
+    const securityCode = crypto.randomInt(1000, 10000).toString(); // 4-digit code
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+
+    const tokenRef = db.collection("verification_tokens").doc(uid);
+    await tokenRef.set({
+      uid: uid,
+      code: securityCode,
+      expiresAt: expiresAt
+    }, { merge: true });
+
+    const localMilePlusAuthLink = `https://localmile.plus/activate/${uid}`;
+    let contactFirstName = userDoc.data()?.firstName || "Valued Customer";
+
+    const response = await fetch('https://prospectplus.com.au/api/localmile/resend-auth', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-KEY': prospectplusApiKey.value()
+      },
+      body: JSON.stringify({
+        contactEmail: email,
+        contactFirstName,
+        securityCode,
+        localMilePlusAuthLink
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`ProspectPlus API failed with status ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json() as any;
+    if (!data.success) {
+      throw new Error(data.message || 'Unknown error from ProspectPlus API');
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error resending activation code:", error);
+    throw new HttpsError("internal", error.message);
   }
 });
 

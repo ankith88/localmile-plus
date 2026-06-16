@@ -303,10 +303,10 @@ const RequestPage: React.FC = () => {
               const custSnap = await getDocs(custQ);
               if (!custSnap.empty) {
                 const c = custSnap.docs[0].data();
-                if (request.service === 'lpo-to-site') {
+                if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
                   serviceInternalId = c.lpoServiceAMPOInternalID || '';
                   serviceRate = c.lpoServiceAMPORate || '';
-                } else if (request.service === 'site-to-lpo') {
+                } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
                   serviceInternalId = c.lpoServicePMPOInternalID || '';
                   serviceRate = c.lpoServicePMPORate || '';
                 } else if (request.service === 'round-trip') {
@@ -378,10 +378,10 @@ const RequestPage: React.FC = () => {
             const custSnap = await getDocs(custQ);
             if (!custSnap.empty) {
               const c = custSnap.docs[0].data();
-              if (request.service === 'lpo-to-site') {
+              if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
                 serviceInternalId = c.lpoServiceAMPOInternalID || '';
                 serviceRate = c.lpoServiceAMPORate || '';
-              } else if (request.service === 'site-to-lpo') {
+              } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
                 serviceInternalId = c.lpoServicePMPOInternalID || '';
                 serviceRate = c.lpoServicePMPORate || '';
               } else if (request.service === 'round-trip') {
@@ -442,13 +442,13 @@ const RequestPage: React.FC = () => {
             auspost_last_name: request.auspostContact?.lastName || "null",
             auspost_phone: request.auspostContact?.phone || "null",
             auspost_email: request.auspostContact?.email || "null",
-            auspost_company: (request.service === 'lpo-to-site' ? request.customer?.company : request.recipient?.company) || "null",
-            auspost_address: (request.service === 'lpo-to-site' ? request.customer?.address : request.recipient?.address) || "null",
-            auspost_state: (request.service === 'lpo-to-site' ? request.customer?.state : request.recipient?.state) || "null",
-            auspost_suburb: (request.service === 'lpo-to-site' ? request.customer?.suburb : request.recipient?.suburb) || "null",
-            auspost_postcode: (request.service === 'lpo-to-site' ? request.customer?.postcode : request.recipient?.postcode) || "null",
-            auspost_lat: (request.service === 'lpo-to-site' ? request.customer?.coordinates?.lat : request.recipient?.coordinates?.lat)?.toString() || "null",
-            auspost_lng: (request.service === 'lpo-to-site' ? request.customer?.coordinates?.lng : request.recipient?.coordinates?.lng)?.toString() || "null",
+            auspost_company: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.company : request.recipient?.company) || "null",
+            auspost_address: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.address : request.recipient?.address) || "null",
+            auspost_state: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.state : request.recipient?.state) || "null",
+            auspost_suburb: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.suburb : request.recipient?.suburb) || "null",
+            auspost_postcode: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.postcode : request.recipient?.postcode) || "null",
+            auspost_lat: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lat : request.recipient?.coordinates?.lat)?.toString() || "null",
+            auspost_lng: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lng : request.recipient?.coordinates?.lng)?.toString() || "null",
             is_free_job: isFreeJob.toString()
           });
 
@@ -485,8 +485,12 @@ const RequestPage: React.FC = () => {
             auspost_last_name: request.auspostContact?.lastName || "null",
             auspost_phone: request.auspostContact?.phone || "null",
             auspost_email: request.auspostContact?.email || "null",
-            auspost_company: (request.service === 'lpo-to-site' ? request.customer?.company : request.recipient?.company) || "null",
-            is_free_job: isFreeJob.toString()
+            auspost_company: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.company : request.recipient?.company) || "null",
+            is_free_job: isFreeJob.toString(),
+            user_first_name: userData?.first_name || "null",
+            user_last_name: userData?.last_name || "null",
+            user_email: userData?.email || "null",
+            user_phone: userData?.mobile || "null"
           });
 
           console.log("Triggering NetSuite 2649 with:", Object.fromEntries(params2649));
@@ -795,7 +799,7 @@ const RequestPage: React.FC = () => {
                  <div className="logistics-grid">
                     <div className="log-item">
                        <label>Service</label>
-                       <span>{request.service.replace(/-/g, ' ')}</span>
+                       <span>{request.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : request.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : request.service.replace(/-/g, ' ')}</span>
                     </div>
                     <div className="log-item">
                        <label>Billing</label>

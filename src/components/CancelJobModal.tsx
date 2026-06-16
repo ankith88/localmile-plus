@@ -96,7 +96,7 @@ const CancelJobModal: React.FC<CancelJobModalProps> = ({ isOpen, onClose, job, o
             fontSize: '0.9rem'
           }}>
             <div style={{ fontWeight: 700, marginBottom: '4px' }}>{job.customer?.company}</div>
-            <div style={{ color: 'var(--ink-soft)', fontSize: '0.8rem' }}>{job.service?.replace(/-/g, ' ')} • {job.date}</div>
+            <div style={{ color: 'var(--ink-soft)', fontSize: '0.8rem' }}>{job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service?.replace(/-/g, ' ')} • {job.date}</div>
           </div>
 
           <div className="form-group" style={{ marginBottom: '20px' }}>

@@ -133,14 +133,53 @@ export const onJobRequestCreated = onDocumentCreated({
   const db = getDB();
   let leadId = afterData.customer_id;
 
-  if (!leadId && uid) {
+  let userFirstName = "";
+  let userLastName = "";
+  let userEmail = "";
+  let userPhone = "";
+
+  if (uid) {
     try {
       const userDoc = await db.collection("users").doc(uid).get();
       if (userDoc.exists) {
-        leadId = userDoc.data()?.customer_id;
+        const userData = userDoc.data();
+        leadId = leadId || userData?.customer_id;
+        userFirstName = userData?.first_name || "";
+        userLastName = userData?.last_name || "";
+        userEmail = userData?.email || "";
+        userPhone = userData?.mobile || "";
       }
     } catch (err) {
-      console.error("[onJobRequestCreated] Error getting user customer_id:", err);
+      console.error("[onJobRequestCreated] Error getting user:", err);
+    }
+  }
+
+  let needsUpdate = false;
+  const updatedCustomer = { ...(afterData.customer || {}) };
+
+  if (userEmail && updatedCustomer.email !== userEmail) {
+    updatedCustomer.email = userEmail;
+    needsUpdate = true;
+  }
+  if (userPhone && updatedCustomer.phone !== userPhone) {
+    updatedCustomer.phone = userPhone;
+    needsUpdate = true;
+  }
+  if (userFirstName && updatedCustomer.firstName !== userFirstName) {
+    updatedCustomer.firstName = userFirstName;
+    needsUpdate = true;
+  }
+  if (userLastName && updatedCustomer.lastName !== userLastName) {
+    updatedCustomer.lastName = userLastName;
+    needsUpdate = true;
+  }
+
+  if (needsUpdate) {
+    try {
+      await snapshot.ref.update({ customer: updatedCustomer });
+      console.log(`[onJobRequestCreated] Updated customer fields for request ${requestId}`);
+    } catch (err) {
+      console.error("[onJobRequestCreated] Error updating request customer fields:", err);
     }
   }
 
@@ -2908,12 +2947,12 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
     };
 
     const stops: any[] = [];
-    if (service === 'site-to-lpo') {
+    if (service === 'site-to-lpo' || service === 'site-to-australia post') {
       stops.push(
         { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
         { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
       );
-    } else if (service === 'lpo-to-site') {
+    } else if (service === 'lpo-to-site' || service === 'australia post-to-site') {
       stops.push(
         { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
         { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
@@ -2929,10 +2968,10 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
 
     let serviceInternalId = '';
     let serviceRate = '';
-    if (service === 'lpo-to-site') {
+    if (service === 'lpo-to-site' || service === 'australia post-to-site') {
       serviceInternalId = companyData.serviceAMPOInternalID || '';
       serviceRate = companyData.serviceAMPORate || '';
-    } else if (service === 'site-to-lpo') {
+    } else if (service === 'site-to-lpo' || service === 'site-to-australia post') {
       serviceInternalId = companyData.servicePMPOInternalID || '';
       serviceRate = companyData.servicePMPORate || '';
     }
@@ -3099,6 +3138,42 @@ export const activateAccount = onCall({ invoker: "public" }, async (request) => 
   } catch (error: any) {
     console.error("Account Activation Error:", error);
     throw new HttpsError("internal", error.message);
+  }
+});
+
+apiApp.get("/api/v1/jobs", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || (providedKey !== netsuiteApiKey.value() && providedKey !== prospectplusApiKey.value())) {
+    console.warn("Unauthorized attempt to call GET Jobs API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const dateSubmitted = req.query.date as string;
+    if (!dateSubmitted) {
+      res.status(400).send({ success: false, message: "Missing required query param: date (YYYY-MM-DD)" });
+      return;
+    }
+
+    const db = getDB();
+    const jobsSnapshot = await db.collection("jobs").where("date", "==", dateSubmitted).get();
+
+    const jobs: any[] = [];
+    jobsSnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.syncedWithNetSuite == null) {
+        jobs.push({ id: doc.id, ...data });
+      }
+    });
+
+    res.status(200).send({
+      success: true,
+      data: jobs
+    });
+  } catch (error: any) {
+    console.error("GET Jobs API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
   }
 });
 

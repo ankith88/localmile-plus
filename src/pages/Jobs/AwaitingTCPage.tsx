@@ -162,7 +162,7 @@ const AwaitingTCPage: React.FC = () => {
 
   const getServiceIcon = (type: string) => {
     if (type === 'round-trip') return <ArrowRightLeft size={16} />;
-    if (type === 'site-to-lpo') return <ArrowRight size={16} />;
+    if (type === 'site-to-lpo' || type === 'site-to-australia post') return <ArrowRight size={16} />;
     return <ArrowLeft size={16} />;
   };
 
@@ -285,7 +285,7 @@ const AwaitingTCPage: React.FC = () => {
                               <div className="card-meta">
                                  <div className="meta-pill">
                                     <Clock size={12} />
-                                    <span>{job.service.replace(/-/g, ' ')}</span>
+                                    <span>{job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service.replace(/-/g, ' ')}</span>
                                  </div>
                                  <div className="meta-pill">
                                     <RotateCcw size={12} />

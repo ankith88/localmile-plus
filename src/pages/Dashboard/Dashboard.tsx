@@ -385,7 +385,7 @@ const Dashboard: React.FC = () => {
 
   const getServiceIcon = (type: string) => {
     if (type === 'round-trip') return <ArrowRightLeft size={16} />;
-    if (type === 'site-to-lpo') return <ArrowRight size={16} />;
+    if (type === 'site-to-lpo' || type === 'site-to-australia post') return <ArrowRight size={16} />;
     return <ArrowLeft size={16} />;
   };
 
@@ -538,7 +538,9 @@ const Dashboard: React.FC = () => {
                       options={[
                         { value: 'all', label: 'All Services' },
                         { value: 'site-to-lpo', label: userData?.role === 'customer' ? 'Outbound' : 'Site ➔ Parent' },
+                        { value: 'site-to-australia post', label: userData?.role === 'customer' ? 'Outbound (AusPost)' : 'Site ➔ Australia Post' },
                         { value: 'lpo-to-site', label: userData?.role === 'customer' ? 'Inbound' : 'Parent ➔ Site' },
+                        { value: 'australia post-to-site', label: userData?.role === 'customer' ? 'Inbound (AusPost)' : 'Australia Post ➔ Site' },
                         { value: 'round-trip', label: 'Round Trip' }
                       ]}
                       className="service-select-custom"
@@ -642,13 +644,20 @@ const Dashboard: React.FC = () => {
                                  <div className="card-header" onClick={() => toggleExpand(job.id)} style={{ cursor: 'pointer' }}>
                                     <div className="customer-block">
                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                          <h3 className="company-name">{job.customer.company}</h3>
+                                          {userData?.role === 'customer' ? (
+                                            <h3 className="company-name" style={{ textTransform: 'capitalize' }}>
+                                              {job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service.replace(/-/g, ' ')}
+                                            </h3>
+                                          ) : (
+                                            <h3 className="company-name">{job.customer.company}</h3>
+                                          )}
                                           {isAdmin && (
                                             <span className="parent-badge-inline">
                                               {getParentName(job.parent_id)}
                                             </span>
                                           )}
                                        </div>
+                                       {!(userData?.role === 'customer' && (job.service === 'site-to-australia post' || job.service === 'australia post-to-site')) && (
                                        <div className="contact-details">
                                           {(job.customer.firstName || job.customer.lastName) && (
                                             <div className="contact-row" title="Contact Person">
@@ -677,10 +686,13 @@ const Dashboard: React.FC = () => {
                                             </div>
                                           )}
                                        </div>
+                                       )}
+                                       {userData?.role !== 'customer' && (
                                        <div className="location-info">
                                           <MapPin size={12} />
                                           <span>{job.customer.suburb}, {job.customer.state}</span>
                                        </div>
+                                       )}
                                     </div>
                                     <div className="header-meta-group">
                                       <div className={`status-tag status-${
@@ -750,14 +762,18 @@ const Dashboard: React.FC = () => {
                                   )}
 
                                 <div className="card-meta">
+                                   {userData?.role !== 'customer' && (
                                    <div className="meta-pill">
                                       <Clock size={12} />
-                                      <span>{job.service.replace(/-/g, ' ')}</span>
+                                      <span>{job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service.replace(/-/g, ' ')}</span>
                                    </div>
+                                   )}
+                                   {userData?.role !== 'customer' && (
                                    <div className="meta-pill">
                                       <RotateCcw size={12} />
                                       <span>{job.billing}</span>
                                    </div>
+                                   )}
                                     <div 
                                       className="job-ref interactive" 
                                       onClick={(e) => {

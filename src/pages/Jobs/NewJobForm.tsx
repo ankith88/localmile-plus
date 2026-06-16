@@ -26,7 +26,7 @@ import { db, googleMapsApiKey } from '../../firebase/config';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomTimePicker from '../../components/CustomTimePicker';
 
-type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip';
+type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip' | 'site-to-australia post' | 'australia post-to-site';
 type BillingOption = 'customer' | 'lpo';
 
 interface JobData {
@@ -43,6 +43,12 @@ interface JobData {
     instructions: string;
     netsuiteId?: string;
     coordinates?: { lat: number, lng: number };
+    lpoServicePMPOInternalID?: string | null;
+    lpoServicePMPORate?: string | null;
+    lpoServiceAMPOInternalID?: string | null;
+    lpoServiceAMPORate?: string | null;
+    lpoServiceH2HInternalID?: string | null;
+    lpoServiceH2HRate?: string | null;
   };
   service: ServiceType;
   serviceInternalId?: string;
@@ -326,6 +332,7 @@ const NewJobForm: React.FC = () => {
   const hasAMPO = Boolean(companyData?.serviceAMPOInternalID && companyData?.serviceAMPOInternalID !== 'null');
   const hasH2H = Boolean(companyData?.serviceH2HInternalID && companyData?.serviceH2HInternalID !== 'null');
   const canSwap = !companyData || hasH2H || (hasPMPO && hasAMPO) || (!hasPMPO && !hasAMPO);
+  const isAusPostPrefilled = Boolean(userData?.role === 'customer' && independentServiceType === 'outbound' && companyData?.apName);
 
   useEffect(() => {
     if (userData?.role === 'customer' && companyData) {
@@ -338,18 +345,45 @@ const NewJobForm: React.FC = () => {
   }, [hasPMPO, hasAMPO, companyData, userData?.role, independentServiceType]);
 
   useEffect(() => {
-    if (userData?.role === 'customer' && !hasH2H) {
+    if (userData?.role === 'customer' && independentServiceType === 'outbound') {
       try {
-        const saved = localStorage.getItem(`defaultAusPost_${userData.customer_id}`);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed && !recipientData.address) {
-            setRecipientData(parsed);
+        let initializedFromCompany = false;
+        
+        if (companyData && companyData.apName) {
+           const parsed = {
+             company: companyData.apName || '',
+             firstName: 'Australia',
+             lastName: 'Post',
+             email: 'no-reply@auspost.com.au',
+             phone: '13 13 18',
+             address: companyData.apStreet || companyData.apAddr1 || '',
+             suburb: companyData.apSuburb || '',
+             state: companyData.apState || '',
+             postcode: companyData.apPostcode || '',
+             coordinates: { 
+               lat: companyData.apLatitude ? parseFloat(companyData.apLatitude as unknown as string) : 0, 
+               lng: companyData.apLongitude ? parseFloat(companyData.apLongitude as unknown as string) : 0 
+             }
+           };
+           
+           if (!recipientData.address && parsed.address) {
+             setRecipientData(parsed as any);
+             initializedFromCompany = true;
+           }
+        }
+        
+        if (!initializedFromCompany && !hasH2H) {
+          const saved = localStorage.getItem(`defaultAusPost_${userData.customer_id}`);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && !recipientData.address) {
+              setRecipientData(parsed);
+            }
           }
         }
       } catch (e) {}
     }
-  }, [userData, hasH2H]);
+  }, [userData, hasH2H, companyData, independentServiceType]);
 
   // Independent Customer Pre-population
   useEffect(() => {
@@ -366,8 +400,10 @@ const NewJobForm: React.FC = () => {
           customer: {
             ...prev.customer,
             company: companyName,
-            email: customer?.email || prev.customer.email,
-            phone: customer?.mobile || prev.customer.phone,
+            firstName: userData?.first_name || prev.customer.firstName,
+            lastName: userData?.last_name || prev.customer.lastName,
+            email: companyData?.customerServiceEmail || customer?.email || prev.customer.email,
+            phone: companyData?.customerPhone || customer?.mobile || prev.customer.phone,
             address: address,
             suburb: suburb,
             state: state,
@@ -470,9 +506,9 @@ const NewJobForm: React.FC = () => {
       ...formData,
       customer: {
         company: displayName,
-        firstName: c.first_name || parts[0] || '',
-        lastName: c.last_name || (parts.length > 1 ? parts.slice(1).join(' ') : ''),
-        email: c.customerEmail || c.email || '',
+        firstName: userData?.first_name || c.first_name || parts[0] || '',
+        lastName: userData?.last_name || c.last_name || (parts.length > 1 ? parts.slice(1).join(' ') : ''),
+        email: c.customerServiceEmail || c.customerEmail || c.email || '',
         phone: c.customerPhone || c.phone || '',
         address: c.address1 || c.address?.street || '',
         suburb: c.city || c.address?.suburb || '',
@@ -480,7 +516,13 @@ const NewJobForm: React.FC = () => {
         postcode: c.zip || c.address?.postcode || '',
         instructions: c.instructions || '',
         netsuiteId: c.companyId || c.customerInternalId || undefined,
-        coordinates: c.coordinates || undefined
+        coordinates: c.coordinates || undefined,
+        lpoServicePMPOInternalID: c.lpoServicePMPOInternalID || null,
+        lpoServicePMPORate: c.lpoServicePMPORate || null,
+        lpoServiceAMPOInternalID: c.lpoServiceAMPOInternalID || null,
+        lpoServiceAMPORate: c.lpoServiceAMPORate || null,
+        lpoServiceH2HInternalID: c.lpoServiceH2HInternalID || null,
+        lpoServiceH2HRate: c.lpoServiceH2HRate || null
       },
       service: defaultService,
       serviceInternalId: defaultId,
@@ -666,7 +708,7 @@ const NewJobForm: React.FC = () => {
             const territoryArray = data.franchiseeTerritoryJSON;
             const isValid = Array.isArray(territoryArray) && territoryArray.includes(searchAddress);
 
-            if (!isValid && userSuburb !== "") {
+            if (!isValid && userSuburb !== "" && !isAusPostPrefilled) {
               setValidationError(`Sorry, the address ${searchAddress} is outside our coverage.`);
               return;
             }
@@ -971,6 +1013,17 @@ const NewJobForm: React.FC = () => {
       const requestId = new URLSearchParams(window.location.search).get('id');
       const stops = generateStops(formData, parent || customer);
 
+      let finalService = formData.service;
+      const checkAusPost = userData?.role === 'customer' 
+        ? (recipientData?.company?.toLowerCase().includes('australia post') || isAusPostPrefilled)
+        : (parent?.name?.toLowerCase().includes('australia post') || !!formData.auspostContact);
+
+      if (formData.service === 'site-to-lpo' && checkAusPost) {
+          finalService = 'site-to-australia post';
+      } else if (formData.service === 'lpo-to-site' && checkAusPost) {
+          finalService = 'australia post-to-site';
+      }
+
       let nsResult: any = { success: true };
 
       // 1. NetSuite API Integration (Stage 1) - Only for NEW customers
@@ -993,7 +1046,7 @@ const NewJobForm: React.FC = () => {
             postcode: formData.customer.postcode,
             lat: (formData.customer.coordinates?.lat || "").toString(),
             lng: (formData.customer.coordinates?.lng || "").toString(),
-            service_name: formData.service || "null",
+            service_name: finalService || "null",
             service_internal_id: formData.serviceInternalId || "null",
             billing: formData.billing,
             jobType: formData.jobType,
@@ -1056,15 +1109,16 @@ const NewJobForm: React.FC = () => {
       const initialRequestStatus = isActuallyActive ? 'pending' : 'awaiting-activation';
 
       let conditionalServiceData = {};
+      const isSiteToAusPost = finalService === 'site-to-australia post' || finalService === 'site-to-lpo';
+      const isAusPostToSite = finalService === 'australia post-to-site' || finalService === 'lpo-to-site';
+
       if (userData?.role === 'customer' && companyData) {
-        const isAusPost = recipientData?.company?.toLowerCase().includes('australia post');
-        
-        if (formData.service === 'site-to-lpo' && isAusPost) {
+        if (isSiteToAusPost) {
           conditionalServiceData = {
             servicePMPOInternalID: companyData.servicePMPOInternalID || null,
             servicePMPORate: companyData.servicePMPORate || null
           };
-        } else if (formData.service === 'lpo-to-site' && isAusPost) {
+        } else if (isAusPostToSite) {
           conditionalServiceData = {
             serviceAMPOInternalID: companyData.serviceAMPOInternalID || null,
             serviceAMPORate: companyData.serviceAMPORate || null
@@ -1075,11 +1129,38 @@ const NewJobForm: React.FC = () => {
             serviceH2HRate: companyData.serviceH2HRate || null
           };
         }
+      } else if (userData?.role !== 'customer' && formData.customer) {
+        if (isSiteToAusPost) {
+          conditionalServiceData = {
+            servicePMPOInternalID: formData.customer.lpoServicePMPOInternalID || null,
+            servicePMPORate: formData.customer.lpoServicePMPORate || null
+          };
+        } else if (isAusPostToSite) {
+          conditionalServiceData = {
+            serviceAMPOInternalID: formData.customer.lpoServiceAMPOInternalID || null,
+            serviceAMPORate: formData.customer.lpoServiceAMPORate || null
+          };
+        } else {
+          conditionalServiceData = {
+            serviceH2HInternalID: formData.customer.lpoServiceH2HInternalID || null,
+            serviceH2HRate: formData.customer.lpoServiceH2HRate || null
+          };
+        }
       }
+
+      const finalCustomerData = {
+        ...formData.customer,
+        firstName: userData?.first_name || formData.customer.firstName,
+        lastName: userData?.last_name || formData.customer.lastName,
+        email: userData?.email || formData.customer.email,
+        phone: userData?.mobile || formData.customer.phone
+      };
 
       if (isEditing && requestId) {
         const cleanUpdate = JSON.parse(JSON.stringify({
           ...formData,
+          customer: finalCustomerData,
+          service: finalService,
           stops,
           isExistingCustomer,
           netsuiteCustomerId: nsResult.customerInternalId || formData.customer.netsuiteId || null,
@@ -1114,6 +1195,8 @@ const NewJobForm: React.FC = () => {
       } else {
         const cleanData = JSON.parse(JSON.stringify({
           ...formData,
+          customer: finalCustomerData,
+          service: finalService,
           stops,
           recipient: userData?.role === 'customer' ? recipientData : null,
           parent_id: parent?.id || userData?.parent_id || "",
@@ -1562,7 +1645,7 @@ const NewJobForm: React.FC = () => {
                         </div>
 
                         {/* BOTTOM SEGMENT */}
-                        <div className={`floating-route-segment glass ${independentServiceType === 'inbound' ? 'locked-segment' : 'searchable-segment'}`}>
+                        <div className={`floating-route-segment glass ${independentServiceType === 'inbound' || isAusPostPrefilled ? 'locked-segment' : 'searchable-segment'}`}>
                             {independentServiceType === 'inbound' ? (
                               <>
                                 <div className="locked-header-row">
@@ -1577,6 +1660,23 @@ const NewJobForm: React.FC = () => {
                                   <div className="inline-address">
                                     <p>{formData.customer.address},</p>
                                     <span className="address-bottom">{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
+                                  </div>
+                                </div>
+                              </>
+                            ) : isAusPostPrefilled ? (
+                              <>
+                                <div className="locked-header-row">
+                                  <div className="route-title">
+                                    <MapPin size={14} />
+                                    <span>DROPOFF DESTINATION</span>
+                                  </div>
+                                  <div className="hub-badge" style={{ color: '#E81C2E' }}><Lock size={12} style={{marginRight: '4px'}}/> PREDEFINED AP</div>
+                                </div>
+                                <div className="locked-address-display compact">
+                                  <strong>{recipientData.company}</strong>
+                                  <div className="inline-address">
+                                    <p>{recipientData.address},</p>
+                                    <span className="address-bottom">{recipientData.suburb} {recipientData.state} {recipientData.postcode}</span>
                                   </div>
                                 </div>
                               </>
@@ -1927,7 +2027,7 @@ const NewJobForm: React.FC = () => {
                           )}
                           <div className="v-row">
                             <span className="v-label">SERVICE</span>
-                            <span className="v-val">{formData.service.replace(/-/g, ' ').toUpperCase()}</span>
+                            <span className="v-val">{formData.service === 'site-to-australia post' ? 'SITE ➔ AUSTRALIA POST' : formData.service === 'australia post-to-site' ? 'AUSTRALIA POST ➔ SITE' : formData.service.replace(/-/g, ' ').toUpperCase()}</span>
                           </div>
                           {routeDistance && (
                             <div className="v-row">

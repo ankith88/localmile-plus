@@ -166,8 +166,8 @@ const CustomerHub: React.FC = () => {
 
     // 2. Advanced Filters
     if (serviceFilter !== 'all') {
-      if (serviceFilter === 'lpo-to-site' && !(c.lpoServiceAMPOInternalID && c.lpoServiceAMPOInternalID !== 'null')) return false;
-      if (serviceFilter === 'site-to-lpo' && !(c.lpoServicePMPOInternalID && c.lpoServicePMPOInternalID !== 'null')) return false;
+      if ((serviceFilter === 'lpo-to-site' || serviceFilter === 'australia post-to-site') && !(c.lpoServiceAMPOInternalID && c.lpoServiceAMPOInternalID !== 'null')) return false;
+      if ((serviceFilter === 'site-to-lpo' || serviceFilter === 'site-to-australia post') && !(c.lpoServicePMPOInternalID && c.lpoServicePMPOInternalID !== 'null')) return false;
       if (serviceFilter === 'round-trip' && !(c.lpoServiceAMPOPMPOInternalID && c.lpoServiceAMPOPMPOInternalID !== 'null')) return false;
     }
 
@@ -244,6 +244,8 @@ const CustomerHub: React.FC = () => {
                     <option value="all">All Service Types</option>
                     <option value="lpo-to-site">Parent ➔ Site</option>
                     <option value="site-to-lpo">Site ➔ Parent</option>
+                    <option value="australia post-to-site">Australia Post ➔ Site</option>
+                    <option value="site-to-australia post">Site ➔ Australia Post</option>
                     <option value="round-trip">Round Trip</option>
                   </select>
                 </div>

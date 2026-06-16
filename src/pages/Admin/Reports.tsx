@@ -37,7 +37,9 @@ const Reports: React.FC = () => {
     serviceSplit: {
       'lpo-to-site': 0,
       'site-to-lpo': 0,
-      'round-trip': 0
+      'round-trip': 0,
+      'site-to-australia post': 0,
+      'australia post-to-site': 0
     }
   });
 
@@ -61,7 +63,7 @@ const Reports: React.FC = () => {
         const statusCount = { scheduled: 0, completed: 0, cancelled: 0 };
         const customerRevenue: Record<string, number> = {};
         const suburbs: Record<string, number> = {};
-        const split = { 'lpo-to-site': 0, 'site-to-lpo': 0, 'round-trip': 0 };
+        const split = { 'lpo-to-site': 0, 'site-to-lpo': 0, 'round-trip': 0, 'site-to-australia post': 0, 'australia post-to-site': 0 };
         
         const today = new Date();
         const nextWeek = new Date();
@@ -160,7 +162,9 @@ const Reports: React.FC = () => {
   const serviceLabels: Record<string, string> = {
     'lpo-to-site': 'Parent ➔ Site',
     'site-to-lpo': 'Site ➔ Parent',
-    'round-trip': 'Round Trip'
+    'round-trip': 'Round Trip',
+    'site-to-australia post': 'Site ➔ Australia Post',
+    'australia post-to-site': 'Australia Post ➔ Site'
   };
 
   return (
@@ -323,7 +327,7 @@ const Reports: React.FC = () => {
                         fill="transparent" 
                         stroke="var(--ink)" 
                         strokeWidth="20" 
-                        strokeDasharray={`${(stats.serviceSplit['lpo-to-site'] / (stats.totalJobs || 1)) * 251} 251`}
+                        strokeDasharray={`${((stats.serviceSplit['lpo-to-site'] + stats.serviceSplit['australia post-to-site']) / (stats.totalJobs || 1)) * 251} 251`}
                         transform="rotate(-90 50 50)"
                       />
                     </svg>
@@ -468,8 +472,8 @@ const Reports: React.FC = () => {
         .legend-item .label { flex: 1; }
         .legend-item .value { font-weight: 800; color: var(--ink); }
         
-        .dot.lpo-to-site { background: var(--ink); }
-        .dot.site-to-lpo { background: var(--gold); }
+        .dot.lpo-to-site, .dot.australia\\ post-to-site { background: var(--ink); }
+        .dot.site-to-lpo, .dot.site-to-australia\\ post { background: var(--gold); }
         .dot.round-trip { background: var(--ink-soft); }
 
         .loading-state { padding: 100px; text-align: center; color: var(--ink-soft); font-weight: 800; font-size: 1.2rem; }

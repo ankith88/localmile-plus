@@ -375,7 +375,7 @@ const Schedules: React.FC = () => {
                        <div className="card-meta">
                           <div className="meta-pill">
                              <Clock size={12} />
-                             <span>{schedule.service.replace(/-/g, ' ')}</span>
+                             <span>{schedule.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : schedule.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : schedule.service.replace(/-/g, ' ')}</span>
                           </div>
                           <div className="meta-pill">
                              <RotateCcw size={12} />

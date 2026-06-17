@@ -312,7 +312,7 @@ const Dashboard: React.FC = () => {
 
     if (window.confirm('Are you sure you want to cancel this job?')) {
       if (job) {
-        const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2533&deploy=1&compid=1048144&ns-at=AAEJ7tMQft1Dl2RVClm4B9TZr9MEKQ4mSl-fhRftfdOXMPsHlRI";
+        const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2659&deploy=1&compid=1048144&ns-at=AAEJ7tMQotYIcRX7i2nlMeRMASDYV0VaDuDV06BPqb9AWt3leUU";
         
         const params = new URLSearchParams({
           job_id: id,

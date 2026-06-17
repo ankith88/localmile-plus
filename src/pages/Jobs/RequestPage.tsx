@@ -472,6 +472,7 @@ const RequestPage: React.FC = () => {
             customer_id: netsuiteCustomerId,
             email: request.customer?.email || "",
             firstName: request.customer?.firstName || "",
+            phone: request.customer?.phone || "",
             service: request.service || "",
             date: request.date || "null",
             frequency: request.jobType === 'scheduled' ? (request.frequency?.join(',') || "null") : "null",
@@ -487,10 +488,10 @@ const RequestPage: React.FC = () => {
             auspost_email: request.auspostContact?.email || "null",
             auspost_company: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.company : request.recipient?.company) || "null",
             is_free_job: isFreeJob.toString(),
-            user_first_name: userData?.first_name || "null",
-            user_last_name: userData?.last_name || "null",
-            user_email: userData?.email || "null",
-            user_phone: userData?.mobile || "null"
+            user_first_name: request.customer?.firstName || "null",
+            user_last_name: request.customer?.lastName || "null",
+            user_email: request.customer?.email || "null",
+            user_phone: request.customer?.phone || "null"
           });
 
           console.log("Triggering NetSuite 2649 with:", Object.fromEntries(params2649));

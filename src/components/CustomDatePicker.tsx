@@ -1,14 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { isPublicHoliday } from '../utils/holidays';
 
 interface CustomDatePickerProps {
   value: string; // YYYY-MM-DD
   onChange: (value: string) => void;
   placeholder?: string;
   min?: string;
+  disableWeekends?: boolean;
+  state?: string;
 }
 
-const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, placeholder, min }) => {
+const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, placeholder, min, disableWeekends, state }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(value ? new Date(value) : new Date());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -77,11 +80,19 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
   };
 
   const isDisabled = (date: Date) => {
+    if (disableWeekends) {
+      const day = date.getDay();
+      if (day === 0 || day === 6) return true;
+      if (isPublicHoliday(date, state)) return true;
+    }
     if (!min) return false;
     const minDate = new Date(min);
     minDate.setHours(0,0,0,0);
     return date < minDate;
   };
+
+  const todayDate = new Date();
+  const isTodayDisabled = disableWeekends && (todayDate.getDay() === 0 || todayDate.getDay() === 6 || isPublicHoliday(todayDate, state));
 
   return (
     <div className="custom-datepicker-container" ref={containerRef}>
@@ -133,7 +144,13 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
           </div>
           
           <div className="popup-footer">
-            <button className="today-btn" onClick={() => handleDateSelect(new Date())}>Today</button>
+            <button 
+              className="today-btn" 
+              onClick={() => handleDateSelect(new Date())}
+              disabled={isTodayDisabled}
+            >
+              Today
+            </button>
           </div>
         </div>
       )}
@@ -314,7 +331,7 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
           border-radius: 8px;
         }
 
-        .today-btn:hover {
+        .today-btn:hover:not(:disabled) {
           background: var(--offwhite);
         }
 

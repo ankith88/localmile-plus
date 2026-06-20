@@ -35,6 +35,7 @@ import AcceptingProgress from '../../components/AcceptingProgress';
 import { db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import { formatDateForInput, parseLocalDate, getDayName } from '../../utils/scheduling';
+import { isPublicHoliday } from '../../utils/holidays';
 import { requestNotificationPermission, saveTokenToFirestore, onForegroundMessage } from '../../utils/notifications';
 
 const RequestPage: React.FC = () => {
@@ -631,6 +632,17 @@ const RequestPage: React.FC = () => {
       return;
     }
 
+    const selectedDate = parseLocalDate(newDate);
+    const day = selectedDate.getDay();
+    if (day === 0 || day === 6) {
+      alert("We do not operate on weekends. Please select a weekday.");
+      return;
+    }
+    if (isPublicHoliday(newDate, request.customer?.state)) {
+      alert("We do not operate on public holidays. Please select another date.");
+      return;
+    }
+
     try {
       const timeMsg = newTime ? ` and time: ${newTime}` : '';
       const sysMessage = {
@@ -977,6 +989,8 @@ const RequestPage: React.FC = () => {
                                    value={newDate}
                                    onChange={(val) => setNewDate(val)}
                                    min={formatDateForInput(new Date())}
+                                   disableWeekends={true}
+                                   state={request?.customer?.state}
                                 />
                              </div>
                           </div>

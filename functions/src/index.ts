@@ -501,7 +501,7 @@ export const onJobStatusUpdated = onDocumentUpdated({
                 "x-api-key": prospectplusApiKey.value()
               },
               body: JSON.stringify({
-                bucket: "Account Manager"
+                bucket: "account_manager"
               })
             });
 
@@ -1016,19 +1016,43 @@ export const onChatMessageSent = onDocumentUpdated({
 });
 
 // Logic: updateJobStatus
-export const updateJobStatus = onCall(async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
+export const updateJobStatus = onRequest({
+  cors: true,
+}, async (req, res) => {
+  // Validate method
+  if (req.method !== 'POST') {
+    res.status(405).send({ success: false, message: "Method Not Allowed" });
+    return;
   }
 
-  const { jobId, collectionName, status, stops } = request.data;
+  // Validate Authorization header
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).send({ success: false, message: "Unauthorized. Missing or invalid Authorization header." });
+    return;
+  }
+
+  const token = authHeader.split('Bearer ')[1];
+  try {
+    await admin.auth().verifyIdToken(token);
+  } catch (error: any) {
+    console.error("Token verification failed:", error);
+    res.status(401).send({ success: false, message: "Unauthorized. Invalid token." });
+    return;
+  }
+
+  // Support both wrapped "data" field (Firebase Callable standard) and direct body
+  const payload = req.body.data || req.body;
+  const { jobId, collectionName, status, stops } = payload;
 
   if (!jobId || !collectionName) {
-    throw new HttpsError("invalid-argument", "jobId and collectionName are required.");
+    res.status(400).send({ success: false, message: "jobId and collectionName are required." });
+    return;
   }
 
   if (!['jobs', 'requests'].includes(collectionName)) {
-    throw new HttpsError("invalid-argument", "collectionName must be either 'jobs' or 'requests'.");
+    res.status(400).send({ success: false, message: "collectionName must be either 'jobs' or 'requests'." });
+    return;
   }
 
   const db = getDB();
@@ -1036,12 +1060,14 @@ export const updateJobStatus = onCall(async (request) => {
   const docSnap = await docRef.get();
 
   if (!docSnap.exists) {
-    throw new HttpsError("not-found", "Job not found.");
+    res.status(404).send({ success: false, message: "Job not found." });
+    return;
   }
 
   const jobData = docSnap.data();
   if (!jobData) {
-    throw new HttpsError("internal", "Job data is empty.");
+    res.status(500).send({ success: false, message: "Job data is empty." });
+    return;
   }
 
   const updatedData: any = {
@@ -1077,12 +1103,12 @@ export const updateJobStatus = onCall(async (request) => {
 
   await docRef.update(updatedData);
 
-  return {
+  res.status(200).send({
     success: true,
     jobId,
     status: updatedData.status || jobData.status,
     stopsUpdated
-  };
+  });
 });
 
 // Logic: generateDailyScheduledJobs
@@ -2723,6 +2749,14 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
       street: payload.street || "",
       zip: payload.zip || "",
       trial_credits_balance: 5,
+      apName: payload.apName || "",
+      apAddr1: payload.apAddr1 || "",
+      apStreet: payload.apStreet || "",
+      apSuburb: payload.apSuburb || "",
+      apState: payload.apState || "",
+      apPostcode: payload.apPostcode || "",
+      apLatitude: payload.apLatitude || "",
+      apLongitude: payload.apLongitude || "",
     }, { merge: true });
 
     // users Collection

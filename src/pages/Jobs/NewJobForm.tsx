@@ -19,7 +19,8 @@ import {
   Circle
 } from 'lucide-react';
 import { useJsApiLoader, GoogleMap, Marker, Polyline } from '@react-google-maps/api';
-import { formatDateForInput, getDefaultBookingDate } from '../../utils/scheduling';
+import { formatDateForInput, getDefaultBookingDate, parseLocalDate } from '../../utils/scheduling';
+import { isPublicHoliday } from '../../utils/holidays';
 import { useLpo } from '../../context/LpoContext';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
 import { db, googleMapsApiKey } from '../../firebase/config';
@@ -624,6 +625,23 @@ const NewJobForm: React.FC = () => {
   const handleNext = async () => {
     if (step === 1) {
       setValidationError(null);
+
+      const targetAddressState = userData?.role === 'customer' 
+        ? (recipientData.state || companyData?.state || '')
+        : (formData.customer.state || '');
+
+      if (formData.date) {
+        const selectedDate = parseLocalDate(formData.date);
+        const day = selectedDate.getDay();
+        if (day === 0 || day === 6) {
+          setValidationError("We do not operate on weekends. Please select a weekday.");
+          return;
+        }
+        if (isPublicHoliday(formData.date, targetAddressState)) {
+          setValidationError("We do not operate on public holidays. Please select another date.");
+          return;
+        }
+      }
       
       // For independent customers, we validate both site and recipient
       if (userData?.role === 'customer') {
@@ -732,6 +750,23 @@ const NewJobForm: React.FC = () => {
       if (formData.jobType === 'scheduled' && formData.frequency.length === 0) {
         setValidationError("Please select at least one day for the scheduled service.");
         return;
+      }
+
+      const targetAddressState = userData?.role === 'customer' 
+        ? (recipientData.state || companyData?.state || '')
+        : (formData.customer.state || '');
+
+      if (formData.date) {
+        const selectedDate = parseLocalDate(formData.date);
+        const day = selectedDate.getDay();
+        if (day === 0 || day === 6) {
+          setValidationError("We do not operate on weekends. Please select a weekday.");
+          return;
+        }
+        if (isPublicHoliday(formData.date, targetAddressState)) {
+          setValidationError("We do not operate on public holidays. Please select another date.");
+          return;
+        }
       }
 
       const now = new Date();
@@ -1957,6 +1992,8 @@ const NewJobForm: React.FC = () => {
                           value={formData.date}
                           onChange={(val) => setFormData({...formData, date: val})}
                           min={formatDateForInput(getDefaultBookingDate())}
+                          disableWeekends={true}
+                          state={formData.customer.state}
                         />
                       </div>
                       <div style={{ flex: 2 }}>

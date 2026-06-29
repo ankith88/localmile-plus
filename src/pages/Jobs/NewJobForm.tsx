@@ -1018,12 +1018,14 @@ const NewJobForm: React.FC = () => {
     if (!parent && !customer && userData?.role !== 'customer') return;
 
     let isFreeJob = false;
+    let companyProfileData: any = null;
     const companyIdForTrial = customer?.id || userData?.customer_id;
     if (companyIdForTrial) {
       try {
         const compDoc = await getDoc(doc(db, 'companies', companyIdForTrial));
         if (compDoc.exists()) {
-          const balance = compDoc.data().trial_credits_balance;
+          companyProfileData = compDoc.data();
+          const balance = companyProfileData.trial_credits_balance;
           if (typeof balance === 'number') {
             if (balance > 0) {
               isFreeJob = true;
@@ -1149,8 +1151,13 @@ const NewJobForm: React.FC = () => {
 
       if (userData?.role === 'customer' && companyData) {
         if (isSiteToAusPost) {
+          const balance = companyProfileData?.trial_credits_balance ?? companyData.trial_credits_balance;
+          const isTrial = typeof balance === 'number' && balance > 0;
+          const pmpoId = isTrial
+            ? (companyProfileData?.localmileTrialInternalID ?? companyData.localmileTrialInternalID ?? companyData.servicePMPOInternalID ?? null)
+            : (companyData.servicePMPOInternalID || null);
           conditionalServiceData = {
-            servicePMPOInternalID: companyData.servicePMPOInternalID || null,
+            servicePMPOInternalID: pmpoId,
             servicePMPORate: companyData.servicePMPORate || null
           };
         } else if (isAusPostToSite) {
@@ -1166,8 +1173,13 @@ const NewJobForm: React.FC = () => {
         }
       } else if (userData?.role !== 'customer' && formData.customer) {
         if (isSiteToAusPost) {
+          const balance = companyProfileData?.trial_credits_balance;
+          const isTrial = typeof balance === 'number' && balance > 0;
+          const pmpoId = isTrial
+            ? (companyProfileData?.localmileTrialInternalID ?? formData.customer.lpoServicePMPOInternalID ?? null)
+            : (formData.customer.lpoServicePMPOInternalID || null);
           conditionalServiceData = {
-            servicePMPOInternalID: formData.customer.lpoServicePMPOInternalID || null,
+            servicePMPOInternalID: pmpoId,
             servicePMPORate: formData.customer.lpoServicePMPORate || null
           };
         } else if (isAusPostToSite) {
@@ -2064,7 +2076,13 @@ const NewJobForm: React.FC = () => {
                           )}
                           <div className="v-row">
                             <span className="v-label">SERVICE</span>
-                            <span className="v-val">{formData.service === 'site-to-australia post' ? 'SITE ➔ AUSTRALIA POST' : formData.service === 'australia post-to-site' ? 'AUSTRALIA POST ➔ SITE' : formData.service.replace(/-/g, ' ').toUpperCase()}</span>
+                            <span className="v-val">
+                              {formData.service === 'site-to-australia post' || formData.service === 'site-to-lpo'
+                                ? 'SITE ➔ AUSTRALIA POST'
+                                : formData.service === 'australia post-to-site' || formData.service === 'lpo-to-site'
+                                  ? 'AUSTRALIA POST ➔ SITE'
+                                  : formData.service.replace(/-/g, ' ').toUpperCase()}
+                            </span>
                           </div>
                           {routeDistance && (
                             <div className="v-row">
@@ -2086,9 +2104,13 @@ const NewJobForm: React.FC = () => {
                             <span className="v-label">FINAL QUOTE PRICE</span>
                             <span className="v-val">{formData.serviceRate ? `$${parseFloat(formData.serviceRate).toFixed(2)}` : (formData.service === 'round-trip' ? '$20.00' : '$10.00')}</span>
                           </div>
-                        </div>
-                        <div className="voucher-footer">
-                           Valid for lodgement at {parent?.name || 'Local Parent'}
+                          {trialCredits !== null && trialCredits > 0 && (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-8px', marginBottom: '12px' }}>
+                              <span style={{ fontSize: '0.75rem', color: '#095c7b', background: '#eaf044', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <Sparkles size={12} /> Free Trial Applied — $0.00 due
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

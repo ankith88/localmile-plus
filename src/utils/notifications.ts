@@ -22,9 +22,9 @@ export const requestNotificationPermission = async () => {
   return null;
 };
 
-export const saveTokenToFirestore = async (token: string, type: 'operator' | 'customer', id: string) => {
+export const saveTokenToFirestore = async (token: string, type: 'parent' | 'operator' | 'customer', id: string) => {
   try {
-    if (type === 'operator') {
+    if (type === 'parent' || type === 'operator') {
       // Save to users/{id}
       const userRef = doc(db, 'users', id);
       await updateDoc(userRef, {

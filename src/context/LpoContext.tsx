@@ -176,7 +176,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (parentId) {
               requestNotificationPermission().then(token => {
                 if (token) {
-                  saveTokenToFirestore(token, 'operator', user.uid);
+                  saveTokenToFirestore(token, 'parent', user.uid);
                 }
               });
             } else if (data.customer_id) {
@@ -346,7 +346,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const userDocRef = doc(db, "users", newUser.uid);
     const isSuperAdmin = newUser.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au';
-    let assignedRole: UserMetadata['role'] = 'operator';
+    let assignedRole: UserMetadata['role'] = 'parent';
     if (isSuperAdmin) {
       assignedRole = 'superadmin';
     } else if (customerId && parentId) {

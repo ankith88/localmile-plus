@@ -975,7 +975,7 @@ export const onChatMessageSent = onDocumentUpdated({
           });
         }
       }
-    } else if (sender === 'operator') {
+    } else if (sender === 'parent' || sender === 'operator') {
       const tokens = (afterData.customerTokens || []) as string[];
       const uniqueTokens = [...new Set(tokens)].filter(t => !!t);
       console.log(`[Notification] Found ${uniqueTokens.length} customer tokens for Request: ${requestId}`);
@@ -2745,6 +2745,8 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
       franchiseeTerritoryJSON: payload.franchiseeTerritoryJSON || [],
       servicePMPOInternalID: payload.servicePMPOInternalID || "",
       servicePMPORate: payload.servicePMPORate || "",
+      serviceTrialInternalID: payload.serviceTrialInternalID || "",
+      serviceTrialRate: payload.serviceTrialRate || "",
       state: payload.state || "",
       street: payload.street || "",
       zip: payload.zip || "",
@@ -3006,7 +3008,11 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       serviceInternalId = companyData.serviceAMPOInternalID || '';
       serviceRate = companyData.serviceAMPORate || '';
     } else if (service === 'site-to-lpo' || service === 'site-to-australia post') {
-      serviceInternalId = companyData.servicePMPOInternalID || '';
+      const trialBalance = companyData.trial_credits_balance;
+      const isTrial = typeof trialBalance === 'number' && trialBalance > 0;
+      serviceInternalId = (isTrial && companyData.localmileTrialInternalID)
+        ? companyData.localmileTrialInternalID
+        : (companyData.servicePMPOInternalID || '');
       serviceRate = companyData.servicePMPORate || '';
     }
 

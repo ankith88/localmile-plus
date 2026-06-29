@@ -153,10 +153,10 @@ export const DevContextSwitcher: React.FC = () => {
   const handleApply = () => {
     if (roleMode === 'superadmin') {
       setImpersonation(null);
-    } else if (roleMode === 'operator') {
+    } else if (roleMode === 'parent' || roleMode === 'operator') {
       if (!selectedParentId) return alert('Please select a Parent LPO.');
       setImpersonation({
-        role: 'operator',
+        role: 'parent',
         parent_id: selectedParentId,
       });
     } else if (roleMode === 'customer') {
@@ -235,13 +235,13 @@ export const DevContextSwitcher: React.FC = () => {
                 className="dev-select"
               >
                 <option value="superadmin">Global Admin</option>
-                <option value="operator">Parent Operator</option>
+                <option value="parent">Parent Operator</option>
                 <option value="customer">Standalone Customer</option>
               </select>
             </div>
           </div>
 
-          {roleMode === 'operator' && (
+          {(roleMode === 'parent' || roleMode === 'operator') && (
             <div>
               <label className="dev-label">Select Parent LPO</label>
               <div style={{ position: 'relative' }}>

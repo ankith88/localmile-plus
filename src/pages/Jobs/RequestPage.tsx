@@ -100,7 +100,7 @@ const RequestPage: React.FC = () => {
       const token = await requestNotificationPermission();
       if (token) {
         if (isParentUser && userData?.uid) {
-          saveTokenToFirestore(token, 'operator', userData.uid); 
+          saveTokenToFirestore(token, 'parent', userData.uid); 
         } else if (id) {
           saveTokenToFirestore(token, 'customer', id);
         }
@@ -156,7 +156,7 @@ const RequestPage: React.FC = () => {
     if (!lastMsg) return;
 
     // If a new message arrived from the OTHER person
-    const isFromOther = (isParentUser && lastMsg.sender === 'user') || (!isParentUser && lastMsg.sender === 'operator');
+    const isFromOther = (isParentUser && lastMsg.sender === 'user') || (!isParentUser && (lastMsg.sender === 'parent' || lastMsg.sender === 'operator'));
     
     if (isFromOther) {
       if (audioRef.current) {
@@ -177,7 +177,7 @@ const RequestPage: React.FC = () => {
     if (!message.trim() || !id) return;
 
     const newMessage = {
-      sender: isParentUser ? 'operator' : 'user',
+      sender: isParentUser ? 'parent' : 'user',
       text: message.trim(),
       timestamp: new Date().toISOString(),
     };
@@ -235,7 +235,7 @@ const RequestPage: React.FC = () => {
         await updateDoc(doc(db, 'requests', id), {
           status: 'cancelled',
           cancelledAt: new Date().toISOString(),
-          cancelledBy: isParentUser ? 'operator' : 'customer',
+          cancelledBy: isParentUser ? 'parent' : 'customer',
           chat: arrayUnion(sysMessage)
         });
 
@@ -268,11 +268,15 @@ const RequestPage: React.FC = () => {
       try {
         // Fetch trial balance early to pass to APIs
         let isFreeJob = false;
+        let companyDataFromDb: any = null;
         if (request.customer_id) {
           try {
             const compDoc = await getDoc(doc(db, 'companies', request.customer_id));
-            if (compDoc.exists() && typeof compDoc.data().trial_credits_balance === 'number' && compDoc.data().trial_credits_balance > 0) {
-              isFreeJob = true;
+            if (compDoc.exists()) {
+              companyDataFromDb = compDoc.data();
+              if (typeof companyDataFromDb.trial_credits_balance === 'number' && companyDataFromDb.trial_credits_balance > 0) {
+                isFreeJob = true;
+              }
             }
           } catch (e) {
             console.error("Failed to check trial balance:", e);
@@ -308,7 +312,9 @@ const RequestPage: React.FC = () => {
                   serviceInternalId = c.lpoServiceAMPOInternalID || '';
                   serviceRate = c.lpoServiceAMPORate || '';
                 } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                  serviceInternalId = c.lpoServicePMPOInternalID || '';
+                  serviceInternalId = (isFreeJob && companyDataFromDb?.localmileTrialInternalID)
+                    ? companyDataFromDb.localmileTrialInternalID
+                    : (c.lpoServicePMPOInternalID || '');
                   serviceRate = c.lpoServicePMPORate || '';
                 } else if (request.service === 'round-trip') {
                   serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
@@ -383,7 +389,9 @@ const RequestPage: React.FC = () => {
                 serviceInternalId = c.lpoServiceAMPOInternalID || '';
                 serviceRate = c.lpoServiceAMPORate || '';
               } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                serviceInternalId = c.lpoServicePMPOInternalID || '';
+                serviceInternalId = (isFreeJob && companyDataFromDb?.localmileTrialInternalID)
+                  ? companyDataFromDb.localmileTrialInternalID
+                  : (c.lpoServicePMPOInternalID || '');
                 serviceRate = c.lpoServicePMPORate || '';
               } else if (request.service === 'round-trip') {
                 serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
@@ -567,7 +575,7 @@ const RequestPage: React.FC = () => {
         rejectionReason: rejectReason,
         rejectionNotes: rejectNotes.trim(),
         rejectedAt: new Date().toISOString(),
-        rejectedBy: isParentUser ? (parent?.id || 'operator') : 'customer',
+        rejectedBy: isParentUser ? (parent?.id || 'parent') : 'customer',
         chat: arrayUnion(sysMessage)
       });
 
@@ -943,7 +951,7 @@ const RequestPage: React.FC = () => {
                        }
                        return (
                           <div key={idx} className={`message-bubble ${msg.sender}`}>
-                             <div className="sender-label">{msg.sender === 'operator' ? 'Parent' : 'Franchisee'}</div>
+                             <div className="sender-label">{(msg.sender === 'parent' || msg.sender === 'operator') ? 'Parent' : 'Franchisee'}</div>
                              <div className="message-content">{msg.text}</div>
                              <div className="message-time">
                                 {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1220,7 +1228,7 @@ const RequestPage: React.FC = () => {
         .chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; padding-right: 15px; }
         .message-bubble { max-width: 80%; padding: 16px; border-radius: 20px; position: relative; }
         .message-bubble.user { align-self: flex-start; background: var(--paper); color: var(--ink-soft); border-bottom-left-radius: 4px; }
-        .message-bubble.operator { align-self: flex-end; background: var(--ink); color: white; border-bottom-right-radius: 4px; }
+        .message-bubble.parent, .message-bubble.operator { align-self: flex-end; background: var(--ink); color: white; border-bottom-right-radius: 4px; }
 
         .sender-label { font-size: 0.65rem; font-weight: 800; opacity: 0.7; margin-bottom: 4px; text-transform: uppercase; }
         .message-content { font-weight: 600; font-size: 0.95rem; line-height: 1.4; }

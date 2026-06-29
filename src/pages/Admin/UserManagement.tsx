@@ -45,7 +45,7 @@ const UserManagement: React.FC = () => {
   // New User Form State
   const [newUser, setNewUser] = useState({
     email: '',
-    role: 'operator',
+    role: 'parent',
     parent_id: '',
     password: ''
   });
@@ -100,7 +100,7 @@ const UserManagement: React.FC = () => {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUser.email || !newUser.password || (newUser.role === 'operator' && !newUser.parent_id)) {
+    if (!newUser.email || !newUser.password || (newUser.role === 'parent' && !newUser.parent_id)) {
       alert("Please fill in all required fields including password.");
       return;
     }
@@ -124,7 +124,7 @@ const UserManagement: React.FC = () => {
       }
 
       setIsModalOpen(false);
-      setNewUser({ email: '', role: 'operator', parent_id: '', password: '' });
+      setNewUser({ email: '', role: 'parent', parent_id: '', password: '' });
       fetchUsers();
     } catch (err: any) {
       console.error("Error creating user:", err);
@@ -426,13 +426,13 @@ const UserManagement: React.FC = () => {
               </div>
             </div>
 
-            <div className="form-section">
+             <div className="form-section">
               <label className="m-label">System Role</label>
               <div className="role-selector">
                 <button 
                   type="button"
-                  className={`role-btn ${newUser.role === 'operator' ? 'active' : ''}`}
-                  onClick={() => setNewUser({...newUser, role: 'operator'})}
+                  className={`role-btn ${newUser.role === 'parent' ? 'active' : ''}`}
+                  onClick={() => setNewUser({...newUser, role: 'parent'})}
                 >
                   <Users size={18} />
                   <span>Parent Operator</span>
@@ -448,7 +448,7 @@ const UserManagement: React.FC = () => {
               </div>
             </div>
 
-            {(newUser.role === 'operator') && (
+            {(newUser.role === 'parent') && (
               <div className="form-section fade-in">
                 <label className="m-label">Assign to Parent</label>
                 <div className="input-wrapper-glass">
@@ -456,7 +456,7 @@ const UserManagement: React.FC = () => {
                   <select 
                     value={newUser.parent_id}
                     onChange={(e) => setNewUser({...newUser, parent_id: e.target.value})}
-                    required={newUser.role === 'operator'}
+                    required={newUser.role === 'parent'}
                   >
                     <option value="">Select a Parent Account</option>
                     {allParents.map(l => (
@@ -645,7 +645,7 @@ const UserManagement: React.FC = () => {
         .user-avatar { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; background: var(--ink-soft); }
         .user-avatar.superadmin { background: #1a1a1a; box-shadow: 0 0 15px rgba(0,0,0,0.2); }
         .user-avatar.admin { background: var(--ink); }
-        .user-avatar.operator { background: var(--gold); }
+        .user-avatar.parent, .user-avatar.operator { background: var(--gold); }
         
         .user-info { display: flex; flex-direction: column; }
         .user-email { font-weight: 700; color: var(--ink); font-size: 0.95rem; }
@@ -654,7 +654,7 @@ const UserManagement: React.FC = () => {
         .role-tag { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; }
         .role-tag.superadmin { background: #000; color: #fff; }
         .role-tag.admin { background: #e8f0fe; color: #1a73e8; }
-        .role-tag.operator { background: #fff4e5; color: #d97706; }
+        .role-tag.parent, .role-tag.operator { background: #fff4e5; color: #d97706; }
 
         .lpo-cell { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-weight: 600; font-size: 0.9rem; }
         .global-access { font-style: italic; color: var(--ink-soft); opacity: 0.5; }

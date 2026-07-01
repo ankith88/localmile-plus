@@ -1629,6 +1629,7 @@ export const adminResetPassword = onCall(async (request) => {
 
 // Logic: requestPasswordReset
 export const requestPasswordReset = onCall({
+  invoker: "public",
   secrets: [gmailAppPassword, prospectplusApiKey],
 }, async (request) => {
   const { email } = request.data;

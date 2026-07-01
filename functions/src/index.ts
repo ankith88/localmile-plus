@@ -1629,7 +1629,7 @@ export const adminResetPassword = onCall(async (request) => {
 
 // Logic: requestPasswordReset
 export const requestPasswordReset = onCall({
-  secrets: [gmailAppPassword],
+  secrets: [gmailAppPassword, prospectplusApiKey],
 }, async (request) => {
   const { email } = request.data;
 
@@ -1648,20 +1648,20 @@ export const requestPasswordReset = onCall({
     console.log(`[Auth] Generating password reset link for: ${email}`);
     const link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
 
-    // 2. Prepare the custom email
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: "bookings@localmile.plus",
-        pass: gmailAppPassword.value(),
-      },
-    });
+    // 2. Fetch leadId from user document if exists
+    const db = getDB();
+    const userSnap = await db.collection("users")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+    
+    let leadId = "";
+    if (!userSnap.empty) {
+      leadId = userSnap.docs[0].data().leadId || "";
+    }
 
-    const mailOptions = {
-      from: '"LocalMile.Plus" <bookings@localmile.plus>',
-      to: email,
-      subject: "Reset your LocalMile.Plus password",
-      html: `
+    // 3. Prepare custom email HTML
+    const htmlContent = `
         <div style="font-family: 'Fraunces', serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #333;">
           <!-- Header -->
           <div style="background-color: #095c7b; padding: 40px 20px; text-align: center;">
@@ -1702,12 +1702,47 @@ export const requestPasswordReset = onCall({
             </p>
           </div>
         </div>
-      `,
-    };
+      `;
 
-    // 3. Send the email
-    await transporter.sendMail(mailOptions);
-    console.log(`[Auth] Custom password reset email sent to: ${email}`);
+    // 4. Send email via ProspectPlus API
+    console.log(`[Auth] Routing password reset email for ${email} via ProspectPlus API...`);
+    const response = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': prospectplusApiKey.value()
+      },
+      body: JSON.stringify({
+        to: email,
+        subject: "Reset your LocalMile.Plus password",
+        html: htmlContent,
+        from: 'localmile@mailplus.com.au',
+        metadata: {
+          customerId: leadId
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[Auth] ProspectPlus Email API failed with status ${response.status}:`, errText);
+      throw new Error(`ProspectPlus API failed: ${errText}`);
+    }
+
+    const data = await response.json() as any;
+    console.log(`[Auth] Password reset email sent successfully via ProspectPlus:`, data);
+
+    // 5. Log to communications
+    await logCommunication({
+      from: "localmile@mailplus.com.au",
+      to: email,
+      subject: "Reset your LocalMile.Plus password",
+      body: htmlContent,
+      type: 'sent',
+      metadata: {
+        customerId: leadId
+      }
+    });
 
     return { success: true };
   } catch (error: any) {

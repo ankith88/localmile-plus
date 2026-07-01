@@ -119,7 +119,7 @@ const SignIn: React.FC = () => {
           <div className="logo-section">
             <h1 className="brand-logo">LocalMile<span className="logo-plus">.Plus</span></h1>
             <p className="powered-by">Powered by MailPlus</p>
-            <p className="welcome-text">Connected Logistics for Parents</p>
+            <p className="welcome-text">Connected Logistics for Businesses</p>
           </div>
 
           <form className="signin-form" onSubmit={handleSignIn}>
@@ -191,9 +191,9 @@ const SignIn: React.FC = () => {
             </button>
           </form>
 
-          <p className="footer-link">
+          {/* <p className="footer-link">
             Don't have an account? <a onClick={() => navigate('/register')} style={{cursor: 'pointer'}}>Create one</a>
-          </p>
+          </p> */}
           <p className="footer-link" style={{ marginTop: '12px', fontSize: '0.8rem' }}>
             Trouble signing in? <a href="#">Contact Support</a>
           </p>

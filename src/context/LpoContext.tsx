@@ -182,7 +182,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } else if (data.customer_id) {
               requestNotificationPermission().then(token => {
                 if (token) {
-                  saveTokenToFirestore(token, 'customer', user.uid);
+                  saveTokenToFirestore(token, 'parent', user.uid);
                 }
               });
             }

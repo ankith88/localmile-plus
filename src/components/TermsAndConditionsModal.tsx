@@ -45,13 +45,15 @@ const TermsAndConditionsModal: React.FC = () => {
       console.log(`[NetSuite check] success: ${successStatus}, hasSuccessMessage: ${hasSuccessMessage}, raw message: ${data.message}`);
 
       if (successStatus && hasSuccessMessage) {
-        // Sync with ProspectPlus
-        try {
-          const syncProspectPlusTC = httpsCallable(functions, 'syncProspectPlusTermsAccepted');
-          await syncProspectPlusTC({ customer_id: customerId });
-        } catch (syncErr) {
-          console.error("Error syncing T&C acceptance with ProspectPlus:", syncErr);
-          throw new Error("Failed to sync Terms & Conditions acceptance with the system. Please try again.");
+        // Sync with ProspectPlus (only if the user role is not 'parent')
+        if (userData?.role !== 'parent') {
+          try {
+            const syncProspectPlusTC = httpsCallable(functions, 'syncProspectPlusTermsAccepted');
+            await syncProspectPlusTC({ customer_id: customerId });
+          } catch (syncErr) {
+            console.error("Error syncing T&C acceptance with ProspectPlus:", syncErr);
+            throw new Error("Failed to sync Terms & Conditions acceptance with the system. Please try again.");
+          }
         }
 
         // Update user metadata in Firestore only on success

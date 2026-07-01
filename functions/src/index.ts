@@ -1219,7 +1219,8 @@ export const generateDailyScheduledJobs = onSchedule({
 
 // Logic: sendSupportEmail
 export const sendSupportEmail = onCall({
-  secrets: [gmailAppPassword],
+  invoker: "public",
+  secrets: [prospectplusApiKey],
 }, async (request) => {
   console.log("[Support Email] Function triggered");
 
@@ -1237,14 +1238,6 @@ export const sendSupportEmail = onCall({
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: "bookings@localmile.plus",
-        pass: gmailAppPassword.value(),
-      },
-    });
-
     let recipients: string[] = [];
     if (to) {
       recipients = Array.isArray(to) ? to : [to];
@@ -1274,43 +1267,60 @@ export const sendSupportEmail = onCall({
       `;
     }
 
-    const mailOptions: any = {
-      from: '"LocalMile.Plus Support" <bookings@localmile.plus>',
-      to: recipients.join(","),
-      replyTo: "bookings@localmile.plus",
-      subject: subject || `Inquiry from LocalMile.Plus User${jobId ? ` (Job Ref: ${jobId})` : ""}`,
-      html: `
-        <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #1A3D33;">${subject || "New Support Inquiry"}</h2>
-          <p><strong>User:</strong> ${metadata?.senderName || "Unknown User"} (${request.auth.token.email || "Unknown User"})</p>
-          <p><strong>Company:</strong> ${metadata?.companyName || "N/A"}</p>
-          
-          ${metadataHtml}
+    const htmlContent = `
+      <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1A3D33;">${subject || "New Support Inquiry"}</h2>
+        <p><strong>User:</strong> ${metadata?.senderName || "Unknown User"} (${request.auth.token.email || "Unknown User"})</p>
+        <p><strong>Company:</strong> ${metadata?.companyName || "N/A"}</p>
+        
+        ${metadataHtml}
 
-          <p><strong>User Message:</strong></p>
-          <div style="background: #fdfef0; padding: 20px; border-radius: 8px; border-left: 4px solid #EAF044; font-style: italic;">
-            ${message.replace(/\n/g, '<br>')}
-          </div>
-          <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
-          <p style="font-size: 12px; color: #999;">This email was sent via LocalMile.Plus Support System.</p>
+        <p><strong>User Message:</strong></p>
+        <div style="background: #fdfef0; padding: 20px; border-radius: 8px; border-left: 4px solid #EAF044; font-style: italic;">
+          ${message.replace(/\n/g, '<br>')}
         </div>
-      `,
-    };
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
+        <p style="font-size: 12px; color: #999;">This email was sent via LocalMile.Plus Support System.</p>
+      </div>
+    `;
 
-    if (cc) {
-      mailOptions.cc = Array.isArray(cc) ? cc.join(",") : cc;
+    const emailSubject = subject || `Inquiry from LocalMile.Plus User${jobId ? ` (Job Ref: ${jobId})` : ""}`;
+    const leadId = metadata?.customerId || metadata?.leadId || "";
+
+    console.log("[Support Email] Sending support email via ProspectPlus API...");
+    const response = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': prospectplusApiKey.value()
+      },
+      body: JSON.stringify({
+        to: recipients.join(","),
+        cc: cc ? (Array.isArray(cc) ? cc.join(",") : cc) : undefined,
+        subject: emailSubject,
+        html: htmlContent,
+        from: 'localmile@mailplus.com.au',
+        metadata: {
+          customerId: leadId
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[Support Email] ProspectPlus API failed with status ${response.status}:`, errText);
+      throw new Error(`ProspectPlus API failed: ${errText}`);
     }
 
-    console.log("[Support Email] Sending via Nodemailer...");
-    const info = await transporter.sendMail(mailOptions);
-    console.log("Support Email sent:", info.messageId);
+    const data = await response.json() as any;
+    console.log("[Support Email] Support email sent successfully via ProspectPlus:", data);
 
     // Log to communications
     await logCommunication({
-      from: "bookings@localmile.plus",
+      from: "localmile@mailplus.com.au",
       to: recipients.join(","),
-      subject: mailOptions.subject,
-      body: mailOptions.html,
+      subject: emailSubject,
+      body: htmlContent,
       type: 'sent',
       metadata: {
         ...metadata,
@@ -1320,7 +1330,7 @@ export const sendSupportEmail = onCall({
       }
     });
 
-    return { success: true, messageId: info.messageId };
+    return { success: true };
   } catch (error: any) {
     console.error("Error sending support email:", error);
     throw new HttpsError("internal", error.message);

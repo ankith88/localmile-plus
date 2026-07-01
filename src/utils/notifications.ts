@@ -11,8 +11,10 @@ export const requestNotificationPermission = async () => {
   try {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
+      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
       const token = await getToken(messaging, {
-        vapidKey: "BFzv_rsja-IA7KrBazIT8Y4aq9VyMPrqJ4YUbPskhHCTy2q1XSPpiJddqkOVnz-tvZ1ZLLZyGBQYGoDxtHYG6mI" // Replace with actual public VAPID key from Firebase Console
+        vapidKey: "BGTuK0h--lutVcb11CtbPp2VQVWkXhWGVtjS9g_riHztBrGlHRWZthQiM1NiUQoqfUHDlmqpvdPfec9E7Y5v8Gw",
+        serviceWorkerRegistration: registration
       });
       return token;
     }
@@ -44,10 +46,10 @@ export const saveTokenToFirestore = async (token: string, type: 'parent' | 'oper
 
 export const onForegroundMessage = () => {
   if (!messaging) return;
-  
+
   onMessage(messaging, (payload: MessagePayload) => {
     console.log('[FCM] Foreground message received:', payload);
-    
+
     // Read from data if notification is missing (to prevent double notifications)
     const title = payload.notification?.title || payload.data?.title || 'New Message';
     const body = payload.notification?.body || payload.data?.body;

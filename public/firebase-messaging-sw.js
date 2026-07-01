@@ -2,12 +2,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js'
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  apiKey: "AIzaSyDklo95QYbj4PGZeKAqRBBzCfFKc9CFoXs",
+  apiKey: "AIzaSyCEKfFKLTso-t3Lu6YV8XOpCCBF2az9Hcg",
   authDomain: "localmile-plus.firebaseapp.com",
   projectId: "localmile-plus",
   storageBucket: "localmile-plus.firebasestorage.app",
-  messagingSenderId: "672243562252",
-  appId: "1:672243562252:web:fa94020bf1184b4d817b29"
+  messagingSenderId: "1058596386803",
+  appId: "1:1058596386803:web:ee4cf205f3512224c70486"
 });
 
 const messaging = firebase.messaging();

@@ -10,8 +10,7 @@ import {
   where, 
   getDocs 
 } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions } from '../../firebase/config';
+import { auth, db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import LoadingScreen from '../../components/LoadingScreen';
 
@@ -87,11 +86,22 @@ const SignIn: React.FC = () => {
     setMessage('');
 
     try {
-      const requestPasswordReset = httpsCallable(functions, 'requestPasswordReset');
-      await requestPasswordReset({ 
-        email: identifier,
-        origin: window.location.origin
+      const response = await fetch('/auth/request-password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          email: identifier,
+          origin: window.location.origin
+        })
       });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to send reset email.');
+      }
+
       setMessage('Password reset email sent! Please check your inbox.');
     } catch (err: any) {
       console.error("Reset error:", err);

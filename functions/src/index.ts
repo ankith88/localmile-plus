@@ -1628,21 +1628,28 @@ export const adminResetPassword = onCall(async (request) => {
 });
 
 // Logic: requestPasswordReset
-export const requestPasswordReset = onCall({
-  invoker: "public",
+export const requestPasswordResetHttp = onRequest({
+  cors: true,
   secrets: [gmailAppPassword, prospectplusApiKey],
-}, async (request) => {
-  const { email } = request.data;
+}, async (req, res) => {
+  // Handle CORS preflight explicitly if needed (cors: true normally handles this, but let's be safe and return early on OPTIONS)
+  if (req.method === 'OPTIONS') {
+    res.status(204).send();
+    return;
+  }
+
+  const { email, origin } = req.body || {};
 
   if (!email) {
-    throw new HttpsError("invalid-argument", "The function must be called with an email address.");
+    res.status(400).json({ error: "The function must be called with an email address." });
+    return;
   }
 
   try {
     // 1. Generate the reset link
     const actionCodeSettings = {
       // Use the origin if provided, otherwise fallback to production URL
-      url: request.data.origin ? `${request.data.origin}/signin` : 'https://localmile-plus.web.app/signin',
+      url: origin ? `${origin}/signin` : 'https://localmile-plus.web.app/signin',
       handleCodeInApp: true,
     };
 
@@ -1745,14 +1752,15 @@ export const requestPasswordReset = onCall({
       }
     });
 
-    return { success: true };
+    res.status(200).json({ success: true });
   } catch (error: any) {
     console.error("[Request Password Reset Error]:", error);
-    // For security, don't reveal if user-not-found, but log it
+    // For security, don't reveal if user-not-found, but return 200
     if (error.code === 'auth/user-not-found') {
-      return { success: true };
+      res.status(200).json({ success: true });
+      return;
     }
-    throw new HttpsError("internal", error.message || "Failed to generate password reset link.");
+    res.status(500).json({ error: error.message || "Failed to generate password reset link." });
   }
 });
 

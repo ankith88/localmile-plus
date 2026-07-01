@@ -12,6 +12,10 @@
     ],
     "rewrites": [
       {
+        "source": "/auth/request-password-reset",
+        "function": "requestPasswordResetHttp"
+      },
+      {
         "source": "/api/**",
         "function": "api"
       },

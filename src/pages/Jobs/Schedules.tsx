@@ -26,7 +26,7 @@ import { getNextOccurrences, parseLocalDate } from '../../utils/scheduling';
 import CustomSelect from '../../components/CustomSelect';
 
 const Schedules: React.FC = () => {
-  const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents } = useLpo();
+  const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -353,24 +353,31 @@ const Schedules: React.FC = () => {
                         </div>
 
                         {expandedJobIds.has(schedule.id) && (
-                          <div className="job-stops-container fade-in">
-                             <div className="stops-visual-line"></div>
-                             {sortStops(schedule.stops).map((stop: any, sIdx: number) => (
-                               <div key={sIdx} className="stop-entry">
-                                 <div className={`stop-node ${stop.type}`}></div>
-                                 <div className="stop-details">
-                                   <div className="stop-type-header">
-                                     <span className="type-pill">{stop.label || stop.type.toUpperCase()}</span>
-                                     <span className="stop-seq">STOP {stop.sequence}</span>
-                                   </div>
-                                   <div className="stop-loc-name">{stop.locationName}</div>
-                                   <div className="stop-addr">{stop.address}, {stop.suburb}</div>
-                                 </div>
-                                 <div className="stop-status">{stop.status}</div>
-                               </div>
-                             ))}
-                          </div>
-                        )}
+                           <div className="job-stops-container fade-in">
+                              <div className="stops-visual-line"></div>
+                              {sortStops(schedule.stops).map((stop: any, sIdx: number) => {
+                                const isCustomer = userData?.role === 'customer';
+                                const isOutbound = schedule.service === 'site-to-australia post' || schedule.service === 'site-to-lpo';
+                                const isInbound = schedule.service === 'australia post-to-site' || schedule.service === 'lpo-to-site';
+                                const shouldMask = isCustomer && ((isOutbound && stop.type === 'delivery') || (isInbound && stop.type === 'pickup'));
+
+                                return (
+                                  <div key={sIdx} className="stop-entry">
+                                    <div className={`stop-node ${stop.type}`}></div>
+                                    <div className="stop-details">
+                                      <div className="stop-type-header">
+                                        <span className="type-pill">{stop.label || stop.type.toUpperCase()}</span>
+                                        <span className="stop-seq">STOP {stop.sequence}</span>
+                                      </div>
+                                      <div className="stop-loc-name">{shouldMask ? "POST OFFICE" : stop.locationName}</div>
+                                      <div className="stop-addr">{shouldMask ? "" : `${stop.address || ''}${stop.suburb ? `, ${stop.suburb}` : ''}`}</div>
+                                    </div>
+                                    <div className="stop-status">{stop.status}</div>
+                                  </div>
+                                );
+                              })}
+                           </div>
+                         )}
 
                        <div className="card-meta">
                           <div className="meta-pill">

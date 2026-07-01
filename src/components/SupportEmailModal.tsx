@@ -8,6 +8,9 @@ interface SupportEmailModalProps {
   jobId?: string;
   contextTitle?: string;
   defaultSubject?: string;
+  to?: string;
+  cc?: string;
+  title?: string;
   metadata?: {
     lpoName?: string;
     companyName?: string;
@@ -16,6 +19,8 @@ interface SupportEmailModalProps {
     contactPhone?: string;
     serviceType?: string;
     billing?: string;
+    senderName?: string;
+    senderEmail?: string;
   };
 }
 
@@ -25,6 +30,9 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
   jobId, 
   contextTitle,
   defaultSubject,
+  to,
+  cc,
+  title,
   metadata
 }) => {
   const [message, setMessage] = useState('');
@@ -43,7 +51,9 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
         message,
         jobId,
         subject: defaultSubject || (jobId ? `Inquiry regarding Job Ref: ${jobId}` : 'General Inquiry'),
-        metadata
+        metadata,
+        to,
+        cc
       });
       setSuccess(true);
       setTimeout(() => {
@@ -67,7 +77,7 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
         <div className="modal-header">
           <div className="header-title">
             <Mail size={20} />
-            <h2>{jobId ? 'Job Inquiry' : 'Contact Support'}</h2>
+            <h2>{title || (jobId ? 'Job Inquiry' : 'Contact Support')}</h2>
           </div>
           <button className="close-btn" onClick={onClose} disabled={isSending}>
             <X size={20} />

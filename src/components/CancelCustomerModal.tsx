@@ -31,6 +31,16 @@ const CancelCustomerModal: React.FC<CancelCustomerModalProps> = ({
 
   const handleCancel = async () => {
     if (!customer?.id) return;
+    
+    // Prevent deleting default Australia Post for customer role
+    if (customer.role === 'customer') {
+      const name = (customer.companyName || customer.company_name || '').toLowerCase();
+      if (name.includes('australia post')) {
+        alert("You cannot delete the default Australia Post entry.");
+        return;
+      }
+    }
+
     if (customer.role !== 'customer' && !customer?.parent_id) return;
     
     if (!reason && customer.role !== 'customer') {

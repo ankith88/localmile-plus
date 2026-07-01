@@ -27,12 +27,14 @@ import {
   Phone,
   Mail,
   User as UserIcon,
-  Zap
+  Zap,
+  RefreshCw
 } from 'lucide-react';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import LoadingScreen from '../../components/LoadingScreen';
 import AcceptingProgress from '../../components/AcceptingProgress';
-import { db } from '../../firebase/config';
+import { db, functions } from '../../firebase/config';
+import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
 import { formatDateForInput, parseLocalDate, getDayName } from '../../utils/scheduling';
 import { isPublicHoliday } from '../../utils/holidays';
@@ -40,7 +42,7 @@ import { requestNotificationPermission, saveTokenToFirestore, onForegroundMessag
 
 const RequestPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { parent, userData, loading: parentLoading } = useLpo();
+  const { parent, userData, loading: parentLoading, companyData } = useLpo();
   const [request, setRequest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
@@ -171,6 +173,59 @@ const RequestPage: React.FC = () => {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [request?.chat]);
+
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSubmitCommunication = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!message.trim() || !request) return;
+
+    setIsSending(true);
+    
+    const contactEmail = (request.operatorEmail || companyData?.franchiseeEmail || '').trim();
+    const contactPhone = (request.operatorPhone || companyData?.franchiseeMobile || '').trim();
+
+    const userFullName = userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || userData.email : 'Unknown User';
+    const companyName = request.customer?.company || companyData?.companyName || 'Unknown Company';
+    
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <h2 style="color: #095c7b;">Message from ${companyName}</h2>
+        <p><strong>Sender:</strong> ${userFullName}</p>
+        <p><strong>Message:</strong></p>
+        <blockquote style="background: #f9f9f9; border-left: 5px solid #095c7b; padding: 10px 15px; margin: 15px 0;">
+          ${message.trim().replace(/\n/g, '<br/>')}
+        </blockquote>
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;"/>
+        <p style="font-size: 11px; color: #888;">This email was sent via LocalMile.Plus communication service.</p>
+      </div>
+    `;
+
+    const formattedSms = `From LocalMile.Plus (${companyName}) - Sender: ${userFullName}:\n\n${message.trim()}`;
+    const leadId = request.customer_id || userData?.customer_id || request.netsuiteCustomerId || "";
+
+    try {
+      console.log(`Triggering ProspectPlus Communication for request ${request.id} to Email: ${contactEmail}, Phone: ${contactPhone}`);
+      const sendMsgFn = httpsCallable(functions, 'sendProspectPlusMessage');
+      await sendMsgFn({
+        toEmail: contactEmail || undefined,
+        toPhone: contactPhone || undefined,
+        subject: `Message regarding Request Ref: #${request.id.substring(0, 8).toUpperCase()}`,
+        html: emailHtml,
+        smsMessage: formattedSms,
+        leadId,
+        author: userFullName,
+        jobId: request.id
+      });
+      alert("Message sent to operator successfully via Email/SMS.");
+      setMessage('');
+    } catch (err) {
+      console.error("ProspectPlus Communication Error:", err);
+      alert("Failed to send message. Please try again.");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -311,9 +366,9 @@ const RequestPage: React.FC = () => {
                 if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
                   serviceInternalId = c.lpoServiceAMPOInternalID || '';
                   serviceRate = c.lpoServiceAMPORate || '';
-                } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                  serviceInternalId = (isFreeJob && companyDataFromDb?.localmileTrialInternalID)
-                    ? companyDataFromDb.localmileTrialInternalID
+                                } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
+                  serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
+                    ? companyDataFromDb.serviceTrialInternalID
                     : (c.lpoServicePMPOInternalID || '');
                   serviceRate = c.lpoServicePMPORate || '';
                 } else if (request.service === 'round-trip') {
@@ -389,8 +444,8 @@ const RequestPage: React.FC = () => {
                 serviceInternalId = c.lpoServiceAMPOInternalID || '';
                 serviceRate = c.lpoServiceAMPORate || '';
               } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                serviceInternalId = (isFreeJob && companyDataFromDb?.localmileTrialInternalID)
-                  ? companyDataFromDb.localmileTrialInternalID
+                serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
+                  ? companyDataFromDb.serviceTrialInternalID
                   : (c.lpoServicePMPOInternalID || '');
                 serviceRate = c.lpoServicePMPORate || '';
               } else if (request.service === 'round-trip') {
@@ -921,66 +976,127 @@ const RequestPage: React.FC = () => {
                  </div>
               )}
 
-              <div className="chat-header">
-                 <MessageSquare size={20} />
-                 <h2>Coordination Chat</h2>
-                 <span className="live-indicator">{isHistory ? 'ARCHIVED' : 'LIVE'}</span>
-              </div>
+              {(request && request.preferredTime && request.status !== 'accepted') ? (
+                 <>
+                   <div className="chat-header">
+                      <MessageSquare size={20} />
+                      <h2>Coordination Chat</h2>
+                      <span className="live-indicator">{isHistory ? 'ARCHIVED' : 'LIVE'}</span>
+                   </div>
 
-              <div className="chat-messages">
-                 {(!request.chat || request.chat.length === 0) ? (
-                    <div className="empty-chat">
-                       <MessageSquare size={48} />
-                       <p>Start the coordination by sending a message.</p>
-                       <span className="hint">Questions about timing, access, or billing can be discussed here.</span>
-                    </div>
-                 ) : (
-                    request.chat.map((msg: any, idx: number) => {
-                       if (msg.sender === 'system') {
-                          return (
-                             <div key={idx} className="system-message">
-                                <div className="system-message-content">
-                                   <span className="system-icon"><Clock size={14} /></span>
-                                   {msg.text}
-                                </div>
-                                <div className="message-time">
-                                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                             </div>
-                          );
-                       }
-                       return (
-                          <div key={idx} className={`message-bubble ${msg.sender}`}>
-                             <div className="sender-label">{(msg.sender === 'parent' || msg.sender === 'operator') ? 'Parent' : 'Franchisee'}</div>
-                             <div className="message-content">{msg.text}</div>
-                             <div className="message-time">
-                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                             </div>
-                          </div>
-                       );
-                    })
-                 )}
-                 <div ref={chatEndRef} />
-              </div>
+                   <div className="chat-messages">
+                      {(!request.chat || request.chat.length === 0) ? (
+                         <div className="empty-chat">
+                            <MessageSquare size={48} />
+                            <p>Start the coordination by sending a message.</p>
+                            <span className="hint">Questions about timing, access, or billing can be discussed here.</span>
+                         </div>
+                      ) : (
+                         request.chat.map((msg: any, idx: number) => {
+                            if (msg.sender === 'system') {
+                               return (
+                                  <div key={idx} className="system-message">
+                                     <div className="system-message-content">
+                                        <span className="system-icon"><Clock size={14} /></span>
+                                        {msg.text}
+                                     </div>
+                                     <div className="message-time">
+                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                     </div>
+                                  </div>
+                               );
+                            }
+                            return (
+                               <div key={idx} className={`message-bubble ${msg.sender}`}>
+                                  <div className="sender-label">{(msg.sender === 'parent' || msg.sender === 'operator') ? 'Parent' : 'Franchisee'}</div>
+                                  <div className="message-content">{msg.text}</div>
+                                  <div className="message-time">
+                                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                               </div>
+                            );
+                         })
+                      )}
+                      <div ref={chatEndRef} />
+                   </div>
 
-              {isHistory ? (
-                <div className="history-notice">
-                   <Clock size={16} />
-                   <span>This job has moved to history. Chat is now read-only.</span>
-                </div>
-              ) : (
-                <form className="chat-input-area" onSubmit={handleSendMessage}>
-                   <input 
-                     type="text" 
-                     placeholder="Type your message here..."
-                     value={message}
-                     onChange={(e) => setMessage(e.target.value)}
-                   />
-                   <button type="submit" className="send-btn" disabled={!message.trim()}>
-                      <Send size={18} />
-                   </button>
-                </form>
-              )}
+                   {isHistory ? (
+                     <div className="history-notice">
+                        <Clock size={16} />
+                        <span>This job has moved to history. Chat is now read-only.</span>
+                     </div>
+                   ) : (
+                     <form className="chat-input-area" onSubmit={handleSendMessage}>
+                        <input 
+                          type="text" 
+                          placeholder="Type your message here..."
+                          value={message}
+                          onChange={(e) => setMessage(e.target.value)}
+                        />
+                        <button type="submit" className="send-btn" disabled={!message.trim()}>
+                           <Send size={18} />
+                        </button>
+                     </form>
+                   )}
+                 </>
+               ) : (
+                 <>
+                   <div className="chat-header">
+                      <MessageSquare size={20} />
+                      <h2>Contact Operator</h2>
+                   </div>
+
+                   <div className="chat-messages" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}>
+                      <div className="schedule-info-summary" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                         <div className="m-company" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--primary)', marginBottom: '8px' }}>
+                            {request?.customer?.company}
+                         </div>
+                         <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--ink-soft)' }}>
+                            This message will be sent to the operator via Email and SMS.
+                         </p>
+                      </div>
+                      <form onSubmit={handleSubmitCommunication} style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                         <textarea
+                            className="comm-textarea"
+                            placeholder="Type your message here..."
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            rows={6}
+                            disabled={isSending}
+                            style={{
+                               width: '100%',
+                               padding: '16px',
+                               borderRadius: '12px',
+                               border: '1px solid var(--cream-warm)',
+                               background: 'var(--paper)',
+                               color: 'var(--ink)',
+                               fontSize: '0.95rem',
+                               resize: 'none',
+                               fontFamily: 'inherit'
+                            }}
+                         />
+                         <button
+                            type="submit"
+                            className="btn-primary-glass"
+                            disabled={isSending || !message.trim()}
+                            style={{
+                               display: 'flex',
+                               alignItems: 'center',
+                               justifyContent: 'center',
+                               gap: '8px',
+                               padding: '12px 24px',
+                               borderRadius: '12px',
+                               fontWeight: 600,
+                               alignSelf: 'flex-end',
+                               minWidth: '150px'
+                            }}
+                         >
+                            {isSending ? <RefreshCw size={18} className="spin" /> : 'Send Message'}
+                         </button>
+                      </form>
+                   </div>
+                 </>
+               )}
 
               {request.status === 'rejected' && !isParentUser && !isHistory && (
                  <div id="reprocess-form-anchor" className="reprocess-section-inline">

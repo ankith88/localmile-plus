@@ -30,7 +30,8 @@ import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
 import CancelJobModal from '../../components/CancelJobModal';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import { db, functions } from '../../firebase/config';
+import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
 import { formatDateForInput, parseLocalDate } from '../../utils/scheduling';
 import { sortStops } from '../../utils/stops';
@@ -178,26 +179,48 @@ const Dashboard: React.FC = () => {
 
     setIsSending(true);
     const job = selectedJobForComm;
-    const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2535&deploy=1&compid=1048144&ns-at=AAEJ7tMQeYW40giJlU7O2McXMAA-MKOcrvoW29VOHNRcMiaQ7AM";
+
+    const isJobActiveToday = activeTab === 'in-progress';
+    const contactEmail = (isJobActiveToday && job.operatorEmail ? job.operatorEmail : (companyData?.franchiseeEmail || '')).trim();
+    const contactPhone = (isJobActiveToday && job.operatorPhone ? job.operatorPhone : (companyData?.franchiseeMobile || '')).trim();
+
+    const userFullName = userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || userData.email : 'Unknown User';
+    const companyName = job.customer?.company || companyData?.companyName || 'Unknown Company';
     
-    const params = new URLSearchParams({
-      document_id: job.id,
-      appJobGroupId: job.appJobGroupId || "",
-      parent_id: job.parent_id || "",
-      netsuiteCustomerId: job.netsuiteCustomerId || "",
-      message: commMessage
-    });
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <h2 style="color: #095c7b;">Message from ${companyName}</h2>
+        <p><strong>Sender:</strong> ${userFullName}</p>
+        <p><strong>Message:</strong></p>
+        <blockquote style="background: #f9f9f9; border-left: 5px solid #095c7b; padding: 10px 15px; margin: 15px 0;">
+          ${commMessage.trim().replace(/\n/g, '<br/>')}
+        </blockquote>
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;"/>
+        <p style="font-size: 11px; color: #888;">This email was sent via LocalMile.Plus communication service.</p>
+      </div>
+    `;
+
+    const formattedSms = `From LocalMile.Plus (${companyName}) - Sender: ${userFullName}:\n\n${commMessage.trim()}`;
+    const leadId = job.customer_id || userData?.customer_id || job.netsuiteCustomerId || "";
 
     try {
-      console.log(`Triggering NetSuite Communication for job ${job.id} with message: ${commMessage}`);
-      const response = await fetch(`${NETSUITE_API}&${params.toString()}`);
-      const data = await response.json();
-      console.log("NetSuite Communication Response:", data);
-      alert("Message sent to operator successfully.");
+      console.log(`Triggering ProspectPlus Communication for job ${job.id} to Email: ${contactEmail}, Phone: ${contactPhone}`);
+      const sendMsgFn = httpsCallable(functions, 'sendProspectPlusMessage');
+      await sendMsgFn({
+        toEmail: contactEmail || undefined,
+        toPhone: contactPhone || undefined,
+        subject: `Message regarding Job Ref: #${job.id.substring(0, 8).toUpperCase()}`,
+        html: emailHtml,
+        smsMessage: formattedSms,
+        leadId,
+        author: userFullName,
+        jobId: job.id
+      });
+      alert("Message sent to operator successfully via Email/SMS.");
       setIsCommModalOpen(false);
       setCommMessage('');
     } catch (err) {
-      console.error("NetSuite Communication Error:", err);
+      console.error("ProspectPlus Communication Error:", err);
       alert("Failed to send message. Please try again.");
     } finally {
       setIsSending(false);
@@ -340,6 +363,10 @@ const Dashboard: React.FC = () => {
   };
 
   const handleUpdateStopStatus = async (jobId: string, stopIndex: number, newStatus: string) => {
+    if (userData?.role === 'customer' || userData?.role === 'parent') {
+      alert("You do not have permission to modify job status.");
+      return;
+    }
     const job = (activeTab === 'pending' ? requests : jobs).find(j => j.id === jobId);
     if (!job) return;
 
@@ -687,7 +714,96 @@ const Dashboard: React.FC = () => {
                                           )}
                                        </div>
                                        )}
-                                       {userData?.role !== 'customer' && (
+                                       {userData?.role === 'customer' && companyData && (() => {
+                                          const isJobActiveToday = activeTab === 'in-progress';
+                                          const contactName = isJobActiveToday && job.operatorName ? job.operatorName : companyData.franchiseeContact;
+                                          const contactEmail = isJobActiveToday && job.operatorEmail ? job.operatorEmail : companyData.franchiseeEmail;
+                                          const contactPhone = isJobActiveToday && job.operatorPhone ? job.operatorPhone : companyData.franchiseeMobile;
+                                          const cardTitle = isJobActiveToday ? "Operator Performing Job" : "Your Franchisee Partner";
+                                          
+                                          return (
+                                            <div className="franchisee-card" style={{
+                                              marginTop: '12px',
+                                              padding: '10px 14px',
+                                              background: 'rgba(26, 61, 51, 0.03)',
+                                              border: '1px solid rgba(26, 61, 51, 0.08)',
+                                              borderRadius: '8px',
+                                              display: 'flex',
+                                              flexDirection: 'column',
+                                              gap: '6px'
+                                            }}>
+                                              <div style={{
+                                                fontSize: '0.6rem',
+                                                letterSpacing: '0.08em',
+                                                color: 'var(--primary)',
+                                                fontWeight: 700,
+                                                textTransform: 'uppercase',
+                                                opacity: 0.8
+                                              }}>
+                                                {cardTitle}
+                                              </div>
+                                              
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <div>
+                                                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--ink)' }}>
+                                                    {companyData.franchiseeName || 'MailPlus Franchisee'}
+                                                  </div>
+                                                  {contactName && (
+                                                    <div style={{ fontSize: '0.72rem', color: 'var(--ink-soft)', marginTop: '1px' }}>
+                                                      Contact: {contactName}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                                
+                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                  {contactEmail && (
+                                                    <a 
+                                                      href={`mailto:${contactEmail}`} 
+                                                      className="action-link-premium email" 
+                                                      onClick={(e) => e.stopPropagation()} 
+                                                      title="Email Partner"
+                                                      style={{
+                                                        width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        background: 'rgba(26, 61, 51, 0.05)', color: 'var(--ink)', transition: 'all 0.2s', textDecoration: 'none'
+                                                      }}
+                                                    >
+                                                      <Mail size={14} />
+                                                    </a>
+                                                  )}
+                                                  {contactPhone && (
+                                                    <>
+                                                      <a 
+                                                        href={`tel:${contactPhone}`} 
+                                                        className="action-link-premium call" 
+                                                        onClick={(e) => e.stopPropagation()} 
+                                                        title="Call Partner"
+                                                        style={{
+                                                          width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                          background: 'rgba(26, 61, 51, 0.05)', color: 'var(--ink)', transition: 'all 0.2s', textDecoration: 'none'
+                                                        }}
+                                                      >
+                                                        <Phone size={14} />
+                                                      </a>
+                                                      <a 
+                                                        href={`sms:${contactPhone}`} 
+                                                        className="action-link-premium sms" 
+                                                        onClick={(e) => e.stopPropagation()} 
+                                                        title="SMS Partner"
+                                                        style={{
+                                                          width: '28px', height: '28px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                          background: 'rgba(26, 61, 51, 0.05)', color: 'var(--ink)', transition: 'all 0.2s', textDecoration: 'none'
+                                                        }}
+                                                      >
+                                                        <MessageSquare size={14} />
+                                                      </a>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })()}
+                                        {userData?.role !== 'customer' && (
                                        <div className="location-info">
                                           <MapPin size={12} />
                                           <span>{job.customer.suburb}, {job.customer.state}</span>
@@ -713,31 +829,38 @@ const Dashboard: React.FC = () => {
                                  {expandedJobIds.has(job.id) && (
                                    <div className="job-stops-container fade-in">
                                       <div className="stops-visual-line"></div>
-                                      {sortStops(job.stops).map((stop: any, sIdx: number) => (
-                                        <div key={sIdx} className="stop-entry">
-                                          <div className={`stop-node ${stop.type}`}></div>
-                                          <div className="stop-details">
-                                            <div className="stop-type-header">
-                                              <span className="type-pill">{stop.label || stop.type.toUpperCase()}</span>
-                                              <span className="stop-seq">STOP {stop.sequence}</span>
+                                      {sortStops(job.stops).map((stop: any, sIdx: number) => {
+                                        const isCustomer = userData?.role === 'customer';
+                                        const isOutbound = job.service === 'site-to-australia post' || job.service === 'site-to-lpo';
+                                        const isInbound = job.service === 'australia post-to-site' || job.service === 'lpo-to-site';
+                                        const shouldMask = isCustomer && ((isOutbound && stop.type === 'delivery') || (isInbound && stop.type === 'pickup'));
+                                        
+                                        return (
+                                          <div key={sIdx} className="stop-entry">
+                                            <div className={`stop-node ${stop.type}`}></div>
+                                            <div className="stop-details">
+                                              <div className="stop-type-header">
+                                                <span className="type-pill">{stop.label || stop.type.toUpperCase()}</span>
+                                                <span className="stop-seq">STOP {stop.sequence}</span>
+                                              </div>
+                                              <div className="stop-loc-name">{shouldMask ? "POST OFFICE" : stop.locationName}</div>
+                                              <div className="stop-addr">{shouldMask ? "" : `${stop.address || ''}${stop.suburb ? `, ${stop.suburb}` : ''}`}</div>
                                             </div>
-                                            <div className="stop-loc-name">{stop.locationName}</div>
-                                            <div className="stop-addr">{stop.address}, {stop.suburb}</div>
+                                            <div className="stop-action-group">
+                                              <div className={`stop-status-pill ${stop.status}`}>{stop.status}</div>
+                                              {stop.status !== 'completed' && (activeTab !== 'pending') && userData?.role !== 'customer' && userData?.role !== 'parent' && (
+                                                <button 
+                                                  className="btn-complete-stop"
+                                                  onClick={() => handleUpdateStopStatus(job.id, stop.originalIndex, 'completed')}
+                                                  title="Mark Stop Completed"
+                                                >
+                                                  <CheckCircle2 size={16} />
+                                                </button>
+                                              )}
+                                            </div>
                                           </div>
-                                          <div className="stop-action-group">
-                                            <div className={`stop-status-pill ${stop.status}`}>{stop.status}</div>
-                                            {stop.status !== 'completed' && (activeTab !== 'pending') && (
-                                              <button 
-                                                className="btn-complete-stop"
-                                                onClick={() => handleUpdateStopStatus(job.id, stop.originalIndex, 'completed')}
-                                                title="Mark Stop Completed"
-                                              >
-                                                <CheckCircle2 size={16} />
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                       {(!job.stops || job.stops.length === 0) && (
                                         <div className="legacy-hint">
                                           Consolidated view unavailable for legacy records.
@@ -796,28 +919,21 @@ const Dashboard: React.FC = () => {
                                 </div>
 
                                  <div className="card-actions">
-                                     {activeTab === 'pending' || activeTab === 'declined' ? (
-                                      <div className="messaging-group">
-                                        <button className="btn-primary-glass mini-chat" onClick={() => window.open(`/request/${job.id}`, '_blank')}>
-                                           <MessageSquare size={16} />
-                                           <span>CHAT & MANAGE</span>
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <div className="messaging-group">
-                                         {job.originalRequestId && job.date >= today ? (
-                                           <button className="btn-primary-glass mini-chat live-chat-highlight" onClick={() => window.open(`/request/${job.originalRequestId}`, '_blank')}>
-                                              <MessageSquare size={16} />
-                                              <span>LIVE CHAT</span>
-                                           </button>
-                                         ) : (
-                                           <button className="btn-primary-glass mini-chat" onClick={() => handleCommunication(job)}>
-                                              <MessageSquare size={16} />
-                                              <span>CONTACT OPERATOR</span>
-                                           </button>
-                                         )}
-                                      </div>
-                                    )}
+                                     {(activeTab === 'pending' || activeTab === 'declined') && job.preferredTime ? (
+                                       <div className="messaging-group">
+                                         <button className="btn-primary-glass mini-chat" onClick={() => window.open(`/request/${job.id}`, '_blank')}>
+                                            <MessageSquare size={16} />
+                                            <span>CHAT & MANAGE</span>
+                                         </button>
+                                       </div>
+                                     ) : (
+                                       <div className="messaging-group">
+                                          <button className="btn-primary-glass mini-chat" onClick={() => handleCommunication(job)}>
+                                             <MessageSquare size={16} />
+                                             <span>CONTACT OPERATOR</span>
+                                          </button>
+                                       </div>
+                                     )}
                                     
                                     <div className="overflow-menu">
                                        <div className="menu-trigger">
@@ -1201,6 +1317,14 @@ const Dashboard: React.FC = () => {
         .action-link:hover { transform: scale(1.15); color: white; }
         .action-link.call:hover { background: #2ecc71; }
         .action-link.sms:hover { background: #3498db; }
+
+        .action-link-premium {
+          transition: all 0.2s ease-in-out;
+        }
+        .action-link-premium:hover { transform: translateY(-2px); color: white !important; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .action-link-premium.email:hover { background: var(--primary) !important; }
+        .action-link-premium.call:hover { background: #2ecc71 !important; }
+        .action-link-premium.sms:hover { background: #3498db !important; }
 
         .location-info { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); opacity: 0.6; font-size: 0.75rem; font-weight: 600; margin-top: 4px; }
         

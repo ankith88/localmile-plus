@@ -155,6 +155,12 @@ const CustomerHub: React.FC = () => {
   }, [parent, isAdmin, selectedParentId, allParents, userData]);
 
   const filteredCustomers = customers.filter(c => {
+    // Hide default Australia Post from customer role
+    if (userData?.role === 'customer') {
+      const name = (c.companyName || c.company_name || '').toLowerCase();
+      if (name.includes('australia post')) return false;
+    }
+
     // 1. Search Filter
     const searchStr = searchTerm.toLowerCase();
     const name = (c.companyName || c.company_name || '').toLowerCase();

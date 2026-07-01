@@ -45,6 +45,16 @@ const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
 
   const handleSave = async () => {
     if (!customer?.id) return;
+    
+    // Prevent editing default Australia Post for customer role
+    if (customer.role === 'customer') {
+      const name = (customer.companyName || customer.company_name || '').toLowerCase();
+      if (name.includes('australia post')) {
+        alert("You cannot edit the default Australia Post entry.");
+        return;
+      }
+    }
+
     // For regular customers, parent_id is required. For address book, it's not.
     if (customer.role !== 'customer' && !customer?.parent_id) return;
 

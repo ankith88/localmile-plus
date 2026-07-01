@@ -27,7 +27,7 @@ import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
 
 const AwaitingTCPage: React.FC = () => {
-  const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents } = useLpo();
+  const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -266,19 +266,26 @@ const AwaitingTCPage: React.FC = () => {
                                {expandedJobIds.has(job.id) && (
                                  <div className="job-stops-container fade-in">
                                     <div className="stops-visual-line"></div>
-                                     {sortStops(job.stops).map((stop: any, sIdx: number) => (
-                                       <div key={sIdx} className="stop-entry">
-                                         <div className={`stop-node ${stop.type}`}></div>
-                                         <div className="stop-details">
-                                           <div className="stop-type-header">
-                                             <span className="type-pill">{stop.label || stop.type.toUpperCase()}</span>
-                                             <span className="stop-seq">STOP {stop.sequence}</span>
-                                           </div>
-                                           <div className="stop-loc-name">{stop.locationName}</div>
-                                           <div className="stop-addr">{stop.address}, {stop.suburb}</div>
-                                         </div>
-                                       </div>
-                                     ))}
+                                      {sortStops(job.stops).map((stop: any, sIdx: number) => {
+                                        const isCustomer = userData?.role === 'customer';
+                                        const isOutbound = job.service === 'site-to-australia post' || job.service === 'site-to-lpo';
+                                        const isInbound = job.service === 'australia post-to-site' || job.service === 'lpo-to-site';
+                                        const shouldMask = isCustomer && ((isOutbound && stop.type === 'delivery') || (isInbound && stop.type === 'pickup'));
+
+                                        return (
+                                          <div key={sIdx} className="stop-entry">
+                                            <div className={`stop-node ${stop.type}`}></div>
+                                            <div className="stop-details">
+                                              <div className="stop-type-header">
+                                                <span className="type-pill">{stop.label || stop.type.toUpperCase()}</span>
+                                                <span className="stop-seq">STOP {stop.sequence}</span>
+                                              </div>
+                                              <div className="stop-loc-name">{shouldMask ? "POST OFFICE" : stop.locationName}</div>
+                                              <div className="stop-addr">{shouldMask ? "" : `${stop.address || ''}${stop.suburb ? `, ${stop.suburb}` : ''}`}</div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
                                  </div>
                                )}
 

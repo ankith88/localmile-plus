@@ -3,7 +3,6 @@ import {
   Mail, 
   Phone, 
   MessageCircle, 
-  BookOpen, 
   ArrowRight,
   ShieldCheck,
   User
@@ -13,14 +12,42 @@ import SupportEmailModal from '../../components/SupportEmailModal';
 import { useLpo } from '../../context/LpoContext';
 
 const SupportCenter: React.FC = () => {
-  const { parent } = useLpo();
+  const { parent, companyData, userData, companyName } = useLpo();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    to?: string;
+    cc?: string;
+    title?: string;
+    defaultSubject?: string;
+  }>({});
+
   const contactInfo = {
-    name: "Kerry O'Neill",
-    email: "kerry.oneill@mailplus.com.au",
-    phone: "0409 244 890",
-    role: "Support Lead",
+    name: companyData?.accountManagerName || "Kerry O'Neill",
+    email: companyData?.accountManagerEmail || "kerry.oneill@mailplus.com.au",
+    phone: companyData?.accountManagerMobile || "0409 244 890",
+    role: companyData?.accountManagerName ? "Account Manager" : "Support Lead",
     title: "LocalMile.Plus Support"
+  };
+
+  const firstName = contactInfo.name.split(' ')[0];
+
+  const handleEmailContact = () => {
+    setModalConfig({
+      to: contactInfo.email,
+      title: "Contact Support",
+      defaultSubject: "Support Inquiry: LocalMile.Plus Assistance"
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSendFeedback = () => {
+    setModalConfig({
+      to: contactInfo.email,
+      cc: "ankith.ravindran@mailplus.com.au",
+      title: "Send Feedback",
+      defaultSubject: "Platform Feedback: LocalMile.Plus"
+    });
+    setIsModalOpen(true);
   };
 
   return (
@@ -51,20 +78,20 @@ const SupportCenter: React.FC = () => {
               </div>
               
               <div className="contact-info-main">
-                <h3>Contact Kerry O'Neill</h3>
+                <h3>Contact {contactInfo.name}</h3>
                 <p className="contact-role">Dedicated Support Specialist for LocalMile.Plus</p>
                 
                 <div className="contact-actions-grid">
                   <div 
                     className="contact-action-item" 
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={handleEmailContact}
                     style={{ cursor: 'pointer' }}
                   >
                     <div className="icon-box email">
                       <Mail size={20} />
                     </div>
                     <div className="action-details">
-                      <span className="action-label">Email Kerry</span>
+                      <span className="action-label">Email {firstName}</span>
                       <span className="action-value">{contactInfo.email}</span>
                     </div>
                     <ArrowRight size={16} className="arrow-hover" />
@@ -75,7 +102,7 @@ const SupportCenter: React.FC = () => {
                       <Phone size={20} />
                     </div>
                     <div className="action-details">
-                      <span className="action-label">Call Kerry</span>
+                      <span className="action-label">Call {firstName}</span>
                       <span className="action-value">{contactInfo.phone}</span>
                     </div>
                     <ArrowRight size={16} className="arrow-hover" />
@@ -93,21 +120,12 @@ const SupportCenter: React.FC = () => {
           {/* Quick Support Links */}
           <div className="support-sidebar">
             <div className="support-card small">
-              <div className="card-icon-header purple">
-                <BookOpen size={20} />
-              </div>
-              <h4>User Documentation</h4>
-              <p>Explore our guides and tutorials to master LocalMile.Plus features.</p>
-              <a href="/induction.html" target="_blank" rel="noopener noreferrer" className="text-link">Browse Guides <ArrowRight size={14} /></a>
-            </div>
-
-            <div className="support-card small">
               <div className="card-icon-header gold">
                 <MessageCircle size={20} />
               </div>
               <h4>Direct Inquiries</h4>
               <p>For feature requests or platform feedback, we'd love to hear from you.</p>
-              <button className="text-link">Send Feedback <ArrowRight size={14} /></button>
+              <button className="text-link" onClick={handleSendFeedback}>Send Feedback <ArrowRight size={14} /></button>
             </div>
           </div>
         </div>
@@ -116,9 +134,15 @@ const SupportCenter: React.FC = () => {
       <SupportEmailModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)}
-        defaultSubject="Support Inquiry: LocalMile.Plus Assistance"
+        to={modalConfig.to}
+        cc={modalConfig.cc}
+        title={modalConfig.title}
+        defaultSubject={modalConfig.defaultSubject}
         metadata={{
-          lpoName: parent?.name
+          lpoName: parent?.name,
+          companyName: companyData?.companyName || companyName || "N/A",
+          senderName: userData ? `${userData.first_name || ""} ${userData.last_name || ""}`.trim() : "Unknown User",
+          senderEmail: userData?.email || ""
         }}
       />
 

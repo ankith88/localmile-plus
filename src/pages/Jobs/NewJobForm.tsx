@@ -19,7 +19,7 @@ import {
   Circle
 } from 'lucide-react';
 import { useJsApiLoader, GoogleMap, Marker, Polyline } from '@react-google-maps/api';
-import { formatDateForInput, getDefaultBookingDate, parseLocalDate } from '../../utils/scheduling';
+import { formatDateForInput, getDefaultBookingDate, parseLocalDate, getDayName } from '../../utils/scheduling';
 import { isPublicHoliday } from '../../utils/holidays';
 import { useLpo } from '../../context/LpoContext';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
@@ -333,7 +333,7 @@ const NewJobForm: React.FC = () => {
   const hasAMPO = Boolean(companyData?.serviceAMPOInternalID && companyData?.serviceAMPOInternalID !== 'null');
   const hasH2H = Boolean(companyData?.serviceH2HInternalID && companyData?.serviceH2HInternalID !== 'null');
   const canSwap = !companyData || hasH2H || (hasPMPO && hasAMPO) || (!hasPMPO && !hasAMPO);
-  const isAusPostPrefilled = Boolean(userData?.role === 'customer' && independentServiceType === 'outbound' && companyData?.apName);
+  const isAusPostPrefilled = Boolean(userData?.role === 'customer' && companyData?.apName);
 
   useEffect(() => {
     if (userData?.role === 'customer' && companyData) {
@@ -346,7 +346,7 @@ const NewJobForm: React.FC = () => {
   }, [hasPMPO, hasAMPO, companyData, userData?.role, independentServiceType]);
 
   useEffect(() => {
-    if (userData?.role === 'customer' && independentServiceType === 'outbound') {
+    if (userData?.role === 'customer') {
       try {
         let initializedFromCompany = false;
         
@@ -373,7 +373,7 @@ const NewJobForm: React.FC = () => {
            }
         }
         
-        if (!initializedFromCompany && !hasH2H) {
+        if (!initializedFromCompany && !hasH2H && independentServiceType === 'outbound') {
           const saved = localStorage.getItem(`defaultAusPost_${userData.customer_id}`);
           if (saved) {
             const parsed = JSON.parse(saved);
@@ -1154,7 +1154,7 @@ const NewJobForm: React.FC = () => {
           const balance = companyProfileData?.trial_credits_balance ?? companyData.trial_credits_balance;
           const isTrial = typeof balance === 'number' && balance > 0;
           const pmpoId = isTrial
-            ? (companyProfileData?.localmileTrialInternalID ?? companyData.localmileTrialInternalID ?? companyData.servicePMPOInternalID ?? null)
+            ? (companyProfileData?.serviceTrialInternalID ?? companyData.serviceTrialInternalID ?? companyData.servicePMPOInternalID ?? null)
             : (companyData.servicePMPOInternalID || null);
           conditionalServiceData = {
             servicePMPOInternalID: pmpoId,
@@ -1176,7 +1176,7 @@ const NewJobForm: React.FC = () => {
           const balance = companyProfileData?.trial_credits_balance;
           const isTrial = typeof balance === 'number' && balance > 0;
           const pmpoId = isTrial
-            ? (companyProfileData?.localmileTrialInternalID ?? formData.customer.lpoServicePMPOInternalID ?? null)
+            ? (companyProfileData?.serviceTrialInternalID ?? formData.customer.lpoServicePMPOInternalID ?? null)
             : (formData.customer.lpoServicePMPOInternalID || null);
           conditionalServiceData = {
             servicePMPOInternalID: pmpoId,
@@ -1240,6 +1240,7 @@ const NewJobForm: React.FC = () => {
         });
         localStorage.removeItem('edit_request_draft');
       } else {
+        const isDirectBook = userData?.role === 'customer' && !formData.preferredTime;
         const cleanData = JSON.parse(JSON.stringify({
           ...formData,
           customer: finalCustomerData,
@@ -1251,7 +1252,7 @@ const NewJobForm: React.FC = () => {
           uid: userData?.uid,
           isExistingCustomer,
           netsuiteCustomerId: nsResult.customerInternalId || formData.customer.netsuiteId || null,
-          status: initialRequestStatus,
+          status: isDirectBook ? 'scheduled' : initialRequestStatus,
           skippedDates: [],
           recurrenceStatus: 'active',
           chat: [],
@@ -1267,16 +1268,87 @@ const NewJobForm: React.FC = () => {
           ...conditionalServiceData
         }));
 
-        const requestPayload = {
-          ...cleanData,
-          appJobGroupId: null,
-          syncedWithNetSuite: null,
-          createdAt: serverTimestamp()
-        };
+        let directJobId = "";
+        let serviceInternalId = '';
+        let serviceRate = '';
 
-        const docRef = await addDoc(collection(db, 'requests'), requestPayload);
-        finalRequestId = docRef.id;
-        setCreatedRequestId(finalRequestId);
+        if (isDirectBook) {
+
+          if (isSiteToAusPost) {
+            serviceInternalId = (conditionalServiceData as any).servicePMPOInternalID || '';
+            serviceRate = (conditionalServiceData as any).servicePMPORate || '';
+          } else if (isAusPostToSite) {
+            serviceInternalId = (conditionalServiceData as any).serviceAMPOInternalID || '';
+            serviceRate = (conditionalServiceData as any).serviceAMPORate || '';
+          } else {
+            serviceInternalId = (conditionalServiceData as any).serviceH2HInternalID || '';
+            serviceRate = (conditionalServiceData as any).serviceH2HRate || '';
+          }
+
+          if (formData.jobType === 'scheduled') {
+            const templateRef = await addDoc(collection(db, 'scheduled_jobs'), {
+              ...cleanData,
+              serviceInternalId,
+              serviceRate,
+              createdAt: serverTimestamp(),
+              originalRequestId: null,
+              operatorNetSuiteId: null,
+              operatorName: null,
+              operatorEmail: null,
+              operatorPhone: null
+            });
+            console.log("Created direct scheduled_jobs template:", templateRef.id);
+            directJobId = templateRef.id;
+
+            const today = formatDateForInput(new Date());
+            const todayDayName = getDayName(new Date());
+            if (formData.date <= today && formData.frequency?.includes(todayDayName)) {
+              const jobDocRef = await addDoc(collection(db, 'jobs'), {
+                ...cleanData,
+                status: 'scheduled',
+                serviceInternalId,
+                serviceRate,
+                createdAt: serverTimestamp(),
+                jobType: 'scheduled_instance',
+                scheduledJobId: templateRef.id,
+                date: today,
+                originalRequestId: null,
+                operatorNetSuiteId: null,
+                operatorName: null,
+                operatorEmail: null,
+                operatorPhone: null
+              });
+              console.log("Created direct immediate job instance:", jobDocRef.id);
+              directJobId = jobDocRef.id;
+            }
+          } else {
+            const jobDocRef = await addDoc(collection(db, 'jobs'), {
+              ...cleanData,
+              status: 'scheduled',
+              serviceInternalId,
+              serviceRate,
+              createdAt: serverTimestamp(),
+              originalRequestId: null,
+              operatorNetSuiteId: null,
+              operatorName: null,
+              operatorEmail: null,
+              operatorPhone: null
+            });
+            console.log("Created direct one-off job:", jobDocRef.id);
+            directJobId = jobDocRef.id;
+          }
+        } else {
+          const requestPayload = {
+            ...cleanData,
+            appJobGroupId: null,
+            syncedWithNetSuite: null,
+            createdAt: serverTimestamp()
+          };
+
+          const docRef = await addDoc(collection(db, 'requests'), requestPayload);
+          finalRequestId = docRef.id;
+          setCreatedRequestId(finalRequestId);
+        }
 
         if (saveAsDefaultAusPost && !hasH2H && userData?.customer_id) {
           localStorage.setItem(`defaultAusPost_${userData.customer_id}`, JSON.stringify(recipientData));
@@ -1328,29 +1400,84 @@ const NewJobForm: React.FC = () => {
           }
         }
 
+        // If direct booking for the same day (date equals today), call the NetSuite API 2650
+        if (isDirectBook) {
+          const today = formatDateForInput(new Date());
+          if (formData.date === today && directJobId) {
+            try {
+              setProcessingProgress(80);
+              setProcessingMessage('Synchronising job data with NetSuite...');
+              const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2650&deploy=1&compid=1048144&ns-at=AAEJ7tMQwOy-VLSQwqUcq11USKGh9PAqMVQtMt6Mu_VXgYTiUyM";
+              
+              const parentId = parent?.id || userData?.parent_id || "";
+              const customerIdVal = userData?.customer_id || "";
+
+              const params = new URLSearchParams({
+                job_id: directJobId,
+                billing: formData.billing || "",
+                customer_id: customerIdVal,
+                instructions: formData.customer?.instructions || "",
+                job_type: formData.jobType || "",
+                parent_id: parentId,
+                request_id: "null",
+                preferred_time: formData.preferredTime || "",
+                service_name: finalService || "null",
+                service_internal_id: serviceInternalId || "null",
+                date: formData.date || "null",
+                service_pmpo_internal_id: (cleanData as any).servicePMPOInternalID || "null",
+                service_pmpo_rate: (cleanData as any).servicePMPORate || "null",
+                service_ampo_internal_id: (cleanData as any).serviceAMPOInternalID || "null",
+                service_ampo_rate: (cleanData as any).serviceAMPORate || "null",
+                service_h2h_internal_id: (cleanData as any).serviceH2HInternalID || "null",
+                service_h2h_rate: (cleanData as any).serviceH2HRate || "null",
+                auspost_first_name: cleanData.auspostContact?.firstName || "null",
+                auspost_last_name: cleanData.auspostContact?.lastName || "null",
+                auspost_phone: cleanData.auspostContact?.phone || "null",
+                auspost_email: cleanData.auspostContact?.email || "null",
+                auspost_company: (finalService === 'lpo-to-site' || finalService === 'australia post-to-site' ? formData.customer?.company : recipientData?.company) || "null",
+                auspost_address: (finalService === 'lpo-to-site' || finalService === 'australia post-to-site' ? formData.customer?.address : recipientData?.address) || "null",
+                auspost_state: (finalService === 'lpo-to-site' || finalService === 'australia post-to-site' ? formData.customer?.state : recipientData?.state) || "null",
+                auspost_suburb: (finalService === 'lpo-to-site' || finalService === 'australia post-to-site' ? formData.customer?.suburb : recipientData?.suburb) || "null",
+                auspost_postcode: (finalService === 'lpo-to-site' || finalService === 'australia post-to-site' ? formData.customer?.postcode : recipientData?.postcode) || "null",
+                auspost_lat: (finalService === 'lpo-to-site' || finalService === 'australia post-to-site' ? formData.customer?.coordinates?.lat : recipientData?.coordinates?.lat)?.toString() || "null",
+                auspost_lng: (finalService === 'lpo-to-site' || finalService === 'australia post-to-site' ? formData.customer?.coordinates?.lng : recipientData?.coordinates?.lng)?.toString() || "null",
+                is_free_job: isFreeJob.toString()
+              });
+
+              const res = await fetch(`${NETSUITE_API}&${params.toString()}`);
+              const data = await res.json();
+              console.log("NetSuite Script 2650 Response:", data);
+            } catch (e) {
+              console.error("NetSuite 2650 sync failed:", e);
+            }
+          }
+        }
+
       }
 
-      setProcessingProgress(80);
-      setProcessingMessage('Synchronising job data...');
+      if (!(userData?.role === 'customer' && !formData.preferredTime)) {
+        setProcessingProgress(80);
+        setProcessingMessage('Synchronising job data...');
 
-      // 3. Second NetSuite API (Job Confirmation with Request ID)
-      try {
-        let confirmResponse;
-        if (userData?.role === 'customer') {
-          const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2646&deploy=1&compid=1048144&ns-at=AAEJ7tMQGy_V6q4A1r9Jg30iQSZhzKVAi6M4UjCI17mvD37SfLM";
-          const customer_id = userData?.customer_id || "";
-          confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&customer_id=${customer_id}`);
-        } else {
-          const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2528&deploy=1&compid=1048144&ns-at=AAEJ7tMQM_E8dKF2qjDMy9ESy5q883g7xrb8uKwfgGOku62wheU";
-          const customer_id = nsResult.customerInternalId || formData.customer.netsuiteId || "";
-          confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&parent_id=${parent?.id || ""}&customer_id=${customer_id}`);
+        // 3. Second NetSuite API (Job Confirmation with Request ID)
+        try {
+          let confirmResponse;
+          if (userData?.role === 'customer') {
+            const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2646&deploy=1&compid=1048144&ns-at=AAEJ7tMQGy_V6q4A1r9Jg30iQSZhzKVAi6M4UjCI17mvD37SfLM";
+            const customer_id = userData?.customer_id || "";
+            confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&customer_id=${customer_id}`);
+          } else {
+            const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2528&deploy=1&compid=1048144&ns-at=AAEJ7tMQM_E8dKF2qjDMy9ESy5q883g7xrb8uKwfgGOku62wheU";
+            const customer_id = nsResult.customerInternalId || formData.customer.netsuiteId || "";
+            confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&parent_id=${parent?.id || ""}&customer_id=${customer_id}`);
+          }
+          const confirmResult = await confirmResponse.json();
+          if (confirmResult.success && confirmResult.message) {
+            setNetsuiteMessage(confirmResult.message);
+          }
+        } catch (e) {
+          console.error("Secondary NetSuite sync failed", e);
         }
-        const confirmResult = await confirmResponse.json();
-        if (confirmResult.success && confirmResult.message) {
-          setNetsuiteMessage(confirmResult.message);
-        }
-      } catch (e) {
-        console.error("Secondary NetSuite sync failed", e);
       }
 
       setProcessingProgress(100);
@@ -1358,7 +1485,7 @@ const NewJobForm: React.FC = () => {
       await wait(800);
 
       // Now update the UI state based on the calculated status
-      if (initialRequestStatus !== 'pending') {
+      if (!(userData?.role === 'customer' && !formData.preferredTime) && initialRequestStatus !== 'pending') {
         setIsAwaitingTC(true);
       } else {
         setSuccess(true);
@@ -1457,20 +1584,26 @@ const NewJobForm: React.FC = () => {
                 <CheckCircle2 size={80} strokeWidth={2.5} className="pulse-icon" />
               </div>
               <div className="success-text">
-                <h2>Request Sent!</h2>
+                <h2>{userData?.role === 'customer' && !formData.preferredTime ? 'Booking Confirmed!' : 'Request Sent!'}</h2>
                 {netsuiteMessage ? (
                   <p>{netsuiteMessage}</p>
+                ) : userData?.role === 'customer' && !formData.preferredTime ? (
+                  <p>The job for <strong>{formData.customer.company}</strong> has been successfully booked.</p>
                 ) : (
                   <p>The job request for <strong>{formData.customer.company}</strong> has been sent to the operator for review.</p>
                 )}
-                <p className="sub-hint">You can track the progress and coordinate with the operator via the chat links in your Job Manager.</p>
+                <p className="sub-hint">
+                  {userData?.role === 'customer' && !formData.preferredTime 
+                    ? 'You can view active jobs and coordinate with the operator via the chat links in your Job Manager.'
+                    : 'You can track the progress and coordinate with the operator via the chat links in your Job Manager.'}
+                </p>
               </div>
               <div className="success-actions-premium">
                 <button onClick={() => window.location.href = '/dashboard'} className="btn-primary flex-1 shadow-teal">
-                   VIEW PENDING REQUESTS
+                   {userData?.role === 'customer' && !formData.preferredTime ? 'VIEW ACTIVE JOBS' : 'VIEW PENDING REQUESTS'}
                 </button>
                 <button onClick={() => window.location.reload()} className="btn-secondary full-width">
-                   REQUEST ANOTHER JOB
+                   {userData?.role === 'customer' && !formData.preferredTime ? 'BOOK ANOTHER JOB' : 'REQUEST ANOTHER JOB'}
                 </button>
               </div>
             </div>
@@ -1561,7 +1694,7 @@ const NewJobForm: React.FC = () => {
                       <div className="floating-route-container">
                         
                         {/* TOP SEGMENT */}
-                        <div className={`floating-route-segment glass ${independentServiceType === 'outbound' ? 'locked-segment' : 'searchable-segment'}`}>
+                        <div className={`floating-route-segment glass ${independentServiceType === 'outbound' || (independentServiceType === 'inbound' && isAusPostPrefilled) ? 'locked-segment' : 'searchable-segment'}`}>
                             {independentServiceType === 'outbound' ? (
                               <>
                                 <div className="locked-header-row">
@@ -1577,6 +1710,19 @@ const NewJobForm: React.FC = () => {
                                     <p>{formData.customer.address},</p>
                                     <span className="address-bottom">{formData.customer.suburb} {formData.customer.state} {formData.customer.postcode}</span>
                                   </div>
+                                </div>
+                              </>
+                            ) : (independentServiceType === 'inbound' && isAusPostPrefilled) ? (
+                              <>
+                                <div className="locked-header-row">
+                                  <div className="route-title">
+                                    <Circle size={14} fill="currentColor" strokeWidth={3} style={{ opacity: 0.3 }} />
+                                    <span>PICKUP POINT</span>
+                                  </div>
+                                  <div className="hub-badge" style={{ color: '#E81C2E' }}><Lock size={12} style={{marginRight: '4px'}}/> PREDEFINED AP</div>
+                                </div>
+                                <div className="locked-address-display compact">
+                                  <strong>POST OFFICE</strong>
                                 </div>
                               </>
                             ) : (
@@ -1720,11 +1866,7 @@ const NewJobForm: React.FC = () => {
                                   <div className="hub-badge" style={{ color: '#E81C2E' }}><Lock size={12} style={{marginRight: '4px'}}/> PREDEFINED AP</div>
                                 </div>
                                 <div className="locked-address-display compact">
-                                  <strong>{recipientData.company}</strong>
-                                  <div className="inline-address">
-                                    <p>{recipientData.address},</p>
-                                    <span className="address-bottom">{recipientData.suburb} {recipientData.state} {recipientData.postcode}</span>
-                                  </div>
+                                  <strong>POST OFFICE</strong>
                                 </div>
                               </>
                             ) : (
@@ -2102,12 +2244,16 @@ const NewJobForm: React.FC = () => {
                           )}
                           <div className="v-row total">
                             <span className="v-label">FINAL QUOTE PRICE</span>
-                            <span className="v-val">{formData.serviceRate ? `$${parseFloat(formData.serviceRate).toFixed(2)}` : (formData.service === 'round-trip' ? '$20.00' : '$10.00')}</span>
+                            <span className="v-val">
+                              {trialCredits !== null && trialCredits > 0
+                                ? '$0.00'
+                                : (formData.serviceRate ? `$${parseFloat(formData.serviceRate).toFixed(2)}` : (formData.service === 'round-trip' ? '$20.00' : '$10.00'))}
+                            </span>
                           </div>
                           {trialCredits !== null && trialCredits > 0 && (
                             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-8px', marginBottom: '12px' }}>
                               <span style={{ fontSize: '0.75rem', color: '#095c7b', background: '#eaf044', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <Sparkles size={12} /> Free Trial Applied — $0.00 due
+                                <Sparkles size={12} /> Original Rate: {formData.serviceRate ? `$${parseFloat(formData.serviceRate).toFixed(2)}` : (formData.service === 'round-trip' ? '$20.00' : '$10.00')}
                               </span>
                             </div>
                           )}
@@ -2123,7 +2269,7 @@ const NewJobForm: React.FC = () => {
                       onClick={handleSubmit}
                       disabled={loading}
                     >
-                      {loading ? 'PROCESSING...' : 'REQUEST JOB'}
+                      {loading ? 'PROCESSING...' : (userData?.role === 'customer' && !formData.preferredTime ? 'BOOK JOB' : 'REQUEST JOB')}
                     </button>
                   </div>
                 </div>

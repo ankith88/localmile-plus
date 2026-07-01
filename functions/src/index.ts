@@ -796,7 +796,7 @@ export const sendEmailFromNetSuite = onRequest({
   const taggedHtml = injectMetadataTag(html, metadata);
 
   const mailOptions = {
-    from: '"LocalMile.Plus" <bookings@localmile.plus>',
+    from: '"LocalMile.Plus" <localmile@mailplus.com.au>',
     to: Array.isArray(to) ? to.join(',') : to,
     cc: cc ? (Array.isArray(cc) ? cc.join(',') : cc) : undefined,
     subject: metadata?.jobId ? `[Ref: ${metadata.jobId}] ${subject}` : subject,
@@ -1228,8 +1228,8 @@ export const sendSupportEmail = onCall({
     throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
   }
 
-  const { message, subject, jobId, metadata } = request.data;
-  console.log(`[Support Email] Data: jobId=${jobId}, subject=${subject}`);
+  const { message, subject, jobId, metadata, to, cc } = request.data;
+  console.log(`[Support Email] Data: jobId=${jobId}, subject=${subject}, to=${to}, cc=${cc}`);
 
   if (!message) {
     console.warn("[Support Email] Missing message");
@@ -1245,7 +1245,12 @@ export const sendSupportEmail = onCall({
       },
     });
 
-    const recipients = ["michael.mcdaid@mailplus.com.au", "kerry.oneill@mailplus.com.au", "dispatcher@mailplus.com.au"];
+    let recipients: string[] = [];
+    if (to) {
+      recipients = Array.isArray(to) ? to : [to];
+    } else {
+      recipients = ["michael.mcdaid@mailplus.com.au", "kerry.oneill@mailplus.com.au", "dispatcher@mailplus.com.au"];
+    }
 
     // Build metadata section
     let metadataHtml = "";
@@ -1254,8 +1259,10 @@ export const sendSupportEmail = onCall({
         <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e9ecef;">
           <h4 style="margin-top: 0; color: #1A3D33;">Inquiry Metadata</h4>
           <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-            ${metadata.lpoName ? `<tr><td style="padding: 4px 0; color: #666; width: 150px;"><strong>Parent Name:</strong></td><td style="padding: 4px 0;">${metadata.lpoName}</td></tr>` : ""}
+            ${metadata.senderName ? `<tr><td style="padding: 4px 0; color: #666; width: 150px;"><strong>Sent By:</strong></td><td style="padding: 4px 0;">${metadata.senderName}</td></tr>` : ""}
+            ${metadata.senderEmail ? `<tr><td style="padding: 4px 0; color: #666;"><strong>Sender Email:</strong></td><td style="padding: 4px 0;">${metadata.senderEmail}</td></tr>` : ""}
             ${metadata.companyName ? `<tr><td style="padding: 4px 0; color: #666;"><strong>Company:</strong></td><td style="padding: 4px 0;">${metadata.companyName}</td></tr>` : ""}
+            ${metadata.lpoName ? `<tr><td style="padding: 4px 0; color: #666; width: 150px;"><strong>Parent Name:</strong></td><td style="padding: 4px 0;">${metadata.lpoName}</td></tr>` : ""}
             ${metadata.contactName ? `<tr><td style="padding: 4px 0; color: #666;"><strong>Contact:</strong></td><td style="padding: 4px 0;">${metadata.contactName}</td></tr>` : ""}
             ${metadata.contactEmail ? `<tr><td style="padding: 4px 0; color: #666;"><strong>Contact Email:</strong></td><td style="padding: 4px 0;">${metadata.contactEmail}</td></tr>` : ""}
             ${metadata.contactPhone ? `<tr><td style="padding: 4px 0; color: #666;"><strong>Contact Phone:</strong></td><td style="padding: 4px 0;">${metadata.contactPhone}</td></tr>` : ""}
@@ -1267,15 +1274,16 @@ export const sendSupportEmail = onCall({
       `;
     }
 
-    const mailOptions = {
+    const mailOptions: any = {
       from: '"LocalMile.Plus Support" <bookings@localmile.plus>',
       to: recipients.join(","),
       replyTo: "bookings@localmile.plus",
       subject: subject || `Inquiry from LocalMile.Plus User${jobId ? ` (Job Ref: ${jobId})` : ""}`,
       html: `
         <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #1A3D33;">New Support Inquiry</h2>
-          <p><strong>User Email:</strong> ${request.auth.token.email || "Unknown User"}</p>
+          <h2 style="color: #1A3D33;">${subject || "New Support Inquiry"}</h2>
+          <p><strong>User:</strong> ${metadata?.senderName || "Unknown User"} (${request.auth.token.email || "Unknown User"})</p>
+          <p><strong>Company:</strong> ${metadata?.companyName || "N/A"}</p>
           
           ${metadataHtml}
 
@@ -1288,6 +1296,10 @@ export const sendSupportEmail = onCall({
         </div>
       `,
     };
+
+    if (cc) {
+      mailOptions.cc = Array.isArray(cc) ? cc.join(",") : cc;
+    }
 
     console.log("[Support Email] Sending via Nodemailer...");
     const info = await transporter.sendMail(mailOptions);
@@ -1303,6 +1315,7 @@ export const sendSupportEmail = onCall({
       metadata: {
         ...metadata,
         jobId,
+        cc,
         type: 'support_inquiry'
       }
     });
@@ -2741,16 +2754,23 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
       customerPhone: payload.customerPhone || "",
       customerServiceEmail: payload.customerServiceEmail || "",
       extraWeightCharges: payload.extraWeightCharges || "3.50",
-      franchisee: payload.franchisee || "",
-      franchiseeTerritoryJSON: payload.franchiseeTerritoryJSON || [],
-      servicePMPOInternalID: payload.servicePMPOInternalID || "",
-      servicePMPORate: payload.servicePMPORate || "",
-      serviceTrialInternalID: payload.serviceTrialInternalID || "",
-      serviceTrialRate: payload.serviceTrialRate || "",
-      state: payload.state || "",
-      street: payload.street || "",
-      zip: payload.zip || "",
-      trial_credits_balance: 5,
+        franchisee: payload.franchisee || "",
+        franchiseeTerritoryJSON: payload.franchiseeTerritoryJSON || [],
+        franchiseeName: payload.franchiseeName || "",
+        franchiseeContact: payload.franchiseeContact || "",
+        franchiseeEmail: payload.franchiseeEmail || "",
+        franchiseeMobile: payload.franchiseeMobile || "",
+        accountManagerName: payload.accountManagerName || "",
+        accountManagerEmail: payload.accountManagerEmail || "",
+        accountManagerMobile: payload.accountManagerMobile || "",
+        servicePMPOInternalID: payload.servicePMPOInternalID || "",
+        servicePMPORate: payload.servicePMPORate || "",
+        serviceTrialInternalID: payload.serviceTrialInternalID || "",
+        serviceTrialRate: payload.serviceTrialRate || "",
+        state: payload.state || "",
+        street: payload.street || "",
+        zip: payload.zip || "",
+        trial_credits_balance: 5,
       apName: payload.apName || "",
       apAddr1: payload.apAddr1 || "",
       apStreet: payload.apStreet || "",
@@ -3010,8 +3030,8 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
     } else if (service === 'site-to-lpo' || service === 'site-to-australia post') {
       const trialBalance = companyData.trial_credits_balance;
       const isTrial = typeof trialBalance === 'number' && trialBalance > 0;
-      serviceInternalId = (isTrial && companyData.localmileTrialInternalID)
-        ? companyData.localmileTrialInternalID
+      serviceInternalId = (isTrial && companyData.serviceTrialInternalID)
+        ? companyData.serviceTrialInternalID
         : (companyData.servicePMPOInternalID || '');
       serviceRate = companyData.servicePMPORate || '';
     }
@@ -3217,6 +3237,39 @@ apiApp.get("/api/v1/jobs", async (req: express.Request, res: express.Response) =
   }
 });
 
+apiApp.get("/api/v1/jobs/:id", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || (providedKey !== netsuiteApiKey.value() && providedKey !== prospectplusApiKey.value())) {
+    console.warn("Unauthorized attempt to call GET Job by ID API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).send({ success: false, message: "Missing required param: id" });
+      return;
+    }
+
+    const db = getDB();
+    const jobDoc = await db.collection("jobs").doc(id).get();
+
+    if (!jobDoc.exists) {
+      res.status(404).send({ success: false, message: `Job with ID ${id} not found` });
+      return;
+    }
+
+    res.status(200).send({
+      success: true,
+      data: { id: jobDoc.id, ...jobDoc.data() }
+    });
+  } catch (error: any) {
+    console.error("GET Job by ID API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
 export const api = onRequest({ secrets: [netsuiteApiKey, prospectplusApiKey], cors: true }, apiApp);
 
 // Admin Callable Function: Recreate Security Code
@@ -3325,4 +3378,115 @@ export const adminResendAuthEmail = onCall({ invoker: "public", secrets: [prospe
     console.error("Error resending auth email:", error);
     throw new HttpsError("internal", error.message);
   }
+});
+
+// Logic: sendProspectPlusMessage
+export const sendProspectPlusMessage = onCall({
+  invoker: "public",
+  secrets: [prospectplusApiKey],
+}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
+  }
+
+  const { toEmail, toPhone, subject, html, smsMessage, leadId, author, jobId } = request.data;
+
+  const results: { email?: any; sms?: any } = {};
+
+  if (toEmail) {
+    try {
+      console.log(`[sendProspectPlusMessage] Sending email to ${toEmail} for leadId ${leadId}...`);
+      const response = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+          to: toEmail,
+          subject: subject || 'Message from LocalMile.Plus',
+          html: html || '',
+          from: 'localmile@mailplus.com.au',
+          metadata: {
+            customerId: leadId || ''
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[sendProspectPlusMessage] Email failed with status ${response.status}:`, errText);
+        results.email = { success: false, status: response.status, error: errText };
+      } else {
+        const data = await response.json() as any;
+        console.log(`[sendProspectPlusMessage] Email sent successfully:`, data);
+        results.email = { success: true, data };
+        
+        // Log to communications
+        await logCommunication({
+          from: "localmile@mailplus.com.au",
+          to: toEmail,
+          subject: subject || 'Message from LocalMile.Plus',
+          body: html || '',
+          type: 'sent',
+          metadata: {
+            customerId: leadId || '',
+            jobId: jobId || ''
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error("[sendProspectPlusMessage] Email sending error:", error);
+      results.email = { success: false, error: error.message };
+    }
+  }
+
+  if (toPhone && smsMessage) {
+    try {
+      console.log(`[sendProspectPlusMessage] Sending SMS to ${toPhone} for leadId ${leadId}...`);
+      const response = await fetch('https://prospectplus.com.au/api/campaigns/send-custom-sms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+          to: toPhone,
+          message: smsMessage,
+          leadId: leadId || '',
+          author: author || 'LocalMile'
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[sendProspectPlusMessage] SMS failed with status ${response.status}:`, errText);
+        results.sms = { success: false, status: response.status, error: errText };
+      } else {
+        const data = await response.json() as any;
+        console.log(`[sendProspectPlusMessage] SMS sent successfully:`, data);
+        results.sms = { success: true, data };
+
+        // Log to communications if we didn't send email (or as a separate log)
+        if (!toEmail) {
+          await logCommunication({
+            from: "localmile@mailplus.com.au",
+            to: toPhone,
+            subject: `SMS to ${toPhone}`,
+            body: smsMessage,
+            type: 'sent',
+            metadata: {
+              customerId: leadId || '',
+              jobId: jobId || ''
+            }
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error("[sendProspectPlusMessage] SMS sending error:", error);
+      results.sms = { success: false, error: error.message };
+    }
+  }
+
+  return { success: true, results };
 });

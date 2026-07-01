@@ -1646,15 +1646,24 @@ export const requestPasswordResetHttp = onRequest({
   }
 
   try {
-    // 1. Generate the reset link
-    const actionCodeSettings = {
-      // Use the origin if provided, otherwise fallback to production URL
-      url: origin ? `${origin}/signin` : 'https://localmile-plus.web.app/signin',
-      handleCodeInApp: true,
-    };
-
-    console.log(`[Auth] Generating password reset link for: ${email}`);
-    const link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
+    // 1. Generate the reset link with auto-healing fallback for non-allowlisted domains
+    let link = "";
+    try {
+      const actionCodeSettings = {
+        url: origin ? `${origin}/signin` : 'https://localmile-plus.web.app/signin',
+        handleCodeInApp: true,
+      };
+      console.log(`[Auth] Generating password reset link for: ${email} with redirect: ${actionCodeSettings.url}`);
+      link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
+    } catch (authErr: any) {
+      console.warn(`[Auth] Failed to generate link with origin ${origin}:`, authErr.message);
+      console.log(`[Auth] Retrying with default allowlisted Firebase domain...`);
+      const fallbackSettings = {
+        url: 'https://localmile-plus.web.app/signin',
+        handleCodeInApp: true,
+      };
+      link = await admin.auth().generatePasswordResetLink(email, fallbackSettings);
+    }
 
     // 2. Fetch leadId from user document if exists
     const db = getDB();

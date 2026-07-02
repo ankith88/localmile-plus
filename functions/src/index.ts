@@ -2996,7 +2996,7 @@ apiApp.post("/api/v1/accounts/recreate-code", async (req: express.Request, res: 
 
 apiApp.patch("/api/v1/companies/:companyId", async (req: express.Request, res: express.Response) => {
   const providedKey = req.headers["x-api-key"] || req.query.api_key;
-  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+  if (!providedKey || (providedKey !== netsuiteApiKey.value() && providedKey !== prospectplusApiKey.value())) {
     console.warn("Unauthorized attempt to call Companies Update API");
     res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
     return;

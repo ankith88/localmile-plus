@@ -286,8 +286,28 @@ const NewJobForm: React.FC = () => {
           const compDoc = await getDoc(doc(db, 'companies', customerId));
           if (compDoc.exists()) {
             const data = compDoc.data();
-            if (typeof data.trial_credits_balance === 'number') {
-              setTrialCredits(data.trial_credits_balance);
+            const balance = data.trial_credits_balance;
+            if (typeof balance === 'number') {
+              // 1. Pending/active requests that aren't accepted yet
+              const reqsQuery = query(
+                collection(db, 'requests'),
+                where('customer_id', '==', customerId),
+                where('status', 'in', ['pending', 'new-time-proposed'])
+              );
+              const reqsSnap = await getDocs(reqsQuery);
+              const pendingReqsCount = reqsSnap.size;
+
+              // 2. Direct scheduled jobs (not created from requests, which are already decremented on acceptance)
+              const jobsQuery = query(
+                collection(db, 'jobs'),
+                where('customer_id', '==', customerId),
+                where('status', '==', 'scheduled')
+              );
+              const jobsSnap = await getDocs(jobsQuery);
+              const directScheduledCount = jobsSnap.docs.filter(doc => !doc.data().originalRequestId).length;
+
+              const available = Math.max(0, balance - (pendingReqsCount + directScheduledCount));
+              setTrialCredits(available);
             }
           }
         } catch (e) {
@@ -1123,7 +1143,27 @@ const NewJobForm: React.FC = () => {
           companyProfileData = compDoc.data();
           const balance = companyProfileData.trial_credits_balance;
           if (typeof balance === 'number') {
-            if (balance > 0) {
+            // 1. Pending/active requests that aren't accepted yet
+            const reqsQuery = query(
+              collection(db, 'requests'),
+              where('customer_id', '==', companyIdForTrial),
+              where('status', 'in', ['pending', 'new-time-proposed'])
+            );
+            const reqsSnap = await getDocs(reqsQuery);
+            const pendingReqsCount = reqsSnap.size;
+
+            // 2. Direct scheduled jobs
+            const jobsQuery = query(
+              collection(db, 'jobs'),
+              where('customer_id', '==', companyIdForTrial),
+              where('status', '==', 'scheduled')
+            );
+            const jobsSnap = await getDocs(jobsQuery);
+            const directScheduledCount = jobsSnap.docs.filter(doc => !doc.data().originalRequestId).length;
+
+            const availableTrials = balance - (pendingReqsCount + directScheduledCount);
+
+            if (availableTrials > 0) {
               isFreeJob = true;
             } else if (userData?.role === 'customer' && !isExistingCustomer) {
               setValidationError("You have no remaining trial credits. Please upgrade your account to book more jobs.");

@@ -18,7 +18,7 @@ import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
 
 const Reports: React.FC = () => {
-  const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents } = useLpo();
+  const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalJobs: 0,
@@ -126,7 +126,7 @@ const Reports: React.FC = () => {
         if (parentsToQuery.length > 0) {
           const counts = await Promise.all(parentsToQuery.map(async (targetParent) => {
             const custQ = query(
-              collection(db, `lpo/${targetParent.id}/customers`),
+              collection(db, `companies/${targetParent.id}/customers`),
               where('status', '==', 'Active')
             );
             const snap = await getDocs(custQ);
@@ -154,10 +154,10 @@ const Reports: React.FC = () => {
       }
     };
 
-    if (parent || isAdmin) {
+    if (parent || isAdmin || userData?.role === 'parent') {
       fetchStats();
     }
-  }, [parent, isAdmin, selectedParentId, allParents]);
+  }, [parent, isAdmin, selectedParentId, allParents, userData]);
 
   const serviceLabels: Record<string, string> = {
     'lpo-to-site': 'Parent ➔ Site',

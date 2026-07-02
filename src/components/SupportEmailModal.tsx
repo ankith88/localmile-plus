@@ -11,6 +11,7 @@ interface SupportEmailModalProps {
   to?: string;
   cc?: string;
   title?: string;
+  requireSenderInfo?: boolean;
   metadata?: {
     lpoName?: string;
     companyName?: string;
@@ -33,25 +34,35 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
   to,
   cc,
   title,
+  requireSenderInfo,
   metadata
 }) => {
   const [message, setMessage] = useState('');
+  const [senderName, setSenderName] = useState('');
+  const [senderEmail, setSenderEmail] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const handleSend = async () => {
     if (!message.trim()) return;
+    if (requireSenderInfo && (!senderName.trim() || !senderEmail.trim())) return;
 
     setIsSending(true);
     const functions = getFunctions();
     const sendSupportEmail = httpsCallable(functions, 'sendSupportEmail');
+
+    const mergedMetadata = {
+      ...metadata,
+      senderName: requireSenderInfo ? senderName.trim() : metadata?.senderName,
+      senderEmail: requireSenderInfo ? senderEmail.trim() : metadata?.senderEmail,
+    };
 
     try {
       await sendSupportEmail({
         message,
         jobId,
         subject: defaultSubject || (jobId ? `Inquiry regarding Job Ref: ${jobId}` : 'General Inquiry'),
-        metadata,
+        metadata: mergedMetadata,
         to,
         cc
       });
@@ -60,6 +71,8 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
         onClose();
         setSuccess(false);
         setMessage('');
+        setSenderName('');
+        setSenderEmail('');
       }, 2000);
     } catch (error) {
       console.error("Error sending support email:", error);
@@ -111,6 +124,74 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
                 </div>
               )}
 
+              {requireSenderInfo && (
+                <>
+                  <div className="form-group" style={{ marginBottom: '16px' }}>
+                    <label style={{ 
+                      display: 'block', 
+                      fontSize: '0.75rem', 
+                      fontWeight: 800, 
+                      textTransform: 'uppercase', 
+                      color: 'var(--ink-soft)', 
+                      marginBottom: '8px',
+                      opacity: 0.6
+                    }}>
+                      Your Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Enter your name"
+                      value={senderName}
+                      onChange={(e) => setSenderName(e.target.value)}
+                      required
+                      disabled={isSending}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(0,0,0,0.1)',
+                        background: 'rgba(255,255,255,0.5)',
+                        fontSize: '1rem',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '16px' }}>
+                    <label style={{ 
+                      display: 'block', 
+                      fontSize: '0.75rem', 
+                      fontWeight: 800, 
+                      textTransform: 'uppercase', 
+                      color: 'var(--ink-soft)', 
+                      marginBottom: '8px',
+                      opacity: 0.6
+                    }}>
+                      Your Email
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="Enter your email address"
+                      value={senderEmail}
+                      onChange={(e) => setSenderEmail(e.target.value)}
+                      required
+                      disabled={isSending}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(0,0,0,0.1)',
+                        background: 'rgba(255,255,255,0.5)',
+                        fontSize: '1rem',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+
               <div className="form-group" style={{ marginBottom: '24px' }}>
                 <label style={{ 
                   display: 'block', 
@@ -137,7 +218,8 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
                     background: 'rgba(255,255,255,0.5)',
                     fontSize: '1rem',
                     outline: 'none',
-                    resize: 'none'
+                    resize: 'none',
+                    boxSizing: 'border-box'
                   }}
                   disabled={isSending}
                 />
@@ -155,7 +237,7 @@ const SupportEmailModal: React.FC<SupportEmailModalProps> = ({
                 <button 
                   className="btn-primary-glass" 
                   onClick={handleSend}
-                  disabled={isSending || !message.trim()}
+                  disabled={isSending || !message.trim() || (requireSenderInfo && (!senderName.trim() || !senderEmail.trim()))}
                   style={{ 
                     flex: 1, 
                     padding: '14px', 

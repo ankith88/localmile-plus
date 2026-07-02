@@ -13,6 +13,8 @@ import {
 import { auth, db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import LoadingScreen from '../../components/LoadingScreen';
+import SupportEmailModal from '../../components/SupportEmailModal';
+
 
 const SignIn: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +25,8 @@ const SignIn: React.FC = () => {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+
 
   // Redirect if already logged in
   useEffect(() => {
@@ -195,10 +199,11 @@ const SignIn: React.FC = () => {
             Don't have an account? <a onClick={() => navigate('/register')} style={{cursor: 'pointer'}}>Create one</a>
           </p> */}
           <p className="footer-link" style={{ marginTop: '12px', fontSize: '0.8rem' }}>
-            Trouble signing in? <a href="#">Contact Support</a>
+            Trouble signing in? <a href="#" onClick={(e) => { e.preventDefault(); setIsSupportModalOpen(true); }}>Contact Support</a>
           </p>
         </div>
       </div>
+
 
       <style>{`
         .signin-page {
@@ -388,6 +393,14 @@ const SignIn: React.FC = () => {
           text-decoration: none;
         }
       `}</style>
+      <SupportEmailModal
+        isOpen={isSupportModalOpen}
+        onClose={() => setIsSupportModalOpen(false)}
+        to="ankith.ravindran@mailplus.com.au"
+        title="Contact Support"
+        defaultSubject="Trouble Signing In: Support Request"
+        requireSenderInfo={true}
+      />
     </div>
   );
 };

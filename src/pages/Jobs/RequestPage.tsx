@@ -357,7 +357,7 @@ const RequestPage: React.FC = () => {
           try {
             if (parentId) {
               const custQ = query(
-                collection(db, `lpo/${parentId}/customers`),
+                collection(db, `companies/${parentId}/customers`),
                 where('companyName', '==', request.customer.company)
               );
               const custSnap = await getDocs(custQ);
@@ -434,7 +434,7 @@ const RequestPage: React.FC = () => {
           
           try {
             const custQ = query(
-              collection(db, `lpo/${parentId}/customers`),
+              collection(db, `companies/${parentId}/customers`),
               where('companyName', '==', request.customer.company)
             );
             const custSnap = await getDocs(custQ);

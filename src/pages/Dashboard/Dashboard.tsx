@@ -160,7 +160,7 @@ const Dashboard: React.FC = () => {
       }
     };
 
-    if (parent || isAdmin || customer || userData?.role === 'customer') {
+    if (parent || isAdmin || customer || userData?.role === 'customer' || userData?.role === 'parent') {
       fetchData();
     }
   }, [parent, customer, isAdmin, selectedParentId, userData]);

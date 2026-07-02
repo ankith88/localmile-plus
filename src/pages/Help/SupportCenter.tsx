@@ -42,8 +42,7 @@ const SupportCenter: React.FC = () => {
 
   const handleSendFeedback = () => {
     setModalConfig({
-      to: contactInfo.email,
-      cc: "ankith.ravindran@mailplus.com.au",
+      to: "ankith.ravindran@maillplus.com.au",
       title: "Send Feedback",
       defaultSubject: "Platform Feedback: LocalMile.Plus"
     });

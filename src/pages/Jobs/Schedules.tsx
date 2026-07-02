@@ -41,33 +41,61 @@ const Schedules: React.FC = () => {
   useEffect(() => {
     const fetchSchedules = async () => {
       setLoading(true);
+      const normalizeFrequency = (freq: any): string[] => {
+        if (!Array.isArray(freq)) return [];
+        const map: Record<string, string> = {
+          'monday': 'Mon', 'tuesday': 'Tue', 'wednesday': 'Wed', 'thursday': 'Thu', 'friday': 'Fri', 'saturday': 'Sat', 'sunday': 'Sun',
+          'mon': 'Mon', 'tue': 'Tue', 'wed': 'Wed', 'thu': 'Thu', 'fri': 'Fri', 'sat': 'Sat', 'sun': 'Sun',
+          'm': 'Mon', 't': 'Tue', 'w': 'Wed', 'th': 'Thu', 'f': 'Fri'
+        };
+        return freq.map(d => map[d.toLowerCase()] || d);
+      };
+
+      const mapDoc = (doc: any) => {
+        const data = doc.data() as any;
+        return {
+          ...data,
+          id: doc.id,
+          frequency: normalizeFrequency(data.frequency)
+        };
+      };
+
       try {
         let baseQ = collection(db, 'scheduled_jobs');
         let constraints: any[] = [orderBy('createdAt', 'desc')];
 
-        if (selectedParentId !== 'all') {
+        if (userData?.role === 'customer' && userData?.customer_id) {
+          constraints.unshift(where('customer_id', '==', userData.customer_id));
+        } else if (selectedParentId !== 'all') {
           constraints.unshift(where('parent_id', '==', selectedParentId));
         }
 
         const q = query(baseQ, ...constraints);
         const snapshot = await getDocs(q);
-        setSchedules(snapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        setSchedules(snapshot.docs.map(mapDoc));
       } catch (error) {
         console.error("Error fetching schedules:", error);
         // Fallback for missing indexes
         let baseQ = collection(db, 'scheduled_jobs');
-        const q = selectedParentId !== 'all' ? query(baseQ, where('parent_id', '==', selectedParentId)) : baseQ;
+        let q;
+        if (userData?.role === 'customer' && userData?.customer_id) {
+          q = query(baseQ, where('customer_id', '==', userData.customer_id));
+        } else if (selectedParentId !== 'all') {
+          q = query(baseQ, where('parent_id', '==', selectedParentId));
+        } else {
+          q = baseQ;
+        }
         const snapshot = await getDocs(q as any);
-        setSchedules(snapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        setSchedules(snapshot.docs.map(mapDoc));
       } finally {
         setLoading(false);
       }
     };
 
-    if (parent || isAdmin) {
+    if (parent || isAdmin || userData?.role === 'parent' || userData?.role === 'customer') {
       fetchSchedules();
     }
-  }, [parent, isAdmin, selectedParentId]);
+  }, [parent, isAdmin, selectedParentId, userData]);
 
   const toggleExpand = (jobId: string) => {
     const newExpanded = new Set(expandedJobIds);

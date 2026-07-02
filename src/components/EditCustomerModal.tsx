@@ -66,7 +66,7 @@ const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
       } else if (customer.role === 'customer' && customer.uid) {
         customerRef = doc(db, `users/${customer.uid}/address_book`, customer.id);
       } else {
-        customerRef = doc(db, `lpo/${customer.parent_id}/customers`, customer.id);
+        customerRef = doc(db, `companies/${customer.parent_id}/customers`, customer.id);
       }
       
       // We update both versions of the fields to be safe, as the codebase seems to use both

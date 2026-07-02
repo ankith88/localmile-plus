@@ -45,9 +45,9 @@ const logCommunication = async (data: {
   // 1. Enrich LPO Name if missing
   if (metadata.parentId && !metadata.lpoName) {
     try {
-      const lpoDoc = await db.collection("lpo").doc(metadata.parentId).get();
+      const lpoDoc = await db.collection("companies").doc(metadata.parentId).get();
       if (lpoDoc.exists) {
-        metadata.lpoName = lpoDoc.data()?.name;
+        metadata.lpoName = lpoDoc.data()?.name || lpoDoc.data()?.companyName;
       }
     } catch (e) {
       console.error("[Enrichment] LPO error:", e);
@@ -65,7 +65,7 @@ const logCommunication = async (data: {
 
       if (metadata.parentId) {
         // Look in LPO subcollection
-        const custQuery = db.collection("lpo").doc(metadata.parentId).collection("customers");
+        const custQuery = db.collection("companies").doc(metadata.parentId).collection("customers");
         let custSnap = await custQuery.where("companyId", "in", [cidStr, cidNum]).limit(1).get();
         if (custSnap.empty) {
           custSnap = await custQuery.where("customerInternalId", "in", [cidStr, cidNum]).limit(1).get();
@@ -621,7 +621,7 @@ async function activateRequestsForCustomer(newData: any, oldData: any) {
 
 // Logic: onCustomerActive (LPO Subcollection)
 export const onCustomerActive = onDocumentUpdated({
-  document: "lpo/{parentId}/customers/{customerId}",
+  document: "companies/{parentId}/customers/{customerId}",
   database: "(default)",
 }, async (event) => {
   const newData = event.data?.after.data();
@@ -651,7 +651,7 @@ async function handleCustomerCancellation(newData: any, oldData: any, customerId
     let parentName = "Independent Customer";
     if (parentId) {
       try {
-        const parentDoc = await db.collection("lpo").doc(parentId).get();
+        const parentDoc = await db.collection("companies").doc(parentId).get();
         if (parentDoc.exists) {
           parentName = parentDoc.data()?.name || parentName;
         }
@@ -740,7 +740,7 @@ async function handleCustomerCancellation(newData: any, oldData: any, customerId
 
 // Logic: onCustomerCancelled (LPO Subcollection)
 export const onCustomerCancelled = onDocumentUpdated({
-  document: "lpo/{parentId}/customers/{customerId}",
+  document: "companies/{parentId}/customers/{customerId}",
   database: "(default)",
   secrets: [gmailAppPassword],
 }, async (event) => {
@@ -1224,17 +1224,36 @@ export const sendSupportEmail = onCall({
 }, async (request) => {
   console.log("[Support Email] Function triggered");
 
-  if (!request.auth) {
-    console.warn("[Support Email] Unauthenticated request");
-    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
-  }
-
   const { message, subject, jobId, metadata, to, cc } = request.data;
   console.log(`[Support Email] Data: jobId=${jobId}, subject=${subject}, to=${to}, cc=${cc}`);
 
   if (!message) {
     console.warn("[Support Email] Missing message");
     throw new HttpsError("invalid-argument", "Message is required.");
+  }
+
+  // If unauthenticated, validate that the message is only sent to predefined support email addresses to prevent spam relaying
+  if (!request.auth) {
+    let checkRecipients: string[] = [];
+    if (to) {
+      checkRecipients = Array.isArray(to) ? to : [to];
+    } else {
+      checkRecipients = ["michael.mcdaid@mailplus.com.au", "kerry.oneill@mailplus.com.au", "dispatcher@mailplus.com.au"];
+    }
+
+    const allowedRecipients = [
+      "ankith.ravindran@mailplus.com.au",
+      "ankith.ravindran@maillplus.com.au",
+      "michael.mcdaid@mailplus.com.au",
+      "kerry.oneill@mailplus.com.au",
+      "dispatcher@mailplus.com.au"
+    ];
+
+    const isAllowed = checkRecipients.every(r => allowedRecipients.includes(r.trim().toLowerCase()));
+    if (!isAllowed) {
+      console.warn("[Support Email] Blocked unauthenticated email transmission to unauthorized recipients:", checkRecipients);
+      throw new HttpsError("permission-denied", "Unauthenticated support requests can only be sent to authorized support email addresses.");
+    }
   }
 
   try {
@@ -1270,7 +1289,7 @@ export const sendSupportEmail = onCall({
     const htmlContent = `
       <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #1A3D33;">${subject || "New Support Inquiry"}</h2>
-        <p><strong>User:</strong> ${metadata?.senderName || "Unknown User"} (${request.auth.token.email || "Unknown User"})</p>
+        <p><strong>User:</strong> ${metadata?.senderName || "Unknown User"} (${request.auth?.token?.email || metadata?.senderEmail || "Unknown User"})</p>
         <p><strong>Company:</strong> ${metadata?.companyName || "N/A"}</p>
         
         ${metadataHtml}
@@ -2106,8 +2125,8 @@ async function fetchDailyJobReportData(statuses: string[]) {
       if (lpoCache[data.parent_id]) {
         lpoName = lpoCache[data.parent_id];
       } else {
-        const lpoDoc = await db.collection('lpo').doc(data.parent_id).get();
-        lpoName = lpoDoc.data()?.name || "Unknown Parent";
+        const lpoDoc = await db.collection('companies').doc(data.parent_id).get();
+        lpoName = lpoDoc.data()?.name || lpoDoc.data()?.companyName || "Unknown Parent";
         lpoCache[data.parent_id] = lpoName;
       }
     }
@@ -2125,7 +2144,7 @@ async function fetchDailyJobReportData(statuses: string[]) {
           try {
             const cidStr = cid.toString();
             const cidNum = parseInt(cidStr);
-            const custQuery = db.collection("lpo").doc(parentId).collection("customers");
+            const custQuery = db.collection("companies").doc(parentId).collection("customers");
 
             let custSnap = await custQuery.where("companyId", "in", [cidStr, cidNum]).limit(1).get();
             if (custSnap.empty) {
@@ -2498,7 +2517,7 @@ export const sendDailyPerformanceReport = onSchedule({
   });
 
   // 4. Fetch LPO names for better reporting
-  const lpoSnapshot = await db.collection('lpo').get();
+  const lpoSnapshot = await db.collection('companies').get();
   const lpoNames: { [key: string]: string } = {};
   lpoSnapshot.forEach(doc => {
     lpoNames[doc.id] = doc.data()?.name || "Unknown Parent";
@@ -2740,6 +2759,50 @@ export const verifyAddressServiceability = onCall({ invoker: "public" }, async (
   }
 });
 
+function normalizeFirestoreValue(val: any): any {
+  if (val === null || val === undefined) return val;
+  if (typeof val !== "object") return val;
+
+  if ("stringValue" in val) return val.stringValue;
+  if ("integerValue" in val) return parseInt(val.integerValue, 10);
+  if ("doubleValue" in val) return parseFloat(val.doubleValue);
+  if ("booleanValue" in val) return val.booleanValue;
+  if ("nullValue" in val) return null;
+  if ("arrayValue" in val) {
+    const arr = val.arrayValue?.values || [];
+    return arr.map((item: any) => normalizeFirestoreValue(item));
+  }
+  if ("mapValue" in val) {
+    const fields = val.mapValue?.fields || {};
+    const res: Record<string, any> = {};
+    for (const [k, v] of Object.entries(fields)) {
+      res[k] = normalizeFirestoreValue(v);
+    }
+    return res;
+  }
+
+  if (Array.isArray(val)) {
+    return val.map(item => normalizeFirestoreValue(item));
+  }
+
+  const res: Record<string, any> = {};
+  for (const [k, v] of Object.entries(val)) {
+    res[k] = normalizeFirestoreValue(v);
+  }
+  return res;
+}
+
+function normalizePayload(payload: any): any {
+  if (payload && payload.fields) {
+    const flat: Record<string, any> = {};
+    for (const [key, valueObj] of Object.entries(payload.fields)) {
+      flat[key] = normalizeFirestoreValue(valueObj);
+    }
+    return flat;
+  }
+  return normalizeFirestoreValue(payload);
+}
+
 // Logic: Accounts Provisioning API
 const apiApp = express();
 apiApp.use(cors({ origin: true }));
@@ -2757,16 +2820,7 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
   try {
     let payload = req.body;
 
-    // Normalize Firestore document format if wrapped in "fields"
-    if (payload && payload.fields) {
-      const flat: Record<string, any> = {};
-      for (const [key, valueObj] of Object.entries(payload.fields)) {
-        const val = valueObj as any;
-        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ??
-          (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
-      }
-      payload = flat;
-    }
+    payload = normalizePayload(payload);
 
     // Validate required fields
     if (!payload.companyId || !payload.email || payload.customerEmail === undefined) {
@@ -2957,15 +3011,7 @@ apiApp.patch("/api/v1/companies/:companyId", async (req: express.Request, res: e
       return;
     }
 
-    if (payload && payload.fields) {
-      const flat: Record<string, any> = {};
-      for (const [key, valueObj] of Object.entries(payload.fields)) {
-        const val = valueObj as any;
-        flat[key] = val.stringValue ?? val.integerValue ?? val.booleanValue ??
-          (val.arrayValue ? val.arrayValue.values?.map((item: any) => item.stringValue ?? item.integerValue) : val);
-      }
-      payload = flat;
-    }
+    payload = normalizePayload(payload);
 
     if (!payload || Object.keys(payload).length === 0) {
       res.status(400).send({ success: false, message: "Empty payload provided" });
@@ -2990,6 +3036,303 @@ apiApp.patch("/api/v1/companies/:companyId", async (req: express.Request, res: e
 
   } catch (error: any) {
     console.error("Companies Update API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.get("/api/v1/companies/exists", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Company Exists API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const companyId = req.query.companyId as string;
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required query parameter: companyId" });
+      return;
+    }
+
+    const db = getDB();
+    const doc = await db.collection("companies").doc(String(companyId)).get();
+    res.status(200).send({
+      success: true,
+      exists: doc.exists
+    });
+  } catch (error: any) {
+    console.error("Company Exists API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.get("/api/v1/companies/:companyId/exists", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Company Exists API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required parameter: companyId" });
+      return;
+    }
+
+    const db = getDB();
+    const doc = await db.collection("companies").doc(String(companyId)).get();
+    res.status(200).send({
+      success: true,
+      exists: doc.exists
+    });
+  } catch (error: any) {
+    console.error("Company Exists API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.get("/api/v1/companies/:companyId/customers/exists", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Company Customers Exists API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required parameter: companyId" });
+      return;
+    }
+
+    const db = getDB();
+    const customersSnapshot = await db
+      .collection("companies")
+      .doc(String(companyId))
+      .collection("customers")
+      .limit(1)
+      .get();
+
+    res.status(200).send({
+      success: true,
+      hasCustomers: !customersSnapshot.empty
+    });
+  } catch (error: any) {
+    console.error("Company Customers Exists API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.get("/api/v1/companies/:companyId/customers/:customerId/exists", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Company Customer ID Exists API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId, customerId } = req.params;
+    if (!companyId || !customerId) {
+      res.status(400).send({ success: false, message: "Missing required parameter: companyId or customerId" });
+      return;
+    }
+
+    const db = getDB();
+    const doc = await db
+      .collection("companies")
+      .doc(String(companyId))
+      .collection("customers")
+      .doc(String(customerId))
+      .get();
+
+    res.status(200).send({
+      success: true,
+      exists: doc.exists
+    });
+  } catch (error: any) {
+    console.error("Company Customer ID Exists API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.put("/api/v1/companies/:companyId/customers/:customerId", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Company Customer Creation API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId, customerId } = req.params;
+    let payload = req.body;
+
+    if (!companyId || !customerId) {
+      res.status(400).send({ success: false, message: "Missing required parameter: companyId or customerId" });
+      return;
+    }
+
+    payload = normalizePayload(payload);
+
+    if (!payload || Object.keys(payload).length === 0) {
+      res.status(400).send({ success: false, message: "Empty payload provided" });
+      return;
+    }
+
+    const db = getDB();
+    const customerRef = db
+      .collection("companies")
+      .doc(String(companyId))
+      .collection("customers")
+      .doc(String(customerId));
+
+    await customerRef.set(payload, { merge: true });
+
+    res.status(200).send({
+      success: true,
+      message: "Customer document created/updated successfully."
+    });
+  } catch (error: any) {
+    console.error("Company Customer Creation API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.post("/api/v1/companies/:companyId/customers", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Company Customer Auto-Creation API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    let payload = req.body;
+
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required parameter: companyId" });
+      return;
+    }
+
+    payload = normalizePayload(payload);
+
+    if (!payload || Object.keys(payload).length === 0) {
+      res.status(400).send({ success: false, message: "Empty payload provided" });
+      return;
+    }
+
+    const db = getDB();
+    const customersCollectionRef = db
+      .collection("companies")
+      .doc(String(companyId))
+      .collection("customers");
+
+    const newDocRef = await customersCollectionRef.add(payload);
+
+    res.status(200).send({
+      success: true,
+      message: "Customer document created successfully.",
+      customerId: newDocRef.id
+    });
+  } catch (error: any) {
+    console.error("Company Customer Auto-Creation API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.get("/api/v1/users/check", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call User Check API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const email = req.query.email as string;
+    const uid = req.query.uid as string;
+
+    if (!email && !uid) {
+      res.status(400).send({ success: false, message: "Missing required query parameter: email or uid" });
+      return;
+    }
+
+    const db = getDB();
+    let userDoc;
+
+    if (uid) {
+      userDoc = await db.collection("users").doc(uid).get();
+    } else {
+      const userSnapshot = await db.collection("users").where("email", "==", email).limit(1).get();
+      if (!userSnapshot.empty) {
+        userDoc = userSnapshot.docs[0];
+      }
+    }
+
+    if (userDoc && userDoc.exists) {
+      const userData = userDoc.data();
+      res.status(200).send({
+        success: true,
+        exists: true,
+        uid: userDoc.id,
+        email: userData?.email || "",
+        companyId: userData?.companyId || "",
+        role: userData?.role || ""
+      });
+    } else {
+      res.status(200).send({
+        success: true,
+        exists: false
+      });
+    }
+  } catch (error: any) {
+    console.error("User Check API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.put("/api/v1/companies/:companyId", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || providedKey !== netsuiteApiKey.value()) {
+    console.warn("Unauthorized attempt to call Company Upsert API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    let payload = req.body;
+
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required param: companyId" });
+      return;
+    }
+
+    payload = normalizePayload(payload);
+
+    if (!payload || Object.keys(payload).length === 0) {
+      res.status(400).send({ success: false, message: "Empty payload provided" });
+      return;
+    }
+
+    const db = getDB();
+    const companyRef = db.collection("companies").doc(String(companyId));
+
+    await companyRef.set(payload, { merge: true });
+
+    res.status(200).send({
+      success: true,
+      message: "Company upserted successfully."
+    });
+
+  } catch (error: any) {
+    console.error("Company Upsert API Error:", error);
     res.status(500).send({ success: false, message: error.message });
   }
 });
@@ -3316,7 +3659,7 @@ apiApp.get("/api/v1/jobs/:id", async (req: express.Request, res: express.Respons
     }
 
     const db = getDB();
-    const jobDoc = await db.collection("jobs").doc(id).get();
+    const jobDoc = await db.collection("jobs").doc(String(id)).get();
 
     if (!jobDoc.exists) {
       res.status(404).send({ success: false, message: `Job with ID ${id} not found` });

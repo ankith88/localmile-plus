@@ -174,7 +174,7 @@ export const DevContextSwitcher: React.FC = () => {
       const { doc, setDoc } = await import('firebase/firestore');
       
       const dummyParentId = `dummy_parent_${Date.now()}`;
-      await setDoc(doc(db, 'lpo', dummyParentId), {
+      await setDoc(doc(db, 'companies', dummyParentId), {
         name: "Dummy Parent LPO",
         email: "dummy.lpo@localmile.plus",
         phone: "0400000000",

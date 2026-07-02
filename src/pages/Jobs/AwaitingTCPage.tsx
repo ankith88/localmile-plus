@@ -70,10 +70,10 @@ const AwaitingTCPage: React.FC = () => {
       }
     };
 
-    if (parent || isAdmin) {
+    if (parent || isAdmin || userData?.role === 'parent') {
       fetchData();
     }
-  }, [parent, isAdmin, selectedParentId]);
+  }, [parent, isAdmin, selectedParentId, userData]);
 
   const filteredRequests = requests.filter(j => {
     const matchesSearch = j.customer.company.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -101,7 +101,7 @@ const AwaitingTCPage: React.FC = () => {
     try {
       // Check the customer's current status in Firestore
       const q = query(
-        collection(db, `lpo/${parent.id}/customers`), 
+        collection(db, `companies/${parent.id}/customers`), 
         where('companyName', '==', request.customer.company)
       );
       const snap = await getDocs(q);

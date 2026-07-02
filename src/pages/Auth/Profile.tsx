@@ -17,7 +17,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../firebase/config';
 
 const Profile: React.FC = () => {
-  const { user, userData, parent, customer, updateUserData } = useLpo();
+  const { user, userData, parent, customer, companyData, updateUserData } = useLpo();
   
   const [mobile, setMobile] = useState(userData?.mobile || '');
   const [loading, setLoading] = useState(false);
@@ -164,18 +164,37 @@ const Profile: React.FC = () => {
             <div className="card-content">
               {userData?.role === 'customer' ? (
                 <>
-                  <div className="lpo-badge">
-                    <span className="lpo-id">{customer?.id || 'PENDING'}</span>
-                  </div>
-                  <h3 className="lpo-display-name">{customer?.name || 'Your Company'}</h3>
+                  {userData?.customer_id && userData.customer_id !== 'test_standalone_customer' && (
+                    <div className="lpo-badge">
+                      <span className="lpo-id">{userData.customer_id}</span>
+                    </div>
+                  )}
+                  <h3 className="lpo-display-name">{companyData?.companyName || companyData?.company_name || customer?.name || 'Your Company'}</h3>
                   <div className="lpo-detail">
                     <MapPin size={16} />
-                    <span>{customer?.address || 'Verify your address'}</span>
+                    <span>
+                      {([
+                        companyData?.address1,
+                        companyData?.street
+                      ].filter(p => p && String(p).trim()).join(', ') || customer?.address || 'Verify your address')}
+                    </span>
                   </div>
-                  <div className="lpo-detail" style={{ marginTop: '4px' }}>
-                    <Building size={16} />
-                    <span>{customer?.suburb || ''} {customer?.state || ''} {customer?.postcode || ''}</span>
-                  </div>
+                  {([
+                    companyData?.city || companyData?.suburb || customer?.suburb,
+                    companyData?.state || customer?.state,
+                    companyData?.postcode || companyData?.zip || customer?.postcode
+                  ].some(p => p && String(p).trim())) && (
+                    <div className="lpo-detail" style={{ marginTop: '4px' }}>
+                      <Building size={16} />
+                      <span>
+                        {([
+                          companyData?.city || companyData?.suburb || customer?.suburb,
+                          companyData?.state || customer?.state,
+                          companyData?.postcode || companyData?.zip || customer?.postcode
+                        ].filter(p => p && String(p).trim()).join(' '))}
+                      </span>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>

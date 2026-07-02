@@ -59,7 +59,7 @@ const CancelCustomerModal: React.FC<CancelCustomerModalProps> = ({
         await deleteDoc(doc(db, refPath, customer.id));
         onUpdate({ ...customer, id: 'deleted' }); // Signal deletion
       } else {
-        const customerRef = doc(db, `lpo/${customer.parent_id}/customers`, customer.id);
+        const customerRef = doc(db, `companies/${customer.parent_id}/customers`, customer.id);
         
         const updates: any = {
           status: 'cancelled',

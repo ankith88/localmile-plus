@@ -27,7 +27,7 @@ import { db, googleMapsApiKey } from '../../firebase/config';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomTimePicker from '../../components/CustomTimePicker';
 
-type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip' | 'site-to-australia post' | 'australia post-to-site';
+type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip' | 'site-to-australia post' | 'australia post-to-site' | string;
 type BillingOption = 'customer' | 'lpo';
 
 interface JobData {
@@ -50,6 +50,13 @@ interface JobData {
     lpoServiceAMPORate?: string | null;
     lpoServiceH2HInternalID?: string | null;
     lpoServiceH2HRate?: string | null;
+    billingAddress1?: string;
+    billingStreet?: string;
+    billingCity?: string;
+    billingState?: string;
+    billingZip?: string;
+    billingLatitude?: string | number | null;
+    billingLongitude?: string | number | null;
   };
   service: ServiceType;
   serviceInternalId?: string;
@@ -324,7 +331,7 @@ const NewJobForm: React.FC = () => {
   const [addressPredictions, setAddressPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [, setIsSearchingAddress] = useState(false);
   const [allCustomers, setAllCustomers] = useState<any[]>([]);
-  const [, setAvailableServices] = useState<{id: ServiceType, internalId: string, rate: string}[]>([]);
+  const [availableServices, setAvailableServices] = useState<{id: ServiceType, internalId: string, rate: string, billingAddress?: any}[]>([]);
 
   const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
@@ -470,18 +477,38 @@ const NewJobForm: React.FC = () => {
     const parts = displayName.split(' ');
     
     // Extract service metadata
-    const services: {id: ServiceType, internalId: string, rate: string}[] = [];
+    const services: {id: ServiceType, internalId: string, rate: string, billingAddress?: any}[] = [];
+    const servicesListRaw = c.serviceList || c.services;
     
-    if (c.lpoServiceAMPOInternalID && c.lpoServiceAMPOInternalID !== 'null') {
-      services.push({ id: 'lpo-to-site', internalId: c.lpoServiceAMPOInternalID, rate: c.lpoServiceAMPORate || '10.00' });
-    }
-    
-    if (c.lpoServicePMPOInternalID && c.lpoServicePMPOInternalID !== 'null') {
-      services.push({ id: 'site-to-lpo', internalId: c.lpoServicePMPOInternalID, rate: c.lpoServicePMPORate || '10.00' });
-    }
-    
-    if (c.lpoServiceAMPOPMPOInternalID && c.lpoServiceAMPOPMPOInternalID !== 'null') {
-      services.push({ id: 'round-trip', internalId: c.lpoServiceAMPOPMPOInternalID, rate: c.lpoServiceAMPOPMPORate || '20.00' });
+    if (userData?.role === 'parent' && Array.isArray(servicesListRaw)) {
+      let ampoCount = 0;
+      servicesListRaw.forEach((s: any) => {
+        let billingAddress = null;
+        if (s.name === 'AMPO' && Array.isArray(c.billingAddresses)) {
+          if (c.billingAddresses[ampoCount]) {
+            billingAddress = c.billingAddresses[ampoCount];
+          }
+          ampoCount++;
+        }
+        services.push({
+          id: s.name,
+          internalId: s.id,
+          rate: s.rate || '10.00',
+          billingAddress: billingAddress
+        });
+      });
+    } else {
+      if (c.lpoServiceAMPOInternalID && c.lpoServiceAMPOInternalID !== 'null') {
+        services.push({ id: 'lpo-to-site', internalId: c.lpoServiceAMPOInternalID, rate: c.lpoServiceAMPORate || '10.00' });
+      }
+      
+      if (c.lpoServicePMPOInternalID && c.lpoServicePMPOInternalID !== 'null') {
+        services.push({ id: 'site-to-lpo', internalId: c.lpoServicePMPOInternalID, rate: c.lpoServicePMPORate || '10.00' });
+      }
+      
+      if (c.lpoServiceAMPOPMPOInternalID && c.lpoServiceAMPOPMPOInternalID !== 'null') {
+        services.push({ id: 'round-trip', internalId: c.lpoServiceAMPOPMPOInternalID, rate: c.lpoServiceAMPOPMPORate || '20.00' });
+      }
     }
 
     setAvailableServices(services);
@@ -490,27 +517,53 @@ const NewJobForm: React.FC = () => {
     let defaultService = formData.service;
     let defaultId = '';
     let defaultRate = '';
+    let defaultBillingAddress = null;
     
     if (services.length > 0) {
       const match = services.find(s => s.id === formData.service);
       if (match) {
         defaultId = match.internalId;
         defaultRate = match.rate;
+        defaultBillingAddress = match.billingAddress;
       } else {
         defaultService = services[0].id;
         defaultId = services[0].internalId;
         defaultRate = services[0].rate;
+        defaultBillingAddress = services[0].billingAddress;
       }
     }
+
+    const hasContactDetails = Boolean(
+      c.first_name ||
+      c.firstName ||
+      c.last_name ||
+      c.lastName ||
+      c.customerServiceEmail ||
+      c.customerEmail ||
+      c.email ||
+      c.customerPhone ||
+      c.phone ||
+      c.mobile
+    );
+
+    const useParentPrefill = userData?.role === 'parent' && !hasContactDetails;
 
     setFormData({
       ...formData,
       customer: {
         company: displayName,
-        firstName: userData?.first_name || c.first_name || parts[0] || '',
-        lastName: userData?.last_name || c.last_name || (parts.length > 1 ? parts.slice(1).join(' ') : ''),
-        email: c.customerServiceEmail || c.customerEmail || c.email || '',
-        phone: c.customerPhone || c.phone || '',
+        firstName: userData?.role === 'parent'
+          ? (useParentPrefill ? (userData?.first_name || '') : (c.first_name || c.firstName || parts[0] || ''))
+          : (userData?.first_name || c.first_name || parts[0] || ''),
+        lastName: userData?.role === 'parent'
+          ? (useParentPrefill ? (userData?.last_name || '') : (c.last_name || c.lastName || (parts.length > 1 ? parts.slice(1).join(' ') : '')))
+          : (userData?.last_name || c.last_name || (parts.length > 1 ? parts.slice(1).join(' ') : '')),
+        email: useParentPrefill 
+          ? (userData?.email || '') 
+          : (c.customerServiceEmail || c.customerEmail || c.email || ''),
+        phone: useParentPrefill 
+          ? (userData?.mobile || '') 
+          : (c.customerPhone || c.phone || ''),
         address: c.address1 || c.address?.street || '',
         suburb: c.city || c.address?.suburb || '',
         state: c.state || c.address?.state || '',
@@ -523,7 +576,14 @@ const NewJobForm: React.FC = () => {
         lpoServiceAMPOInternalID: c.lpoServiceAMPOInternalID || null,
         lpoServiceAMPORate: c.lpoServiceAMPORate || null,
         lpoServiceH2HInternalID: c.lpoServiceH2HInternalID || null,
-        lpoServiceH2HRate: c.lpoServiceH2HRate || null
+        lpoServiceH2HRate: c.lpoServiceH2HRate || null,
+        billingAddress1: defaultBillingAddress?.address1 || '',
+        billingStreet: defaultBillingAddress?.street || '',
+        billingCity: defaultBillingAddress?.city || '',
+        billingState: defaultBillingAddress?.state || '',
+        billingZip: defaultBillingAddress?.zip || '',
+        billingLatitude: defaultBillingAddress?.latitude || null,
+        billingLongitude: defaultBillingAddress?.longitude || null
       },
       service: defaultService,
       serviceInternalId: defaultId,
@@ -557,7 +617,7 @@ const NewJobForm: React.FC = () => {
         let q;
         if (userData?.parent_id) {
           // Parent user - fetch sub-customers
-          q = query(collection(db, `lpo/${userData.parent_id}/customers`));
+          q = query(collection(db, `companies/${userData.parent_id}/customers`));
         } else if (userData?.customer_id && userData?.role === 'customer') {
           // Independent customer - fetch from their address book
           q = query(collection(db, `companies/${userData.customer_id}/address_book`));
@@ -980,6 +1040,37 @@ const NewJobForm: React.FC = () => {
           { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
       }
+    } else if (userData?.role === 'parent') {
+      if (data.service === 'H2H') {
+        stops.push(
+          { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        );
+      } else if (data.service === 'H2H 2') {
+        stops.push(
+          { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        );
+      } else if (data.service === 'AMPO') {
+        const poBoxLoc = {
+          name: `${data.customer.company} - PO Box`,
+          address: data.customer.billingAddress1 || data.customer.billingStreet || '',
+          suburb: data.customer.billingCity || '',
+          state: data.customer.billingState || '',
+          postcode: data.customer.billingZip || '',
+          lat: data.customer.billingLatitude ? parseFloat(data.customer.billingLatitude as any) : undefined,
+          lng: data.customer.billingLongitude ? parseFloat(data.customer.billingLongitude as any) : undefined
+        };
+        stops.push(
+          { type: 'pickup', label: 'Pickup PO Box', locationName: poBoxLoc.name, address: poBoxLoc.address, suburb: poBoxLoc.suburb, state: poBoxLoc.state, postcode: poBoxLoc.postcode, lat: poBoxLoc.lat, lng: poBoxLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        );
+      } else {
+        stops.push(
+          { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        );
+      }
     } else {
       if (data.service === 'site-to-lpo') {
         stops.push(
@@ -1005,6 +1096,11 @@ const NewJobForm: React.FC = () => {
 
   const getShorthandFrequency = (days: string[]) => {
     const map: Record<string, string> = {
+      'Mon': 'M',
+      'Tue': 'T',
+      'Wed': 'W',
+      'Thu': 'Th',
+      'Fri': 'F',
       'Monday': 'M',
       'Tuesday': 'T',
       'Wednesday': 'W',
@@ -1125,7 +1221,7 @@ const NewJobForm: React.FC = () => {
       if (isExistingCustomer && parent?.id && userData?.role !== 'customer') {
         try {
           const custQ = query(
-            collection(db, `lpo/${parent.id}/customers`), 
+            collection(db, `companies/${parent.id}/customers`), 
             where('companyName', '==', formData.customer.company)
           );
           const custSnap = await getDocs(custQ);
@@ -1240,7 +1336,7 @@ const NewJobForm: React.FC = () => {
         });
         localStorage.removeItem('edit_request_draft');
       } else {
-        const isDirectBook = userData?.role === 'customer' && !formData.preferredTime;
+        const isDirectBook = (userData?.role === 'customer' || userData?.role === 'parent') && !formData.preferredTime;
         const cleanData = JSON.parse(JSON.stringify({
           ...formData,
           customer: finalCustomerData,
@@ -1274,15 +1370,20 @@ const NewJobForm: React.FC = () => {
 
         if (isDirectBook) {
 
-          if (isSiteToAusPost) {
-            serviceInternalId = (conditionalServiceData as any).servicePMPOInternalID || '';
-            serviceRate = (conditionalServiceData as any).servicePMPORate || '';
-          } else if (isAusPostToSite) {
-            serviceInternalId = (conditionalServiceData as any).serviceAMPOInternalID || '';
-            serviceRate = (conditionalServiceData as any).serviceAMPORate || '';
+          if (userData?.role === 'parent') {
+            serviceInternalId = formData.serviceInternalId || '';
+            serviceRate = formData.serviceRate || '';
           } else {
-            serviceInternalId = (conditionalServiceData as any).serviceH2HInternalID || '';
-            serviceRate = (conditionalServiceData as any).serviceH2HRate || '';
+            if (isSiteToAusPost) {
+              serviceInternalId = (conditionalServiceData as any).servicePMPOInternalID || '';
+              serviceRate = (conditionalServiceData as any).servicePMPORate || '';
+            } else if (isAusPostToSite) {
+              serviceInternalId = (conditionalServiceData as any).serviceAMPOInternalID || '';
+              serviceRate = (conditionalServiceData as any).serviceAMPORate || '';
+            } else {
+              serviceInternalId = (conditionalServiceData as any).serviceH2HInternalID || '';
+              serviceRate = (conditionalServiceData as any).serviceH2HRate || '';
+            }
           }
 
           if (formData.jobType === 'scheduled') {
@@ -1503,7 +1604,7 @@ const NewJobForm: React.FC = () => {
     setLoading(true);
     try {
       const q = query(
-        collection(db, `lpo/${parent.id}/customers`), 
+        collection(db, `companies/${parent.id}/customers`), 
         where('companyName', '==', formData.customer.company)
       );
       const snap = await getDocs(q);
@@ -2023,6 +2124,96 @@ const NewJobForm: React.FC = () => {
                           </div>
                         )}
                       </div>
+                      
+                      {/* SERVICE SELECTION DROPDOWN & ADDRESS PREVIEW FOR PARENT USERS */}
+                      {userData?.role === 'parent' && isExistingCustomer && availableServices.length > 0 && (
+                        <>
+                          <div className="input-pill full" style={{ marginBottom: '16px' }}>
+                            <Rocket size={18} />
+                            <select
+                              value={formData.serviceInternalId}
+                              onChange={(e) => {
+                                const selectedInternalId = e.target.value;
+                                const serviceObj = availableServices.find(s => s.internalId === selectedInternalId);
+                                setFormData(prev => ({
+                                  ...prev,
+                                  service: serviceObj?.id || '',
+                                  serviceInternalId: selectedInternalId,
+                                  serviceRate: serviceObj?.rate || '',
+                                  customer: {
+                                    ...prev.customer,
+                                    billingAddress1: serviceObj?.billingAddress?.address1 || '',
+                                    billingStreet: serviceObj?.billingAddress?.street || '',
+                                    billingCity: serviceObj?.billingAddress?.city || '',
+                                    billingState: serviceObj?.billingAddress?.state || '',
+                                    billingZip: serviceObj?.billingAddress?.zip || '',
+                                    billingLatitude: serviceObj?.billingAddress?.latitude || null,
+                                    billingLongitude: serviceObj?.billingAddress?.longitude || null
+                                  }
+                                }));
+                              }}
+                              style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none' }}
+                            >
+                              {availableServices.map(s => {
+                                const billingAddr = (s as any).billingAddress;
+                                const addressLabel = s.id === 'AMPO' && billingAddr
+                                  ? `AMPO - ${billingAddr.address1 || billingAddr.street || billingAddr.city}`
+                                  : s.id;
+                                return (
+                                  <option key={s.internalId} value={s.internalId}>
+                                    {addressLabel} (${parseFloat(s.rate).toFixed(2)})
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          {/* Dynamic pickup & delivery preview */}
+                          {(() => {
+                            const parentLocStr = `${(parent as any)?.address1 || (parent as any)?.address || ''} ${(parent as any)?.street || ''}, ${(parent as any)?.city || (parent as any)?.location || (parent as any)?.suburb || ''} ${(parent as any)?.state || ''} ${(parent as any)?.zip || (parent as any)?.postcode || ''}`.trim();
+                            const customerLocStr = `${formData.customer.address || ''}, ${formData.customer.suburb || ''} ${formData.customer.state || ''} ${formData.customer.postcode || ''}`.trim();
+                            const poBoxStr = `${formData.customer.billingAddress1 || formData.customer.billingStreet || ''}, ${formData.customer.billingCity || ''} ${formData.customer.billingState || ''} ${formData.customer.billingZip || ''}`.trim();
+
+                            let pickup = '';
+                            let delivery = '';
+
+                            if (formData.service === 'H2H') {
+                              pickup = parentLocStr || 'Parent Address';
+                              delivery = customerLocStr || 'Customer Site Address';
+                            } else if (formData.service === 'H2H 2') {
+                              pickup = customerLocStr || 'Customer Site Address';
+                              delivery = parentLocStr || 'Parent Address';
+                            } else if (formData.service === 'AMPO') {
+                              pickup = poBoxStr || 'Customer PO Box Address';
+                              delivery = parentLocStr || 'Parent Address';
+                            } else {
+                              pickup = customerLocStr || 'Customer Site Address';
+                              delivery = parentLocStr || 'Parent Address';
+                            }
+
+                            return (
+                              <div className="address-preview-card" style={{ background: 'rgba(26,61,51,0.03)', border: '1px solid rgba(26,61,51,0.1)', borderRadius: '16px', padding: '16px', marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', gridColumn: '1 / -1' }}>
+                                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                  <div style={{ background: '#095c7b', color: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 'bold', marginTop: '2px', flexShrink: 0 }}>A</div>
+                                  <div>
+                                    <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '1px' }}>PICKUP ADDRESS</div>
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--ink)' }}>{pickup}</div>
+                                  </div>
+                                </div>
+                                <div style={{ borderLeft: '2px dashed rgba(26,61,51,0.2)', marginLeft: '9px', height: '16px' }}></div>
+                                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                                  <div style={{ background: '#eaf044', color: 'var(--ink)', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 'bold', marginTop: '2px', flexShrink: 0 }}>B</div>
+                                  <div>
+                                    <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--slate-500)', textTransform: 'uppercase', letterSpacing: '1px' }}>DELIVERY ADDRESS</div>
+                                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--ink)' }}>{delivery}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </>
+                      )}
+                      
                       <div className="input-pill half">
                         <User size={18} />
                         <input 
@@ -2139,9 +2330,65 @@ const NewJobForm: React.FC = () => {
                   )}
 
                   <div className="scheduling-section" style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--cream-warm)', marginBottom: '32px' }}>
+                    {userData?.role === 'parent' && (
+                      <div style={{ marginBottom: '24px' }}>
+                        <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>JOB TYPE</label>
+                        <div className="job-type-tabs">
+                          <button
+                            type="button"
+                            className={`type-tab ${formData.jobType === 'one-off' ? 'active' : ''}`}
+                            onClick={() => setFormData(prev => ({ ...prev, jobType: 'one-off', frequency: [] }))}
+                          >
+                            ONE-OFF
+                          </button>
+                          <button
+                            type="button"
+                            className={`type-tab ${formData.jobType === 'scheduled' ? 'active' : ''}`}
+                            onClick={() => setFormData(prev => ({ ...prev, jobType: 'scheduled', frequency: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] }))}
+                          >
+                            SCHEDULED
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {userData?.role === 'parent' && formData.jobType === 'scheduled' && (
+                      <div style={{ marginBottom: '24px' }}>
+                        <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>FREQUENCY</label>
+                        <div className="frequency-grid">
+                          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => {
+                            const shorthandMap: Record<string, string> = {
+                              'Mon': 'M', 'Tue': 'T', 'Wed': 'W', 'Thu': 'Th', 'Fri': 'F'
+                            };
+                            const shorthand = shorthandMap[day] || day;
+                            const active = formData.frequency.includes(day);
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                className={`freq-pill ${active ? 'active' : ''}`}
+                                onClick={() => {
+                                  setFormData(prev => {
+                                    const freq = prev.frequency.includes(day)
+                                      ? prev.frequency.filter(d => d !== day)
+                                      : [...prev.frequency, day];
+                                    return { ...prev, frequency: freq };
+                                  });
+                                }}
+                              >
+                                {day.toUpperCase()} ({shorthand})
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', gap: '16px', marginBottom: '8px' }}>
                       <div style={{ flex: 1 }}>
-                        <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>BOOKING DATE</label>
+                        <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>
+                          {formData.jobType === 'scheduled' ? 'START DATE' : 'BOOKING DATE'}
+                        </label>
                         <CustomDatePicker
                           value={formData.date}
                           onChange={(val) => setFormData({...formData, date: val})}

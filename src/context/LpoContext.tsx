@@ -208,8 +208,17 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           if (user.uid === SUPER_ADMIN_ID || user.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au' || userDoc.data()?.role === 'admin' || userDoc.data()?.role === 'superadmin') {
-            const parentsSnapshot = await getDocs(collection(db, 'lpo'));
-            setAllParents(parentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ParentEntity)));
+            const parentsSnapshot = await getDocs(collection(db, 'companies'));
+            setAllParents(parentsSnapshot.docs.map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                name: data.name || data.companyName || 'Unknown Company',
+                location: data.Location || data.city || '',
+                address: data.address1 || '',
+                ...data
+              } as ParentEntity;
+            }));
           }
 
         } catch (error) {
@@ -257,9 +266,16 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       if (userData.parent_id) {
-        const parentDoc = await getDoc(doc(db, 'lpo', userData.parent_id));
+        const parentDoc = await getDoc(doc(db, 'companies', userData.parent_id));
         if (active && parentDoc.exists()) {
-          setParent({ id: userData.parent_id, ...parentDoc.data() } as ParentEntity);
+          const data = parentDoc.data();
+          setParent({ 
+            id: userData.parent_id, 
+            name: data?.name || data?.companyName || 'Unknown Company',
+            location: data?.Location || data?.city || '',
+            address: data?.address1 || '',
+            ...data 
+          } as ParentEntity);
           setCustomer(null);
         }
       } else if (userData.customer_id) {

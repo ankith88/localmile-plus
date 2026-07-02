@@ -76,7 +76,7 @@ const CustomerHub: React.FC = () => {
           // Fetch customers from all relevant LPOs
           await Promise.all(parentsToFetch.map(async (targetParent) => {
             const q = query(
-              collection(db, `lpo/${targetParent.id}/customers`),
+              collection(db, `companies/${targetParent.id}/customers`),
               orderBy('companyName', 'asc')
             );
             const snapshot = await getDocs(q);
@@ -149,7 +149,7 @@ const CustomerHub: React.FC = () => {
       }
     };
 
-    if (parent || isAdmin || (userData?.role === 'customer')) {
+    if (parent || isAdmin || (userData?.role === 'customer') || userData?.role === 'parent') {
       fetchCustomers();
     }
   }, [parent, isAdmin, selectedParentId, allParents, userData]);
@@ -301,7 +301,7 @@ const CustomerHub: React.FC = () => {
                              {(customer.companyName || customer.company_name || '?').charAt(0)}
                           </div>
                           <div className="main-info">
-                             <h3>{customer.companyName || customer.company_name}</h3>
+                             <h3 title={customer.companyName || customer.company_name}>{customer.companyName || customer.company_name}</h3>
                              {isAdmin && customer.lpoName && (
                                <div className="sub-info lpo-tag">
                                   <Building2 size={12} />
@@ -359,7 +359,14 @@ const CustomerHub: React.FC = () => {
                           </div>
                           <div className="contact-item">
                              <MapPin size={14} />
-                             <span>{(customer.address1 || customer.address?.street || 'No address')}, {(customer.city || customer.address?.suburb || '')} {(customer.state || customer.address?.state || '')}</span>
+                             <span>
+                                {([
+                                  customer.address1,
+                                  customer.street || customer.address?.street,
+                                  customer.city || customer.address?.suburb,
+                                  customer.state || customer.address?.state
+                                ].filter(p => p && String(p).trim()).join(', ') || 'No address')}
+                             </span>
                           </div>
                       </div>
  
@@ -499,10 +506,10 @@ const CustomerHub: React.FC = () => {
         .customer-card { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .customer-card:hover { transform: translateY(-8px); background: var(--paper); box-shadow: 0 20px 40px rgba(26, 61, 51, 0.08); }
 
-        .card-top { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; position: relative; }
-        .avatar { width: 44px; height: 44px; background: var(--cream-warm); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 400; color: var(--ink); font-size: 1.2rem; font-family: var(--font-headings); }
+        .card-top { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; position: relative; }
+        .avatar { width: 44px; height: 44px; background: var(--cream-warm); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 400; color: var(--ink); font-size: 1.2rem; font-family: var(--font-headings); flex-shrink: 0; }
         .main-info { flex: 1; min-width: 0; }
-        .main-info h3 { margin: 0; font-size: 1.1rem; font-weight: 400; color: var(--ink); letter-spacing: -0.015em; font-family: var(--font-headings); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .main-info h3 { margin: 0; font-size: 1.1rem; font-weight: 400; color: var(--ink); letter-spacing: -0.015em; font-family: var(--font-headings); word-break: break-word; white-space: normal; }
         .sub-info { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 0.75rem; font-weight: 400; margin-top: 2px; }
         .franchisee-tag { color: var(--ink); background: rgba(26, 61, 51, 0.05); padding: 2px 8px; border-radius: 6px; width: fit-content; }
         .status-badge-premium { font-family: var(--font-ui); padding: 4px 10px; border-radius: 8px; font-size: 0.55rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; }

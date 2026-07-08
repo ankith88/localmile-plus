@@ -361,7 +361,7 @@ const NewJobForm: React.FC = () => {
   const hasAMPO = Boolean(companyData?.serviceAMPOInternalID && companyData?.serviceAMPOInternalID !== 'null');
   const hasH2H = Boolean(companyData?.serviceH2HInternalID && companyData?.serviceH2HInternalID !== 'null');
   const canSwap = !companyData || hasH2H || (hasPMPO && hasAMPO) || (!hasPMPO && !hasAMPO);
-  const isAusPostPrefilled = Boolean(userData?.role === 'customer' && companyData?.apName);
+  const isAusPostPrefilled = Boolean(userData?.role === 'customer' && (companyData?.linkedLPOName || companyData?.apName));
 
   useEffect(() => {
     if (userData?.role === 'customer' && companyData) {
@@ -378,20 +378,29 @@ const NewJobForm: React.FC = () => {
       try {
         let initializedFromCompany = false;
         
-        if (companyData && companyData.apName) {
+        if (companyData && (companyData.linkedLPOName || companyData.apName)) {
+           const address = (companyData.linkedLPOshippingAddress1 || companyData.linkedLPOshippingAddress2)
+             ? [companyData.linkedLPOshippingAddress1, companyData.linkedLPOshippingAddress2].filter(Boolean).join(' ')
+             : (companyData.apStreet || companyData.apAddr1 || '');
+           const suburb = companyData.linkedLPOshippingCity || companyData.apSuburb || '';
+           const state = companyData.linkedLPOshippingStateProvince || companyData.apState || '';
+           const postcode = companyData.linkedLPOshippingZip || companyData.apPostcode || '';
+           const latVal = companyData.linkedLPOshippingLat || companyData.apLatitude;
+           const lngVal = companyData.linkedLPOshippingLon || companyData.apLongitude;
+
            const parsed = {
-             company: companyData.apName || '',
+             company: companyData.linkedLPOName || companyData.apName || '',
              firstName: 'Australia',
              lastName: 'Post',
              email: 'no-reply@auspost.com.au',
              phone: '13 13 18',
-             address: companyData.apStreet || companyData.apAddr1 || '',
-             suburb: companyData.apSuburb || '',
-             state: companyData.apState || '',
-             postcode: companyData.apPostcode || '',
+             address,
+             suburb,
+             state,
+             postcode,
              coordinates: { 
-               lat: companyData.apLatitude ? parseFloat(companyData.apLatitude as unknown as string) : 0, 
-               lng: companyData.apLongitude ? parseFloat(companyData.apLongitude as unknown as string) : 0 
+               lat: latVal ? parseFloat(latVal as unknown as string) : 0, 
+               lng: lngVal ? parseFloat(lngVal as unknown as string) : 0 
              }
            };
            

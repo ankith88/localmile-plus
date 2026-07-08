@@ -22,8 +22,9 @@ import { useJsApiLoader, GoogleMap, Marker, Polyline } from '@react-google-maps/
 import { formatDateForInput, getDefaultBookingDate, parseLocalDate, getDayName } from '../../utils/scheduling';
 import { isPublicHoliday } from '../../utils/holidays';
 import { useLpo } from '../../context/LpoContext';
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc } from 'firebase/firestore';
-import { db, googleMapsApiKey } from '../../firebase/config';
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc, increment } from 'firebase/firestore';
+import { db, googleMapsApiKey, functions } from '../../firebase/config';
+import { httpsCallable } from 'firebase/functions';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomTimePicker from '../../components/CustomTimePicker';
 
@@ -1477,6 +1478,26 @@ const NewJobForm: React.FC = () => {
             });
             console.log("Created direct one-off job:", jobDocRef.id);
             directJobId = jobDocRef.id;
+          }
+
+          // Decrement and sync trial credits for direct bookings
+          if (isFreeJob && companyIdForTrial) {
+            try {
+              await updateDoc(doc(db, 'companies', companyIdForTrial), {
+                trial_credits_balance: increment(-1)
+              });
+              // Refetch updated balance to sync
+              const compSnap = await getDoc(doc(db, 'companies', companyIdForTrial));
+              if (compSnap.exists()) {
+                const newBalance = compSnap.data().trial_credits_balance;
+                if (typeof newBalance === 'number') {
+                  const syncFn = httpsCallable(functions, 'syncProspectPlusTrialCredits');
+                  await syncFn({ customer_id: companyIdForTrial, trial_credits_balance: newBalance });
+                }
+              }
+            } catch (err) {
+              console.error("Failed to decrement and sync trial credits for direct booking:", err);
+            }
           }
         } else {
           const requestPayload = {

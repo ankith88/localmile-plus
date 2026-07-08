@@ -1,0 +1,1813 @@
+---
+httpRequest:
+  latency: 0.025048s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 64.233.172.162
+  requestMethod: GET
+  requestSize: '1498'
+  requestUrl: https://studio-683616418101.us-central1.run.app/icons/icon-192x192.png
+  responseSize: '7266'
+  serverIp: 34.143.72.2
+  status: 404
+  userAgent: Google
+insertId: 6a46d1640004e606bbfd8565
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T21:00:20.361734741Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: WARNING
+spanId: 57ac91f81ca05611
+timestamp: '2026-07-02T21:00:20.288849Z'
+trace: projects/mailplus-outbound-leads-crm/traces/3b467b6335783142235e81e9f4217a4e
+---
+httpRequest:
+  latency: 0.002883s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 74.125.215.160
+  requestMethod: GET
+  requestSize: '1363'
+  requestUrl: https://studio-683616418101.us-central1.run.app/manifest.json
+  responseSize: '221'
+  serverIp: 34.143.78.2
+  status: 304
+  userAgent: Google
+insertId: 6a46d164000138fd1f563226
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T21:00:20.361734741Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 6054fb9645143150
+timestamp: '2026-07-02T21:00:20.069814Z'
+trace: projects/mailplus-outbound-leads-crm/traces/5804eb3acb4a99d4d719d23b0b13aafc
+---
+httpRequest:
+  latency: 0.009336s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 74.125.212.236
+  requestMethod: GET
+  requestSize: '1488'
+  requestUrl: https://studio-683616418101.us-central1.run.app/favicon.ico
+  responseSize: '4358'
+  serverIp: 34.143.78.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d1640000f0ab2d23643f
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T21:00:20.361734741Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 6dfa3352cb9f0e0f
+timestamp: '2026-07-02T21:00:20.046864Z'
+trace: projects/mailplus-outbound-leads-crm/traces/dff701a4377799c8673b44083dc3a23d
+---
+httpRequest:
+  latency: 0.029239s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2008259
+  remoteIp: 64.233.172.101
+  requestMethod: GET
+  requestSize: '1641'
+  requestUrl: https://studio-683616418101.us-central1.run.app/leads/2009663
+  responseSize: '8214'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d163000a831899f2b294
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T21:00:19.694367874Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 2170a27d026df5f3
+timestamp: '2026-07-02T21:00:19.633461Z'
+trace: projects/mailplus-outbound-leads-crm/traces/73692bf560d1c44f918c8c1919a70f63
+traceSampled: true
+---
+insertId: 6a46d14200006a5d78756c1b
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstderr
+receiveTimestamp: '2026-07-02T20:59:46.033643490Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: '[LocalMile Webhook] Skipping localmile-plus sync: LOCALMILE_PLUS_API_KEY
+  or currentTrials is invalid.'
+timestamp: '2026-07-02T20:59:46.027229Z'
+---
+insertId: 6a46d141000a4560ff6424ae
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:59:45.677513695Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: '}'
+timestamp: '2026-07-02T20:59:45.673120Z'
+---
+insertId: 6a46d141000a455b8c4a964e
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:59:45.677513695Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  completedAt: '2026-07-02T20:59:44.517Z'"
+timestamp: '2026-07-02T20:59:45.673115Z'
+---
+insertId: 6a46d141000a45587571f22c
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:59:45.677513695Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  service: 'site-to-australia post',"
+timestamp: '2026-07-02T20:59:45.673112Z'
+---
+insertId: 6a46d141000a4555d370342b
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:59:45.677513695Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  status: 'in-progress',"
+timestamp: '2026-07-02T20:59:45.673109Z'
+---
+insertId: 6a46d141000a4551f8514068
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:59:45.677513695Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  jobId: '5sLP2yeTbLmcEOPtsapF',"
+timestamp: '2026-07-02T20:59:45.673105Z'
+---
+insertId: 6a46d141000a454d98a53412
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:59:45.677513695Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  leadId: '2009663',"
+timestamp: '2026-07-02T20:59:45.673101Z'
+---
+insertId: 6a46d141000a453b80a3d210
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:59:45.677513695Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: '[LocalMile Webhook] Incoming Request: {'
+timestamp: '2026-07-02T20:59:45.673083Z'
+---
+httpRequest:
+  latency: 0.439231s
+  protocol: HTTP/1.1
+  remoteIp: 74.125.212.138
+  requestMethod: POST
+  requestSize: '1250'
+  requestUrl: https://studio-683616418101.us-central1.run.app/api/localmile/jobs
+  responseSize: '349'
+  serverIp: 34.143.76.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d1420001a2d428706754
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:59:46.114000741Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 7b839482f11aba7d
+timestamp: '2026-07-02T20:59:45.656433Z'
+trace: projects/mailplus-outbound-leads-crm/traces/404f08095196361e57d5b044a61c69a7
+traceSampled: true
+---
+httpRequest:
+  latency: 1.236827s
+  protocol: HTTP/1.1
+  remoteIp: 64.233.172.74
+  requestMethod: POST
+  requestSize: '5250'
+  requestUrl: https://studio-683616418101.us-central1.run.app/api/integrations/netsuite/send-email
+  responseSize: '382'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d136000231dbace439c3
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:59:34.155444474Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 4088886be4420ab2
+timestamp: '2026-07-02T20:59:32.884269Z'
+trace: projects/mailplus-outbound-leads-crm/traces/eab773e6edccd2e673b31af3b4f79d0d
+traceSampled: true
+---
+httpRequest:
+  latency: 0.005038s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 74.125.215.37
+  requestMethod: GET
+  requestSize: '1765'
+  requestUrl: https://studio-683616418101.us-central1.run.app/signed-customers?_rsc=lmhhy
+  responseSize: '3016'
+  serverIp: 34.143.77.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0500009d20f7dcca979
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.853857693Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 41a61b2d248c118b
+timestamp: '2026-07-02T20:55:44.634523Z'
+trace: projects/mailplus-outbound-leads-crm/traces/fd87e52ee122ee2b15c3d579253dd2dd
+---
+httpRequest:
+  latency: 0.004064s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 74.125.212.37
+  requestMethod: GET
+  requestSize: '1773'
+  requestUrl: https://studio-683616418101.us-central1.run.app/account-manager/pipeline?_rsc=lmhhy
+  responseSize: '2942'
+  serverIp: 34.143.73.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0500009ad73f57eacad
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.853857693Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 920b784bded7e672
+timestamp: '2026-07-02T20:55:44.622953Z'
+trace: projects/mailplus-outbound-leads-crm/traces/e2d468be93738e46183f9c469c22bb1e
+---
+httpRequest:
+  latency: 0.007046s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 74.125.215.1
+  requestMethod: GET
+  requestSize: '1808'
+  requestUrl: https://studio-683616418101.us-central1.run.app/leads/map?_rsc=lmhhy
+  responseSize: '3028'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d05000099e29a54ac517
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.853857693Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: f1f04201a9885d7d
+timestamp: '2026-07-02T20:55:44.616668Z'
+trace: projects/mailplus-outbound-leads-crm/traces/40a8ad05bbaaf8a1a86789a27f2252c6
+---
+httpRequest:
+  latency: 0.004630s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 74.125.212.4
+  requestMethod: GET
+  requestSize: '1765'
+  requestUrl: https://studio-683616418101.us-central1.run.app/admin/dashboard?_rsc=lmhhy
+  responseSize: '3101'
+  serverIp: 34.143.74.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d050000613d374260de2
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.518625967Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: ca126b2b4af1a9c7
+timestamp: '2026-07-02T20:55:44.387824Z'
+trace: projects/mailplus-outbound-leads-crm/traces/164c25f6e1e24de78fef97bc24bc32cf
+---
+httpRequest:
+  latency: 0.010646s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 64.233.172.136
+  requestMethod: GET
+  requestSize: '1760'
+  requestUrl: https://studio-683616418101.us-central1.run.app/field-sales?_rsc=lmhhy
+  responseSize: '2944'
+  serverIp: 34.143.73.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0500005fbbcaf988628
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.518625967Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 16cf4b45b4b9376e
+timestamp: '2026-07-02T20:55:44.377591Z'
+trace: projects/mailplus-outbound-leads-crm/traces/0fa74b51294850b92a48a33eb89980f5
+---
+httpRequest:
+  latency: 0.012889s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 64.233.172.162
+  requestMethod: GET
+  requestSize: '1774'
+  requestUrl: https://studio-683616418101.us-central1.run.app/admin/financial-dashboard?_rsc=lmhhy
+  responseSize: '3055'
+  serverIp: 34.143.78.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0500005fa4395bf9605
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.518625967Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: c91058f16f41a171
+timestamp: '2026-07-02T20:55:44.372826Z'
+trace: projects/mailplus-outbound-leads-crm/traces/1539d6d4208aad7808b482f9b7b1de42
+---
+httpRequest:
+  latency: 0.015019s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 64.233.172.192
+  requestMethod: GET
+  requestSize: '1763'
+  requestUrl: https://studio-683616418101.us-central1.run.app/admin/mailbox?_rsc=lmhhy
+  responseSize: '2946'
+  serverIp: 34.143.76.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0500005eb2286fd6b62
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.518625967Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: bd64e486e09e13c0
+timestamp: '2026-07-02T20:55:44.368776Z'
+trace: projects/mailplus-outbound-leads-crm/traces/756cbd11eae96f27cdc7e70fd5c600d4
+---
+httpRequest:
+  latency: 0.013038s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 192.178.15.99
+  requestMethod: GET
+  requestSize: '1755'
+  requestUrl: https://studio-683616418101.us-central1.run.app/leads?_rsc=lmhhy
+  responseSize: '3036'
+  serverIp: 34.143.73.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0500005d6c7b79488e2
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.518625967Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 47bf66ac99b670c0
+timestamp: '2026-07-02T20:55:44.364780Z'
+trace: projects/mailplus-outbound-leads-crm/traces/0943075d69ef3793afc1c257ba33f03d
+---
+httpRequest:
+  latency: 0.365809s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 66.102.6.132
+  requestMethod: GET
+  requestSize: '1499'
+  requestUrl: https://studio-683616418101.us-central1.run.app/icons/icon-192x192.png
+  responseSize: '7267'
+  serverIp: 34.143.72.2
+  status: 404
+  userAgent: Google
+insertId: 6a46d05000010dcfd43d569e
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:44.185709916Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: WARNING
+spanId: 5eb95986730f056c
+timestamp: '2026-07-02T20:55:43.696336Z'
+trace: projects/mailplus-outbound-leads-crm/traces/b65e89c18635f6050a3cb22199ecbd3c
+---
+httpRequest:
+  latency: 0.008853s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 74.125.212.224
+  requestMethod: GET
+  requestSize: '1487'
+  requestUrl: https://studio-683616418101.us-central1.run.app/favicon.ico
+  responseSize: '4358'
+  serverIp: 34.143.76.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04f000aa6ccc3f1f848
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:43.854844226Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 3c69b9c84a5a9546
+timestamp: '2026-07-02T20:55:43.683316Z'
+trace: projects/mailplus-outbound-leads-crm/traces/c780dc54d5474d908465ed2591e52e10
+---
+httpRequest:
+  latency: 0.015082s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 66.102.6.133
+  requestMethod: GET
+  requestSize: '1462'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/leads/%5Bid%5D/page-f00051afa645c22f.js
+  responseSize: '1030'
+  serverIp: 34.143.78.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04f0005360680e9f566
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:43.520044143Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 5d633e4a341d1e11
+timestamp: '2026-07-02T20:55:43.318563Z'
+trace: projects/mailplus-outbound-leads-crm/traces/ff4d512758056e934e68840882adf70d
+---
+httpRequest:
+  latency: 0.014961s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 192.178.15.4
+  requestMethod: GET
+  requestSize: '1363'
+  requestUrl: https://studio-683616418101.us-central1.run.app/manifest.json
+  responseSize: '221'
+  serverIp: 34.143.77.2
+  status: 304
+  userAgent: Google
+insertId: 6a46d04f00051daceda35664
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:43.520044143Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: d83a7a69b911152b
+timestamp: '2026-07-02T20:55:43.316024Z'
+trace: projects/mailplus-outbound-leads-crm/traces/0fdf3660cf76534fef6d5fd0b75d15fd
+---
+httpRequest:
+  latency: 0.029133s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 64.233.172.14
+  requestMethod: GET
+  requestSize: '1443'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/4646-704d33ce7e19f327.js
+  responseSize: '63173'
+  serverIp: 34.143.73.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04f000554df7940c200
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:43.520044143Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: cd5854c06faef3bb
+timestamp: '2026-07-02T20:55:43.310573Z'
+trace: projects/mailplus-outbound-leads-crm/traces/f9768ed8f7bf63672a5e75b1ebd7f4f7
+---
+httpRequest:
+  latency: 0.027757s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2009663
+  remoteIp: 64.233.172.162
+  requestMethod: GET
+  requestSize: '1443'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/5807-dceb92ed28da7222.js
+  responseSize: '9926'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04f000535f905443579
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:43.520044143Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: db2cc059e06acea2
+timestamp: '2026-07-02T20:55:43.309367Z'
+trace: projects/mailplus-outbound-leads-crm/traces/a181b7116718699a7ef5c6958914107b
+---
+httpRequest:
+  latency: 0.352285s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2008259
+  remoteIp: 192.178.15.70
+  requestMethod: GET
+  requestSize: '1665'
+  requestUrl: https://studio-683616418101.us-central1.run.app/leads/2009663
+  responseSize: '8212'
+  serverIp: 34.143.74.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04f0001009eb70d0ccb
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:43.187462413Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 1422bdbbab6e0636
+timestamp: '2026-07-02T20:55:42.701240Z'
+trace: projects/mailplus-outbound-leads-crm/traces/b46bb7722b366b10572469520f115011
+traceSampled: true
+---
+httpRequest:
+  latency: 0.007924s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 66.102.6.132
+  requestMethod: GET
+  requestSize: '1474'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/signed-customers/page-b1b0a003e6bc5ea9.js
+  responseSize: '18218'
+  serverIp: 34.143.73.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0450006954a4c78f72d
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.531912886Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 5c3da4a45758abb9
+timestamp: '2026-07-02T20:55:33.419259Z'
+trace: projects/mailplus-outbound-leads-crm/traces/1a6181a556db7007e609cf4c0a9423cf
+---
+httpRequest:
+  latency: 0.007678s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 66.102.6.161
+  requestMethod: GET
+  requestSize: '1466'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/leads/map/page-97e5472e75bd6ef1.js
+  responseSize: '18176'
+  serverIp: 34.143.73.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04500065555add29306
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.531912886Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 6ff1fb13a4d5ff65
+timestamp: '2026-07-02T20:55:33.401822Z'
+trace: projects/mailplus-outbound-leads-crm/traces/9a88f69c074033ee02e3e622447b1573
+---
+httpRequest:
+  latency: 0.005509s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.215.100
+  requestMethod: GET
+  requestSize: '1453'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/6191-9f2d72e202ec9630.js
+  responseSize: '5878'
+  serverIp: 34.143.77.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0450005978328e9c055
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.531912886Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: e590d85ffa924a7f
+timestamp: '2026-07-02T20:55:33.356373Z'
+trace: projects/mailplus-outbound-leads-crm/traces/8b3eb08624140787f2a975da96363f3d
+---
+httpRequest:
+  latency: 0.006944s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 192.178.15.67
+  requestMethod: GET
+  requestSize: '1482'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/account-manager/pipeline/page-11f9e5a31aab2b27.js
+  responseSize: '9353'
+  serverIp: 34.143.75.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04500058b82a96757b0
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.531912886Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 9ddacd3e0957a088
+timestamp: '2026-07-02T20:55:33.350132Z'
+trace: projects/mailplus-outbound-leads-crm/traces/36951c0797f6e85189540c5c4c1cce2e
+---
+httpRequest:
+  latency: 0.017514s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 192.178.15.5
+  requestMethod: GET
+  requestSize: '1452'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/2254-d0ee8e28dca1c21e.js
+  responseSize: '9322'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0450002b66f183a2739
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 4e0ae94a4868966a
+timestamp: '2026-07-02T20:55:33.153804Z'
+trace: projects/mailplus-outbound-leads-crm/traces/cdf64e15f307d85c73a4ef79feaa3633
+---
+httpRequest:
+  latency: 0.016622s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 66.102.6.130
+  requestMethod: GET
+  requestSize: '1463'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/leads/page-9710b902a4f679c4.js
+  responseSize: '796'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04500028f1a3e32840c
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: f8d73f41fd37929d
+timestamp: '2026-07-02T20:55:33.146790Z'
+trace: projects/mailplus-outbound-leads-crm/traces/42f8f04eea29bfaee28c5f8226db7528
+---
+httpRequest:
+  latency: 0.021011s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.212.160
+  requestMethod: GET
+  requestSize: '1469'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/field-sales/page-c7825651c18ae54e.js
+  responseSize: '10840'
+  serverIp: 34.143.76.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0450002b6753cda0cba
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 7396b0a55fd2aef7
+timestamp: '2026-07-02T20:55:33.146451Z'
+trace: projects/mailplus-outbound-leads-crm/traces/a775dac38de979b672b117af1e7260db
+---
+httpRequest:
+  latency: 0.033410s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.215.40
+  requestMethod: GET
+  requestSize: '1778'
+  requestUrl: https://studio-683616418101.us-central1.run.app/signed-customers?_rsc=pyipl
+  responseSize: '3016'
+  serverIp: 34.143.79.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0450002d7e82a21f4c6
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: b42764de6d60a7bd
+timestamp: '2026-07-02T20:55:33.145835Z'
+trace: projects/mailplus-outbound-leads-crm/traces/85b3efed24b8799509e8f1c20e65b7b0
+---
+httpRequest:
+  latency: 0.024859s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.215.34
+  requestMethod: GET
+  requestSize: '1452'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/6720-da005493c43aadb5.js
+  responseSize: '17894'
+  serverIp: 34.143.79.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0450002ae4d6a811efc
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 61d03945618e5231
+timestamp: '2026-07-02T20:55:33.145561Z'
+trace: projects/mailplus-outbound-leads-crm/traces/e49816aab9c3a8e08273eb4e79c1dcea
+---
+httpRequest:
+  latency: 0.032819s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 64.233.172.77
+  requestMethod: GET
+  requestSize: '1796'
+  requestUrl: https://studio-683616418101.us-central1.run.app/leads/map?_rsc=pyipl
+  responseSize: '3028'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04500029bfb07e0a5ae
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: d3e0e690e20fab16
+timestamp: '2026-07-02T20:55:33.131264Z'
+trace: projects/mailplus-outbound-leads-crm/traces/3809ec2e21a848ae1f2e974017fd6c4b
+---
+httpRequest:
+  latency: 0.007528s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 192.178.15.3
+  requestMethod: GET
+  requestSize: '1471'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/admin/mailbox/page-10371df6e4e6507b.js
+  responseSize: '7282'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d04500021b685dc56fe6
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: f044c6467b2be4bd
+timestamp: '2026-07-02T20:55:33.124402Z'
+trace: projects/mailplus-outbound-leads-crm/traces/4c527a3ac650eb2e06c17cde8d4fafe5
+---
+httpRequest:
+  latency: 0.012869s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 64.233.172.235
+  requestMethod: GET
+  requestSize: '1472'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/admin/dashboard/page-38e91204bc8b3811.js
+  responseSize: '7128'
+  serverIp: 34.143.79.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d045000201881afa51ed
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 10e3b52919ce5d78
+timestamp: '2026-07-02T20:55:33.113889Z'
+trace: projects/mailplus-outbound-leads-crm/traces/eb47fd19d8d36f8be8322c39e272efe7
+---
+httpRequest:
+  latency: 0.022374s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.215.228
+  requestMethod: GET
+  requestSize: '1786'
+  requestUrl: https://studio-683616418101.us-central1.run.app/account-manager/pipeline?_rsc=pyipl
+  responseSize: '2942'
+  serverIp: 34.143.79.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0450001d05cf0dfcfb6
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 30ecd7eef4ace55c
+timestamp: '2026-07-02T20:55:33.091585Z'
+trace: projects/mailplus-outbound-leads-crm/traces/73e609892a32b969c0c120e45a26b44d
+---
+httpRequest:
+  latency: 0.010690s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 192.178.15.104
+  requestMethod: GET
+  requestSize: '1482'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/admin/financial-dashboard/page-9703e16fdbfba3cd.js
+  responseSize: '9875'
+  serverIp: 34.143.79.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d045000197f1b24c6c01
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 419556373a067b46
+timestamp: '2026-07-02T20:55:33.089067Z'
+trace: projects/mailplus-outbound-leads-crm/traces/d5d1f334b7fb158833fdeb9f987a4701
+---
+httpRequest:
+  latency: 0.057127s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.215.69
+  requestMethod: GET
+  requestSize: '1774'
+  requestUrl: https://studio-683616418101.us-central1.run.app/field-sales?_rsc=pyipl
+  responseSize: '2944'
+  serverIp: 34.143.76.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d044000d88bfcec7b5d5
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 52558eabcde24b48
+timestamp: '2026-07-02T20:55:32.823828Z'
+trace: projects/mailplus-outbound-leads-crm/traces/15b92e81d90718d9b366cf8274db582e
+---
+httpRequest:
+  latency: 0.056891s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 64.233.172.102
+  requestMethod: GET
+  requestSize: '1767'
+  requestUrl: https://studio-683616418101.us-central1.run.app/leads?_rsc=pyipl
+  responseSize: '3036'
+  serverIp: 34.143.79.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d044000d6cd51bc61933
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: f16a3b29702ac8f9
+timestamp: '2026-07-02T20:55:32.817473Z'
+trace: projects/mailplus-outbound-leads-crm/traces/b5e600774ad06a9c396ce2f115300b1a
+---
+httpRequest:
+  latency: 0.056918s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 192.178.15.68
+  requestMethod: GET
+  requestSize: '1776'
+  requestUrl: https://studio-683616418101.us-central1.run.app/admin/mailbox?_rsc=pyipl
+  responseSize: '2946'
+  serverIp: 34.143.78.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d044000d6b2bc0c07564
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 16f3d787f630aa3d
+timestamp: '2026-07-02T20:55:32.812517Z'
+trace: projects/mailplus-outbound-leads-crm/traces/c567fd1ee922882945cfc79ced100f48
+---
+httpRequest:
+  latency: 0.061643s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.215.133
+  requestMethod: GET
+  requestSize: '1802'
+  requestUrl: https://studio-683616418101.us-central1.run.app/admin/dashboard?_rsc=pyipl
+  responseSize: '3101'
+  serverIp: 34.143.79.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d044000d6810fe54af57
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:33.198183972Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: ad35d8633cc8d3f4
+timestamp: '2026-07-02T20:55:32.807358Z'
+trace: projects/mailplus-outbound-leads-crm/traces/d98b1c09dbc684b3faee6c6ef3023a20
+---
+httpRequest:
+  latency: 0.043457s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.215.193
+  requestMethod: GET
+  requestSize: '1786'
+  requestUrl: https://studio-683616418101.us-central1.run.app/admin/financial-dashboard?_rsc=pyipl
+  responseSize: '3055'
+  serverIp: 34.143.75.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d044000d0725184ff8eb
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:32.864732330Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: b5d62d69244ef4f3
+timestamp: '2026-07-02T20:55:32.803883Z'
+trace: projects/mailplus-outbound-leads-crm/traces/5cbb85742d24a477584f4177e323b14b
+---
+httpRequest:
+  latency: 0.096177s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.212.70
+  requestMethod: GET
+  requestSize: '1497'
+  requestUrl: https://studio-683616418101.us-central1.run.app/favicon.ico
+  responseSize: '4358'
+  serverIp: 34.143.76.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0430009570a489b931d
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.866140664Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 270592bfd1fb8065
+timestamp: '2026-07-02T20:55:31.510213Z'
+trace: projects/mailplus-outbound-leads-crm/traces/06c4d02674634e76033126ce969b8a5f
+---
+httpRequest:
+  latency: 0.099991s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.212.37
+  requestMethod: GET
+  requestSize: '1508'
+  requestUrl: https://studio-683616418101.us-central1.run.app/icons/icon-192x192.png
+  responseSize: '7264'
+  serverIp: 34.143.78.2
+  status: 404
+  userAgent: Google
+insertId: 6a46d043000941e707cf8f53
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.866140664Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: WARNING
+spanId: d0182944014b9061
+timestamp: '2026-07-02T20:55:31.500988Z'
+trace: projects/mailplus-outbound-leads-crm/traces/ee0e8f757b117ecd7383cf3f24d7025c
+---
+httpRequest:
+  latency: 0.004565s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 74.125.212.140
+  requestMethod: GET
+  requestSize: '1372'
+  requestUrl: https://studio-683616418101.us-central1.run.app/manifest.json
+  responseSize: '221'
+  serverIp: 34.143.78.2
+  status: 304
+  userAgent: Google
+insertId: 6a46d0430004065213a62d28
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.530767079Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 73b41aea328e717c
+timestamp: '2026-07-02T20:55:31.254863Z'
+trace: projects/mailplus-outbound-leads-crm/traces/016f61f6abf63fadd537f32c11574e49
+---
+httpRequest:
+  latency: 0.018567s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 66.102.6.196
+  requestMethod: GET
+  requestSize: '1481'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/account-manager/reports/page-d43fd04aecba4d9a.js
+  responseSize: '18333'
+  serverIp: 34.143.73.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0430002cfece4f8cb52
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.199465753Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 9367a966f47a19ea
+timestamp: '2026-07-02T20:55:31.159387Z'
+trace: projects/mailplus-outbound-leads-crm/traces/701805fcefcc759b3175080f8729f12c
+---
+httpRequest:
+  latency: 0.018479s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 192.178.15.102
+  requestMethod: GET
+  requestSize: '1453'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/9157-689c3324c8cc1c66.js
+  responseSize: '4659'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0430002c5138b149bae
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.199465753Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: a93487474982a681
+timestamp: '2026-07-02T20:55:31.157387Z'
+trace: projects/mailplus-outbound-leads-crm/traces/00bd999bc72d6ce07834298ce6ac1dd1
+---
+httpRequest:
+  latency: 0.017422s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 192.178.15.6
+  requestMethod: GET
+  requestSize: '1453'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/5244-b556d697e67c8e84.js
+  responseSize: '14664'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0430002bd0d75c97df2
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.199465753Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 2c12ff4039e7e88d
+timestamp: '2026-07-02T20:55:31.155861Z'
+trace: projects/mailplus-outbound-leads-crm/traces/7813e77c24a98ba4b3b2e3b7d0171186
+---
+httpRequest:
+  latency: 0.022913s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/account-manager/reports
+  remoteIp: 66.102.6.7
+  requestMethod: GET
+  requestSize: '1458'
+  requestUrl: https://studio-683616418101.us-central1.run.app/_next/static/chunks/app/layout-78c619f0c4c0e723.js
+  responseSize: '25404'
+  serverIp: 34.143.75.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0430002c28eccfce5f2
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.199465753Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 8292cafa4f1a859f
+timestamp: '2026-07-02T20:55:31.152535Z'
+trace: projects/mailplus-outbound-leads-crm/traces/833ea4433f35b4bf1cc2fd354a0bf6dc
+---
+insertId: 6a46d042000a2fe027cd405c
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstderr
+receiveTimestamp: '2026-07-02T20:55:30.676059363Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: '[2026-07-02T20:55:30.668Z]  @firebase/firestore: Firestore (11.10.0):
+  Error using user provided cache. Falling back to memory cache: FirebaseError: [code=unimplemented]:
+  IndexedDB persistence is only available on platforms that support LocalStorage.'
+timestamp: '2026-07-02T20:55:30.667616Z'
+---
+insertId: 6a46d0420009f8ad834efd53
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: '}'
+timestamp: '2026-07-02T20:55:30.653485Z'
+---
+insertId: 6a46d0420009f8aaf0a53d99
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  price: '15'"
+timestamp: '2026-07-02T20:55:30.653482Z'
+---
+insertId: 6a46d0420009f8a85db6c075
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  deliverySuburb: 'ALEXANDRIA',"
+timestamp: '2026-07-02T20:55:30.653480Z'
+---
+insertId: 6a46d0420009f8a5def1ed7e
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  pickupSuburb: 'Sydney',"
+timestamp: '2026-07-02T20:55:30.653477Z'
+---
+insertId: 6a46d0420009f8a204e4f243
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  service: 'site-to-australia post',"
+timestamp: '2026-07-02T20:55:30.653474Z'
+---
+insertId: 6a46d0420009f89ee80f1bf1
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  jobId: '5sLP2yeTbLmcEOPtsapF',"
+timestamp: '2026-07-02T20:55:30.653470Z'
+---
+insertId: 6a46d0420009f89abfc2cbeb
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: "  leadId: '2009663',"
+timestamp: '2026-07-02T20:55:30.653466Z'
+---
+insertId: 6a46d0420009f8846a754fe5
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Fstdout
+receiveTimestamp: '2026-07-02T20:55:30.659513341Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+textPayload: '[LocalMile Webhook] Incoming Request: {'
+timestamp: '2026-07-02T20:55:30.653444Z'
+---
+httpRequest:
+  latency: 0.410444s
+  protocol: HTTP/1.1
+  referer: https://prospectplus.com.au/leads/2008259
+  remoteIp: 74.125.212.6
+  requestMethod: GET
+  requestSize: '1682'
+  requestUrl: https://studio-683616418101.us-central1.run.app/account-manager/reports
+  responseSize: '4532'
+  serverIp: 34.143.75.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d042000d23a1aa551fdc
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:30.867071542Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 6b82d0b15d1cc2d0
+timestamp: '2026-07-02T20:55:30.445896Z'
+trace: projects/mailplus-outbound-leads-crm/traces/e14bca1f7828279cf9bc23d64d084799
+---
+httpRequest:
+  latency: 6.778329s
+  protocol: HTTP/1.1
+  remoteIp: 192.178.15.1
+  requestMethod: POST
+  requestSize: '1253'
+  requestUrl: https://studio-683616418101.us-central1.run.app/api/localmile/jobs
+  responseSize: '349'
+  serverIp: 34.143.72.2
+  status: 200
+  userAgent: Google
+insertId: 6a46d0430006f6896bd23c4e
+labels:
+  goog-managed-by: firebase-app-hosting
+  instanceId: 002f8ffd47ee2e62a96b1db463c707c98eb895635f056e45ce6c0d5f57f40915030ac765a536686a8c17c4f3e0a7b297661fd5a81688d191e7b4b6e7f2ded1f6d9c8dc46d0b143545ec9ff79ba02
+logName: projects/mailplus-outbound-leads-crm/logs/run.googleapis.com%2Frequests
+receiveTimestamp: '2026-07-02T20:55:31.530767079Z'
+resource:
+  labels:
+    configuration_name: studio
+    location: us-central1
+    project_id: mailplus-outbound-leads-crm
+    revision_name: studio-build-2026-07-02-009
+    service_name: studio
+  type: cloud_run_revision
+severity: INFO
+spanId: 1401728111f0bf24
+timestamp: '2026-07-02T20:55:24.653737Z'
+trace: projects/mailplus-outbound-leads-crm/traces/6d290473c97c3a9fb5efc99ccbaa5235
+traceSampled: true

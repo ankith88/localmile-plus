@@ -901,6 +901,56 @@ export const syncProspectPlusTermsAccepted = onCall({ invoker: "public", secrets
   }
 });
 
+// Logic: syncProspectPlusTrialCredits
+export const syncProspectPlusTrialCredits = onCall({ invoker: "public", secrets: [prospectplusApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
+  }
+
+  const { customer_id, trial_credits_balance } = request.data;
+  if (!customer_id) {
+    throw new HttpsError("invalid-argument", "The function must be called with a 'customer_id' argument.");
+  }
+  if (typeof trial_credits_balance !== 'number') {
+    throw new HttpsError("invalid-argument", "The function must be called with a 'trial_credits_balance' numeric argument.");
+  }
+
+  const leadId = extractStringId(customer_id);
+  if (!leadId) {
+    throw new HttpsError("invalid-argument", "Invalid customer_id format.");
+  }
+
+  console.log(`[ProspectPlus Sync] Syncing trial credits for leadId: ${leadId}, balance: ${trial_credits_balance}`);
+
+  try {
+    const payload = {
+      localMileTrialsRemaining: trial_credits_balance
+    };
+
+    const response = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": prospectplusApiKey.value()
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[ProspectPlus Sync] Failed to sync trial credits:", errorText);
+      throw new HttpsError("internal", "Failed to sync with ProspectPlus API.");
+    }
+
+    console.log(`[ProspectPlus Sync] Successfully synced trial credits for leadId: ${leadId}`);
+    return { success: true };
+  } catch (error) {
+    console.error("[ProspectPlus Sync] Error syncing trial credits:", error);
+    throw new HttpsError("internal", "Failed to sync with ProspectPlus API.");
+  }
+});
+
+
 // Logic: onChatMessageSent
 export const onChatMessageSent = onDocumentUpdated({
   document: "requests/{requestId}",
@@ -2896,6 +2946,13 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
       apPostcode: payload.apPostcode || "",
       apLatitude: payload.apLatitude || "",
       apLongitude: payload.apLongitude || "",
+      linkedLPOshippingAddress1: payload.linkedLPOshippingAddress1 || "",
+      linkedLPOshippingAddress2: payload.linkedLPOshippingAddress2 || "",
+      linkedLPOshippingCity: payload.linkedLPOshippingCity || "",
+      linkedLPOshippingStateProvince: payload.linkedLPOshippingStateProvince || "",
+      linkedLPOshippingZip: payload.linkedLPOshippingZip || "",
+      linkedLPOshippingLat: payload.linkedLPOshippingLat || "",
+      linkedLPOshippingLon: payload.linkedLPOshippingLon || "",
     }, { merge: true });
 
     // users Collection

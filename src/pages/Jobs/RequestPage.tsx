@@ -584,8 +584,17 @@ const RequestPage: React.FC = () => {
             await updateDoc(doc(db, 'companies', request.customer_id), {
               trial_credits_balance: increment(-1)
             });
+            // Fetch updated balance and sync to ProspectPlus
+            const compSnap = await getDoc(doc(db, 'companies', request.customer_id));
+            if (compSnap.exists()) {
+              const newBalance = compSnap.data().trial_credits_balance;
+              if (typeof newBalance === 'number') {
+                const syncFn = httpsCallable(functions, 'syncProspectPlusTrialCredits');
+                await syncFn({ customer_id: request.customer_id, trial_credits_balance: newBalance });
+              }
+            }
           } catch (e) {
-            console.error("Failed to decrement trial balance:", e);
+            console.error("Failed to decrement and sync trial balance:", e);
           }
         }
 

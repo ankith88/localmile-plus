@@ -35,6 +35,7 @@ const CustomerHub: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [cancellingCustomer, setCancellingCustomer] = useState<any | null>(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [activeTabs, setActiveTabs] = useState<Record<string, 'contact' | 'addresses' | 'services'>>({});
 
   const handleBookJob = (url = '/new-job') => {
     if (userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435')) {
@@ -297,9 +298,6 @@ const CustomerHub: React.FC = () => {
                 {filteredCustomers.map((customer) => (
                    <div key={customer.id} className="customer-card glass-card">
                        <div className="card-top">
-                          <div className="avatar">
-                             {(customer.companyName || customer.company_name || '?').charAt(0)}
-                          </div>
                           <div className="main-info">
                              <h3 title={customer.companyName || customer.company_name}>{customer.companyName || customer.company_name}</h3>
                              {isAdmin && customer.lpoName && (
@@ -314,93 +312,239 @@ const CustomerHub: React.FC = () => {
                                   <span>Franchisee: {customer.franchiseeText}</span>
                                </div>
                              )}
-                          </div>
-                          <div className="card-actions">
-                             <div className={`status-badge-premium ${customer.status === 'Active' ? 'active' : customer.status === 'cancelled' ? 'cancelled' : 'awaiting'}`}>
+                             <div className={`status-badge-premium ${customer.status === 'Active' ? 'active' : customer.status === 'cancelled' ? 'cancelled' : 'awaiting'}`} style={{ width: 'fit-content', marginTop: '6px' }}>
                                {customer.status === 'Active' ? 'ACTIVE' : customer.status === 'cancelled' ? 'CANCELLED' : 'AWAITING T&C'}
                              </div>
-                             <button 
-                               className="edit-customer-btn" 
-                               onClick={() => {
-                                 setEditingCustomer(customer);
-                                 setIsEditModalOpen(true);
-                               }}
-                               title="Edit Contact Details"
-                             >
-                                <Edit2 size={14} />
-                             </button>
-                             {customer.status !== 'cancelled' && (
-                               <button 
-                                 className="edit-customer-btn cancel-btn" 
-                                 onClick={() => {
-                                   setCancellingCustomer(customer);
-                                   setIsCancelModalOpen(true);
-                                 }}
-                                 title="Cancel Customer"
-                               >
-                                  <UserMinus size={14} />
-                               </button>
-                             )}
                           </div>
                        </div>
 
-                       <div className="card-body">
-                          <div className="contact-item">
-                             <User size={14} />
-                             <span>{customer.firstName || customer.first_name ? `${customer.firstName || customer.first_name} ${customer.lastName || customer.last_name || ''}` : customer.contact || 'No contact name'}</span>
-                          </div>
-                          <div className="contact-item">
-                             <Mail size={14} />
-                             <span>{customer.customerEmail || customer.email || 'No email'}</span>
-                          </div>
-                          <div className="contact-item">
-                             <Phone size={14} />
-                             <span>{customer.customerPhone || customer.phone || 'No phone'}</span>
-                          </div>
-                          <div className="contact-item">
-                             <MapPin size={14} />
-                             <span>
-                                {([
-                                  customer.address1,
-                                  customer.street || customer.address?.street,
-                                  customer.city || customer.address?.suburb,
-                                  customer.state || customer.address?.state
-                                ].filter(p => p && String(p).trim()).join(', ') || 'No address')}
-                             </span>
-                          </div>
-                      </div>
- 
-                       {userData?.role !== "customer" && (
-                       <div className="services-setup-premium">
-                          <div className="setup-header">
-                             <Rocket size={12} />
-                             <span>SERVICES SETUP</span>
-                          </div>
-                          <div className="setup-tags">
-                             <span className={`service-tag-pill ${customer.lpoServiceAMPOInternalID && customer.lpoServiceAMPOInternalID !== 'null' ? 'enabled' : 'disabled'}`}>
-                               LPO ➔ Site
-                             </span>
-                             <span className={`service-tag-pill ${customer.lpoServicePMPOInternalID && customer.lpoServicePMPOInternalID !== 'null' ? 'enabled' : 'disabled'}`}>
-                               Site ➔ LPO
-                             </span>
-                             <span className={`service-tag-pill ${customer.lpoServiceAMPOPMPOInternalID && customer.lpoServiceAMPOPMPOInternalID !== 'null' ? 'enabled' : 'disabled'}`}>
-                               Round Trip
-                             </span>
-                          </div>
-                       </div>
-                       )}
+                       {userData?.role === 'customer' ? (
+                          (() => {
+                             const activeTab = activeTabs[customer.id] || 'contact';
+                             return (
+                                <>
+                                   <div className="card-tabs-header">
+                                      <button 
+                                        type="button"
+                                        className={`tab-btn ${activeTab === 'contact' ? 'active' : ''}`}
+                                        onClick={() => setActiveTabs(prev => ({ ...prev, [customer.id]: 'contact' }))}
+                                      >
+                                         Contact
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        className={`tab-btn ${activeTab === 'addresses' ? 'active' : ''}`}
+                                        onClick={() => setActiveTabs(prev => ({ ...prev, [customer.id]: 'addresses' }))}
+                                      >
+                                         Addresses
+                                      </button>
+                                   </div>
 
-                       {userData?.role !== "customer" && (
-                      <div className="service-details-premium">
-                         <div className="detail-tag">
-                            <CreditCard size={12} />
-                            <span>Billing: <strong style={{ textTransform: 'uppercase' }}>{customer.billing || 'N/A'}</strong></span>
-                         </div>
-                         <div className="detail-tag">
-                            <Rocket size={12} />
-                            <span>Job Type: <strong style={{ textTransform: 'capitalize' }}>{customer.jobtype || customer.jobType || 'N/A'}</strong></span>
-                         </div>
-                      </div>
+                                   {activeTab === 'contact' ? (
+                                      <div className="card-body">
+                                         <div className="contact-item">
+                                            <User size={14} />
+                                            <span>{customer.firstName || customer.first_name ? `${customer.firstName || customer.first_name} ${customer.lastName || customer.last_name || ''}` : customer.contact || 'No contact name'}</span>
+                                         </div>
+                                         <div className="contact-item">
+                                            <Mail size={14} />
+                                            <span>{customer.customerEmail || customer.email || 'No email'}</span>
+                                         </div>
+                                         <div className="contact-item">
+                                            <Phone size={14} />
+                                            <span>{customer.customerPhone || customer.phone || 'No phone'}</span>
+                                         </div>
+                                      </div>
+                                   ) : (
+                                      <div className="card-body">
+                                         <div className="setup-header" style={{ marginBottom: '6px' }}>
+                                            <MapPin size={12} />
+                                            <span>SITE ADDRESS</span>
+                                         </div>
+                                         <div className="contact-item" style={{ marginBottom: '14px' }}>
+                                            <MapPin size={14} />
+                                            <span>
+                                               {([
+                                                 customer.address1,
+                                                 customer.street || customer.address?.street,
+                                                 customer.city || customer.address?.suburb,
+                                                 customer.state || customer.address?.state
+                                               ].filter(p => p && String(p).trim()).join(', ') || 'No address')}
+                                            </span>
+                                         </div>
+
+                                         {Array.isArray(customer.billingAddresses) && customer.billingAddresses.length > 0 && (
+                                            <div className="billing-addresses-section" style={{ padding: 0, margin: 0 }}>
+                                               <div className="setup-header" style={{ marginBottom: '6px' }}>
+                                                  <MapPin size={12} />
+                                                  <span>BILLING ADDRESSES</span>
+                                               </div>
+                                               <div className="billing-addresses-list">
+                                                  {customer.billingAddresses.map((addr: any, idx: number) => {
+                                                     const street = addr.address1 || addr.street || '';
+                                                     const city = addr.city || '';
+                                                     const state = addr.state || '';
+                                                     const zip = addr.zip || '';
+                                                     const addrStr = [street, city, state, zip].filter(p => p && String(p).trim()).join(', ');
+                                                     return (
+                                                        <div key={idx} className="billing-address-badge" title={addrStr}>
+                                                           {addrStr || 'No Address Details'}
+                                                        </div>
+                                                     );
+                                                  })}
+                                               </div>
+                                            </div>
+                                         )}
+                                      </div>
+                                   )}
+                                </>
+                             );
+                          })()
+                       ) : (
+                          (() => {
+                             const activeTab = activeTabs[customer.id] || 'services';
+                             return (
+                                <>
+                                   <div className="card-tabs-header">
+                                      <button 
+                                        type="button"
+                                        className={`tab-btn ${activeTab === 'contact' ? 'active' : ''}`}
+                                        onClick={() => setActiveTabs(prev => ({ ...prev, [customer.id]: 'contact' }))}
+                                      >
+                                         Contact
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        className={`tab-btn ${activeTab === 'addresses' ? 'active' : ''}`}
+                                        onClick={() => setActiveTabs(prev => ({ ...prev, [customer.id]: 'addresses' }))}
+                                      >
+                                         Addresses
+                                      </button>
+                                      <button 
+                                        type="button"
+                                        className={`tab-btn ${activeTab === 'services' ? 'active' : ''}`}
+                                        onClick={() => setActiveTabs(prev => ({ ...prev, [customer.id]: 'services' }))}
+                                      >
+                                         Services
+                                      </button>
+                                   </div>
+
+                                   {activeTab === 'contact' ? (
+                                      <div className="card-body">
+                                         <div className="contact-item">
+                                            <User size={14} />
+                                            <span>{customer.firstName || customer.first_name ? `${customer.firstName || customer.first_name} ${customer.lastName || customer.last_name || ''}` : customer.contact || 'No contact name'}</span>
+                                         </div>
+                                         <div className="contact-item">
+                                            <Mail size={14} />
+                                            <span>{customer.customerEmail || customer.email || 'No email'}</span>
+                                         </div>
+                                         <div className="contact-item">
+                                            <Phone size={14} />
+                                            <span>{customer.customerPhone || customer.phone || 'No phone'}</span>
+                                         </div>
+                                      </div>
+                                   ) : activeTab === 'addresses' ? (
+                                      <div className="card-body">
+                                         <div className="setup-header" style={{ marginBottom: '6px' }}>
+                                            <MapPin size={12} />
+                                            <span>SITE ADDRESS</span>
+                                         </div>
+                                         <div className="contact-item" style={{ marginBottom: '14px' }}>
+                                            <MapPin size={14} />
+                                            <span>
+                                               {([
+                                                 customer.address1,
+                                                 customer.street || customer.address?.street,
+                                                 customer.city || customer.address?.suburb,
+                                                 customer.state || customer.address?.state
+                                               ].filter(p => p && String(p).trim()).join(', ') || 'No address')}
+                                            </span>
+                                         </div>
+
+                                         {Array.isArray(customer.billingAddresses) && customer.billingAddresses.length > 0 && (
+                                            <div className="billing-addresses-section" style={{ padding: 0, margin: 0 }}>
+                                               <div className="setup-header" style={{ marginBottom: '6px' }}>
+                                                  <MapPin size={12} />
+                                                  <span>BILLING ADDRESSES</span>
+                                               </div>
+                                               <div className="billing-addresses-list">
+                                                  {customer.billingAddresses.map((addr: any, idx: number) => {
+                                                     const street = addr.address1 || addr.street || '';
+                                                     const city = addr.city || '';
+                                                     const state = addr.state || '';
+                                                     const zip = addr.zip || '';
+                                                     const addrStr = [street, city, state, zip].filter(p => p && String(p).trim()).join(', ');
+                                                     return (
+                                                        <div key={idx} className="billing-address-badge" title={addrStr}>
+                                                           {addrStr || 'No Address Details'}
+                                                        </div>
+                                                     );
+                                                  })}
+                                               </div>
+                                            </div>
+                                         )}
+                                      </div>
+                                   ) : (
+                                      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                         <div className="services-setup-premium" style={{ padding: 0 }}>
+                                            <div className="setup-header">
+                                               <Rocket size={12} />
+                                               <span>SERVICES SETUP</span>
+                                            </div>
+                                            <div className="setup-tags">
+                                               {userData?.role === 'parent' ? (
+                                                 (() => {
+                                                   const serviceList = (customer.serviceList || customer.services || [])
+                                                     .filter((s: any) => s && s.name !== 'PMPO');
+                                                   return Array.isArray(serviceList) && serviceList.length > 0 ? (
+                                                     serviceList.map((s: any, idx: number) => {
+                                                       let displayName = s.name || '';
+                                                       if (s.name === 'H2H') displayName = "Hand to Hand Deliveries";
+                                                       else if (s.name === 'H2H 2') displayName = "Hand to Hand Deliveries 2";
+                                                       else if (s.name === 'AMPO') displayName = "Pick up and Delivery from PO";
+                                                       else if (s.name === 'PMPO') displayName = "Outgoing Mail Lodgement";
+                                                       return (
+                                                         <span key={idx} className="service-tag-pill enabled">
+                                                           {displayName}
+                                                         </span>
+                                                       );
+                                                     })
+                                                   ) : (
+                                                     <span className="service-tag-pill disabled">No Services</span>
+                                                   );
+                                                 })()
+                                               ) : (
+                                                 <>
+                                                   <span className={`service-tag-pill ${customer.lpoServiceAMPOInternalID && customer.lpoServiceAMPOInternalID !== 'null' ? 'enabled' : 'disabled'}`}>
+                                                     LPO ➔ Site
+                                                   </span>
+                                                   <span className={`service-tag-pill ${customer.lpoServicePMPOInternalID && customer.lpoServicePMPOInternalID !== 'null' ? 'enabled' : 'disabled'}`}>
+                                                     Site ➔ LPO
+                                                   </span>
+                                                   <span className={`service-tag-pill ${customer.lpoServiceAMPOPMPOInternalID && customer.lpoServiceAMPOPMPOInternalID !== 'null' ? 'enabled' : 'disabled'}`}>
+                                                     Round Trip
+                                                   </span>
+                                                 </>
+                                               )}
+                                            </div>
+                                         </div>
+
+                                         <div className="service-details-premium" style={{ padding: 0, display: 'flex', gap: '12px' }}>
+                                            <div className="detail-tag">
+                                               <CreditCard size={12} />
+                                               <span>Billing: <strong style={{ textTransform: 'uppercase' }}>{customer.billing || 'N/A'}</strong></span>
+                                            </div>
+                                            <div className="detail-tag">
+                                               <Rocket size={12} />
+                                               <span>Job Type: <strong style={{ textTransform: 'capitalize' }}>{customer.jobtype || customer.jobType || 'N/A'}</strong></span>
+                                            </div>
+                                         </div>
+                                      </div>
+                                   )}
+                                </>
+                             );
+                          })()
                        )}
 
                       <div className="card-footer">
@@ -414,9 +558,37 @@ const CustomerHub: React.FC = () => {
                              <span>{customer.lastJobDate ? (customer.lastJobDate.includes('-') ? customer.lastJobDate.split('-').reverse().join('/') : new Date(customer.lastJobDate).toLocaleDateString()) : 'N/A'}</span>
                             </div>
                          </div>
-                         <button className="view-details" onClick={() => handleBookJob(`/new-job?rebook=true&customerId=${customer.id}`)} title="Book New Job">
-                            <Plus size={18} />
-                         </button>
+                         <div className="footer-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                             <button 
+                               type="button"
+                               className="edit-customer-btn" 
+                               onClick={() => {
+                                 setEditingCustomer(customer);
+                                 setIsEditModalOpen(true);
+                               }}
+                               title="Edit Contact Details"
+                               style={{ width: '36px', height: '36px', borderRadius: '12px' }}
+                             >
+                                <Edit2 size={14} />
+                             </button>
+                             {customer.status !== 'cancelled' && (
+                               <button 
+                                 type="button"
+                                 className="edit-customer-btn cancel-btn" 
+                                 onClick={() => {
+                                   setCancellingCustomer(customer);
+                                   setIsCancelModalOpen(true);
+                                 }}
+                                 title="Cancel Customer"
+                                 style={{ width: '36px', height: '36px', borderRadius: '12px' }}
+                               >
+                                  <UserMinus size={14} />
+                               </button>
+                             )}
+                             <button className="view-details" onClick={() => handleBookJob(`/new-job?rebook=true&customerId=${customer.id}`)} title="Book New Job">
+                                <Plus size={18} />
+                             </button>
+                          </div>
                       </div>
                    </div>
                 ))}
@@ -448,7 +620,64 @@ const CustomerHub: React.FC = () => {
       />
 
       <style>{`
-        .customer-hub-premium { min-height: 100vh; background: var(--offwhite); padding: 40px 24px 100px; position: relative; overflow-x: hidden; }
+         .card-tabs-header {
+           display: flex;
+           border-bottom: 1px solid var(--cream-warm);
+           margin: 0 0 16px;
+           padding: 0;
+           gap: 16px;
+         }
+         .tab-btn {
+           background: none;
+           border: none;
+           padding: 8px 4px;
+           font-size: 0.8rem;
+           font-weight: 700;
+           color: var(--ink-soft);
+           cursor: pointer;
+           position: relative;
+           transition: color 0.2s;
+         }
+         .tab-btn:hover {
+           color: var(--ink);
+         }
+         .tab-btn.active {
+           color: var(--ink);
+         }
+         .tab-btn.active::after {
+           content: '';
+           position: absolute;
+           bottom: -1px;
+           left: 0;
+           right: 0;
+           height: 2px;
+           background: var(--ink);
+           border-radius: 2px;
+         }
+         .billing-addresses-section {
+           margin-top: 12px;
+         }
+         .billing-addresses-list {
+           display: flex;
+           flex-direction: column;
+           gap: 6px;
+           max-height: 100px;
+           overflow-y: auto;
+           margin-top: 6px;
+           padding-right: 4px;
+         }
+         .billing-address-badge {
+           font-size: 0.75rem;
+           background: rgba(26, 61, 51, 0.03);
+           padding: 6px 10px;
+           border-radius: 8px;
+           color: var(--ink-soft);
+           border: 1px solid rgba(26, 61, 51, 0.05);
+           white-space: nowrap;
+           overflow: hidden;
+           text-overflow: ellipsis;
+         }
+         .customer-hub-premium { min-height: 100vh; background: var(--offwhite); padding: 40px 24px 100px; position: relative; overflow-x: hidden; }
         .mesh-bg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; filter: blur(100px); opacity: 0.5; }
         .blob { position: absolute; border-radius: 50%; width: 600px; height: 600px; background: var(--cream-warm); }
         .blob-1 { top: -100px; right: -100px; }
@@ -503,13 +732,27 @@ const CustomerHub: React.FC = () => {
         .glass-card { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.4); border-radius: 32px; padding: 24px; }
         
         .customer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; }
-        .customer-card { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        .customer-card {
+           display: flex;
+           flex-direction: column;
+           height: 100%;
+           transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
         .customer-card:hover { transform: translateY(-8px); background: var(--paper); box-shadow: 0 20px 40px rgba(26, 61, 51, 0.08); }
 
         .card-top { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; position: relative; }
         .avatar { width: 44px; height: 44px; background: var(--cream-warm); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 400; color: var(--ink); font-size: 1.2rem; font-family: var(--font-headings); flex-shrink: 0; }
         .main-info { flex: 1; min-width: 0; }
-        .main-info h3 { margin: 0; font-size: 1.1rem; font-weight: 400; color: var(--ink); letter-spacing: -0.015em; font-family: var(--font-headings); word-break: break-word; white-space: normal; }
+        .main-info h3 {
+           margin: 0;
+           font-size: 1.1rem;
+           font-weight: 400;
+           color: var(--ink);
+           letter-spacing: -0.015em;
+           font-family: var(--font-headings);
+           word-break: break-word;
+           white-space: normal;
+        }
         .sub-info { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 0.75rem; font-weight: 400; margin-top: 2px; }
         .franchisee-tag { color: var(--ink); background: rgba(26, 61, 51, 0.05); padding: 2px 8px; border-radius: 6px; width: fit-content; }
         .status-badge-premium { font-family: var(--font-ui); padding: 4px 10px; border-radius: 8px; font-size: 0.55rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; }
@@ -526,7 +769,18 @@ const CustomerHub: React.FC = () => {
         .edit-customer-btn:hover { background: var(--ink); color: white; }
         .edit-customer-btn.cancel-btn:hover { background: #dc2626; color: white; }
 
-        .card-body { border-top: 1px solid var(--cream-warm); border-bottom: 1px solid var(--cream-warm); padding: 16px 0; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+        .card-body {
+           border-bottom: 1px solid var(--cream-warm);
+           padding: 16px 0;
+           margin-bottom: 16px;
+           display: flex;
+           flex-direction: column;
+           gap: 10px;
+           flex-grow: 1;
+           min-height: 180px;
+           max-height: 250px;
+           overflow-y: auto;
+        }
         .contact-item { display: flex; align-items: center; gap: 10px; color: var(--ink-soft); font-size: 0.85rem; font-weight: 600; }
         .contact-item svg { color: var(--ink-soft); opacity: 0.6; }
 

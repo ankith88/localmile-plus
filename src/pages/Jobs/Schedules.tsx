@@ -37,6 +37,41 @@ const Schedules: React.FC = () => {
   const [supportMetadata, setSupportMetadata] = useState<any>(null);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState('all');
+  const [selectedServiceFilter, setSelectedServiceFilter] = useState('all');
+
+  const getServiceConfig = (serviceName: string) => {
+    const norm = (serviceName || '').toLowerCase();
+    if (norm.includes('h2h') || norm === 'h2h' || norm === 'h2h 2') {
+      return { label: 'H2H', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)', border: '#3b82f6', text: '#1d4ed8' };
+    }
+    if (norm.includes('ampo') || norm === 'lpo-to-site' || norm === 'australia post-to-site' || norm === 'round-trip') {
+      return { label: 'AMPO', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)', border: '#f59e0b', text: '#b45309' };
+    }
+    if (norm.includes('pmpo') || norm === 'site-to-lpo' || norm === 'site-to-australia post') {
+      return { label: 'PMPO', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.1)', border: '#ec4899', text: '#be185d' };
+    }
+    return { label: serviceName || 'Other', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', border: '#10b981', text: '#047857' };
+  };
+
+  const uniqueCustomers = React.useMemo(() => {
+    const map = new Map<string, string>();
+    schedules.forEach(s => {
+      if (s.customer_id && s.customer?.company) {
+        map.set(s.customer_id, s.customer.company);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [schedules]);
+
+  const uniqueServices = React.useMemo(() => {
+    const set = new Set<string>();
+    schedules.forEach(s => {
+      const config = getServiceConfig(s.service);
+      set.add(config.label);
+    });
+    return Array.from(set);
+  }, [schedules]);
 
   useEffect(() => {
     const fetchSchedules = async () => {
@@ -176,7 +211,10 @@ const Schedules: React.FC = () => {
     const matchesSearch = s.customer.company.toLowerCase().includes(searchTerm.toLowerCase()) || 
                          s.customer.address.toLowerCase().includes(searchTerm.toLowerCase());
     const isActive = s.recurrenceStatus !== 'stopped';
-    return matchesSearch && isActive;
+    const matchesCustomer = selectedCustomerFilter === 'all' || s.customer_id === selectedCustomerFilter;
+    const serviceConfig = getServiceConfig(s.service);
+    const matchesService = selectedServiceFilter === 'all' || serviceConfig.label === selectedServiceFilter;
+    return matchesSearch && isActive && matchesCustomer && matchesService;
   });
 
   // Calendar Logic Helpers
@@ -274,6 +312,26 @@ const Schedules: React.FC = () => {
                    onChange={(e) => setSearchTerm(e.target.value)}
                  />
                </div>
+
+               <CustomSelect 
+                 value={selectedCustomerFilter}
+                 onChange={(val) => setSelectedCustomerFilter(val)}
+                 options={[
+                   { value: 'all', label: 'All Customers', icon: <MapPin size={14} /> },
+                   ...uniqueCustomers.map(c => ({ value: c.id, label: c.name, icon: <MapPin size={14} /> }))
+                 ]}
+                 className="lpo-select-custom"
+               />
+
+               <CustomSelect 
+                 value={selectedServiceFilter}
+                 onChange={(val) => setSelectedServiceFilter(val)}
+                 options={[
+                   { value: 'all', label: 'All Services', icon: <Clock size={14} /> },
+                   ...uniqueServices.map(s => ({ value: s, label: s, icon: <Clock size={14} /> }))
+                 ]}
+                 className="lpo-select-custom"
+               />
                
                <div className="view-toggle-pills">
                  <button 
@@ -323,20 +381,27 @@ const Schedules: React.FC = () => {
                         <div key={day.date} className={`day-cell ${isToday ? 'is-today' : ''}`}>
                           <div className="day-number">{day.dayNum}</div>
                           <div className="day-jobs-list">
-                            {dayJobs.map(job => {
-                              const isSkipped = (job.skippedDates || []).includes(job.date);
-                              return (
-                                <div 
-                                  key={job.id} 
-                                  className={`job-dot-pill ${isSkipped ? 'skipped' : ''}`}
-                                  onClick={() => setSelectedSchedule(job)}
-                                  title={`${job.customer.company} - ${job.service}`}
-                                >
-                                  <div className="dot"></div>
-                                  <span className="truncate">{job.customer.company}</span>
-                                </div>
-                              );
-                            })}
+                             {dayJobs.map(job => {
+                               const isSkipped = (job.skippedDates || []).includes(job.date);
+                               const serviceConfig = getServiceConfig(job.service);
+                               return (
+                                 <div 
+                                   key={job.id} 
+                                   className={`job-dot-pill ${isSkipped ? 'skipped' : ''}`}
+                                   onClick={() => setSelectedSchedule(job)}
+                                   title={`${job.customer.company} - ${serviceConfig.label}`}
+                                   style={isSkipped ? {} : {
+                                     backgroundColor: serviceConfig.bg,
+                                     borderColor: serviceConfig.border,
+                                     color: serviceConfig.text,
+                                     border: `1px solid ${serviceConfig.border}`
+                                   }}
+                                 >
+                                   <div className="dot" style={isSkipped ? {} : { backgroundColor: serviceConfig.color }}></div>
+                                   <span className="truncate">{job.customer.company} ({serviceConfig.label})</span>
+                                 </div>
+                               );
+                             })}
                           </div>
                         </div>
                       );
@@ -408,10 +473,24 @@ const Schedules: React.FC = () => {
                          )}
 
                        <div className="card-meta">
-                          <div className="meta-pill">
-                             <Clock size={12} />
-                             <span>{schedule.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : schedule.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : schedule.service.replace(/-/g, ' ')}</span>
-                          </div>
+                          {(() => {
+                            const serviceConfig = getServiceConfig(schedule.service);
+                            return (
+                              <div className="meta-pill" style={{
+                                backgroundColor: serviceConfig.bg,
+                                color: serviceConfig.text,
+                                border: `1px solid ${serviceConfig.border}`,
+                                padding: '4px 10px',
+                                borderRadius: '8px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}>
+                                 <Clock size={12} style={{ color: serviceConfig.color }} />
+                                 <span>{serviceConfig.label}</span>
+                              </div>
+                            );
+                          })()}
                           <div className="meta-pill">
                              <RotateCcw size={12} />
                              <span>{schedule.billing}</span>

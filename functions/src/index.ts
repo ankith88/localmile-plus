@@ -3217,6 +3217,119 @@ apiApp.get("/api/v1/companies/:companyId/customers/:customerId/exists", async (r
   }
 });
 
+apiApp.post("/api/v1/companies/:companyId/invoices", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || (providedKey !== netsuiteApiKey.value() && providedKey !== prospectplusApiKey.value())) {
+    console.warn("Unauthorized attempt to call Company Invoice Creation API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    let payload = req.body;
+
+    if (!companyId) {
+      res.status(400).send({ success: false, message: "Missing required parameter: companyId" });
+      return;
+    }
+
+    payload = normalizePayload(payload);
+
+    if (!payload || Object.keys(payload).length === 0) {
+      res.status(400).send({ success: false, message: "Empty payload provided" });
+      return;
+    }
+
+    const db = getDB();
+    const invoicesRef = db
+      .collection("companies")
+      .doc(String(companyId))
+      .collection("invoices");
+
+    // Use invoiceNum as document ID if provided, otherwise generate a random one
+    const docId = payload.invoiceNum ? String(payload.invoiceNum) : invoicesRef.doc().id;
+    await invoicesRef.doc(docId).set(payload);
+
+    res.status(200).send({
+      success: true,
+      message: "Invoice document created successfully.",
+      invoiceId: docId
+    });
+  } catch (error: any) {
+    console.error("Company Invoice Creation API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.get("/api/v1/companies/:companyId/invoices/:invoiceId/exists", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || (providedKey !== netsuiteApiKey.value() && providedKey !== prospectplusApiKey.value())) {
+    console.warn("Unauthorized attempt to call Invoice ID Exists API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId, invoiceId } = req.params;
+    if (!companyId || !invoiceId) {
+      res.status(400).send({ success: false, message: "Missing required parameter: companyId or invoiceId" });
+      return;
+    }
+
+    const db = getDB();
+    const doc = await db
+      .collection("companies")
+      .doc(String(companyId))
+      .collection("invoices")
+      .doc(String(invoiceId))
+      .get();
+
+    res.status(200).send({
+      success: true,
+      exists: doc.exists
+    });
+  } catch (error: any) {
+    console.error("Invoice ID Exists API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+apiApp.get("/api/v1/companies/:companyId/invoices/exists", async (req: express.Request, res: express.Response) => {
+  const providedKey = req.headers["x-api-key"] || req.query.api_key;
+  if (!providedKey || (providedKey !== netsuiteApiKey.value() && providedKey !== prospectplusApiKey.value())) {
+    console.warn("Unauthorized attempt to call Invoice Exists Query API");
+    res.status(401).send({ success: false, message: "Unauthorized. Please provide a valid X-API-KEY." });
+    return;
+  }
+
+  try {
+    const { companyId } = req.params;
+    const invoiceNum = req.query.invoiceNum as string;
+    if (!companyId || !invoiceNum) {
+      res.status(400).send({ success: false, message: "Missing required query/parameter: companyId or invoiceNum" });
+      return;
+    }
+
+    const db = getDB();
+    const querySnapshot = await db
+      .collection("companies")
+      .doc(String(companyId))
+      .collection("invoices")
+      .where("invoiceNum", "==", invoiceNum)
+      .limit(1)
+      .get();
+
+    res.status(200).send({
+      success: true,
+      exists: !querySnapshot.empty
+    });
+  } catch (error: any) {
+    console.error("Invoice Exists Query API Error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
 apiApp.put("/api/v1/companies/:companyId/customers/:customerId", async (req: express.Request, res: express.Response) => {
   const providedKey = req.headers["x-api-key"] || req.query.api_key;
   if (!providedKey || providedKey !== netsuiteApiKey.value()) {

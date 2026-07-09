@@ -77,6 +77,7 @@ interface JobData {
 
 const LIBRARIES: ("places" | "maps" | "routes" | "geometry")[] = ["places", "routes", "geometry"];
 
+// @ts-ignore
 const JobMap: React.FC<{ stops: any[], onDistanceCalculated?: (distance: string) => void }> = ({ stops, onDistanceCalculated }) => {
   const [encodedPath, setEncodedPath] = useState<string | null>(null);
   const [markerPositions, setMarkerPositions] = useState<({lat: number, lng: number} | null)[]>([]);
@@ -253,6 +254,7 @@ const NewJobForm: React.FC = () => {
   const [isAwaitingTC, setIsAwaitingTC] = useState(false);
   const [isExistingCustomer, setIsExistingCustomer] = useState(false);
   const [createdRequestId, setCreatedRequestId] = useState<string | null>(null);
+  // @ts-ignore
   const [routeDistance, setRouteDistance] = useState<string | null>(null);
   
   // Processing States
@@ -2478,11 +2480,12 @@ const NewJobForm: React.FC = () => {
                 <div className="glass-card step-card confirmation">
                   <div className="card-top-info">
                     <ClipboardList size={20} />
-                    <h3>Map & Quote Confirmation</h3>
+                    <h3>Quote Confirmation</h3>
                   </div>
 
                   <div className="split-view">
-                    <div className="map-element">
+                    {/* Map hidden for now */}
+                    {/* <div className="map-element">
                       {isLoaded ? (
                         <JobMap 
                           stops={generateStops(formData, parent || customer)} 
@@ -2493,8 +2496,8 @@ const NewJobForm: React.FC = () => {
                            <span style={{ fontWeight: 600 }}>Loading Map...</span>
                         </div>
                       )}
-                    </div>
-                    <div className="pricing-element" style={{ marginTop: '24px' }}>
+                    </div> */}
+                    <div className="pricing-element" style={{ marginTop: '0px' }}>
                       <div className="voucher-card glass">
                         <div className="voucher-header">
                            <div className="v-logo">mailplus</div>
@@ -2525,12 +2528,13 @@ const NewJobForm: React.FC = () => {
                                   : formData.service.replace(/-/g, ' ').toUpperCase()}
                             </span>
                           </div>
-                          {routeDistance && (
+                          {/* Estimated distance hidden for now */}
+                          {/* {routeDistance && (
                             <div className="v-row">
                               <span className="v-label">EST. DISTANCE</span>
                               <span className="v-val">{routeDistance}</span>
                             </div>
-                          )}
+                          )} */}
                           <div className="v-row">
                             <span className="v-label">{formData.jobType === 'scheduled' ? 'START DATE' : 'SCHEDULED'}</span>
                             <span className="v-val">{formData.date}</span>

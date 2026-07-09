@@ -298,16 +298,7 @@ const NewJobForm: React.FC = () => {
               const reqsSnap = await getDocs(reqsQuery);
               const pendingReqsCount = reqsSnap.size;
 
-              // 2. Direct scheduled jobs (not created from requests, which are already decremented on acceptance)
-              const jobsQuery = query(
-                collection(db, 'jobs'),
-                where('customer_id', '==', customerId),
-                where('status', '==', 'scheduled')
-              );
-              const jobsSnap = await getDocs(jobsQuery);
-              const directScheduledCount = jobsSnap.docs.filter(doc => !doc.data().originalRequestId).length;
-
-              const available = Math.max(0, balance - (pendingReqsCount + directScheduledCount));
+              const available = Math.max(0, balance - pendingReqsCount);
               setTrialCredits(available);
             }
           }
@@ -1162,16 +1153,7 @@ const NewJobForm: React.FC = () => {
             const reqsSnap = await getDocs(reqsQuery);
             const pendingReqsCount = reqsSnap.size;
 
-            // 2. Direct scheduled jobs
-            const jobsQuery = query(
-              collection(db, 'jobs'),
-              where('customer_id', '==', companyIdForTrial),
-              where('status', '==', 'scheduled')
-            );
-            const jobsSnap = await getDocs(jobsQuery);
-            const directScheduledCount = jobsSnap.docs.filter(doc => !doc.data().originalRequestId).length;
-
-            const availableTrials = balance - (pendingReqsCount + directScheduledCount);
+            const availableTrials = balance - pendingReqsCount;
 
             if (availableTrials > 0) {
               isFreeJob = true;

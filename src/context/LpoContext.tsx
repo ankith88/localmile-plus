@@ -68,6 +68,7 @@ interface LpoContextType {
   hasCompletedTour: boolean;
   completeTour: () => Promise<void>;
   updateUserData: (data: Partial<UserMetadata>) => Promise<void>;
+  updateCompanyData: (data: Partial<CompanyData>) => Promise<void>;
   isAdmin: boolean;
   selectedParentId: string; // Used by admins to filter, defaults to own parent_id or 'all'
   setSelectedParentId: (id: string) => void;
@@ -94,6 +95,7 @@ const LpoContext = createContext<LpoContextType>({
   hasCompletedTour: true,
   completeTour: async () => {},
   updateUserData: async () => {},
+  updateCompanyData: async () => {},
   isAdmin: false,
   selectedParentId: 'all',
   setSelectedParentId: () => {},
@@ -356,6 +358,18 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateCompanyData = async (data: Partial<CompanyData>) => {
+    if (!userData?.customer_id) return;
+    try {
+      const companyRef = doc(db, 'companies', userData.customer_id);
+      await updateDoc(companyRef, data);
+      setCompanyData(prev => prev ? { ...prev, ...data } : null);
+    } catch (error) {
+      console.error("Error updating company data:", error);
+      throw error;
+    }
+  };
+
   const signUp = async (email: string, password: string, firstName: string, lastName: string, phone: string, parentId?: string, customerId?: string) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const newUser = userCredential.user;
@@ -404,6 +418,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hasCompletedTour, 
       completeTour,
       updateUserData,
+      updateCompanyData,
       isAdmin,
       selectedParentId,
       setSelectedParentId,

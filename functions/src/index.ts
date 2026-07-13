@@ -950,6 +950,55 @@ export const syncProspectPlusTrialCredits = onCall({ invoker: "public", secrets:
   }
 });
 
+// Logic: syncProspectPlusABN
+export const syncProspectPlusABN = onCall({ invoker: "public", secrets: [prospectplusApiKey] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
+  }
+
+  const { customer_id, abn } = request.data;
+  if (!customer_id) {
+    throw new HttpsError("invalid-argument", "The function must be called with a 'customer_id' argument.");
+  }
+  if (!abn) {
+    throw new HttpsError("invalid-argument", "The function must be called with an 'abn' argument.");
+  }
+
+  const leadId = extractStringId(customer_id);
+  if (!leadId) {
+    throw new HttpsError("invalid-argument", "Invalid customer_id format.");
+  }
+
+  console.log(`[ProspectPlus Sync] Syncing ABN for leadId: ${leadId}, abn: ${abn}`);
+
+  try {
+    const payload = {
+      abn: abn
+    };
+
+    const response = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": prospectplusApiKey.value()
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[ProspectPlus Sync] Failed to sync ABN:", errorText);
+      throw new HttpsError("internal", "Failed to sync with ProspectPlus API.");
+    }
+
+    console.log(`[ProspectPlus Sync] Successfully synced ABN for leadId: ${leadId}`);
+    return { success: true };
+  } catch (error) {
+    console.error("[ProspectPlus Sync] Error syncing ABN:", error);
+    throw new HttpsError("internal", "Failed to sync with ProspectPlus API.");
+  }
+});
+
 
 // Logic: onChatMessageSent
 export const onChatMessageSent = onDocumentUpdated({

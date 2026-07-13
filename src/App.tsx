@@ -17,6 +17,7 @@ import Schedules from './pages/Jobs/Schedules';
 import AwaitingTCPage from './pages/Jobs/AwaitingTCPage';
 import Reports from './pages/Admin/Reports';
 import SupportCenter from './pages/Help/SupportCenter';
+import Invoices from './pages/Invoices/Invoices';
 
 import Profile from './pages/Auth/Profile';
 import ResetPassword from './pages/Auth/ResetPassword';
@@ -47,6 +48,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 import { DevContextSwitcher } from './components/DevContextSwitcher';
 import TermsAndConditionsModal from './components/TermsAndConditionsModal';
+import AbnEntryModal from './components/AbnEntryModal';
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isSidebarPinned } = useLpo();
@@ -54,6 +56,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div className={`app-container ${!isSidebarPinned ? 'sidebar-unpinned' : ''}`}>
       <TermsAndConditionsModal />
+      <AbnEntryModal />
       <OnboardingTour />
       <DevContextSwitcher />
       <Sidebar />
@@ -139,6 +142,14 @@ const App: React.FC = () => {
             <PrivateRoute>
               <AppLayout>
                 <Reports />
+              </AppLayout>
+            </PrivateRoute>
+          } />
+
+          <Route path="/invoices" element={
+            <PrivateRoute>
+              <AppLayout>
+                <Invoices />
               </AppLayout>
             </PrivateRoute>
           } />

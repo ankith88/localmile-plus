@@ -281,6 +281,8 @@ const NewJobForm: React.FC = () => {
 
   const [trialCredits, setTrialCredits] = useState<number | null>(null);
 
+
+
   useEffect(() => {
     if (userData?.role === 'customer' && userData?.customer_id) {
       const customerId = userData.customer_id;
@@ -340,6 +342,72 @@ const NewJobForm: React.FC = () => {
     frequency: [],
     preferredTime: '',
   });
+
+  const [hasOverdueInvoice, setHasOverdueInvoice] = useState(false);
+  const [overdueInvoiceNum, setOverdueInvoiceNum] = useState<string | null>(null);
+
+  const parseInvoiceDate = (dateVal: any): Date | null => {
+    if (!dateVal) return null;
+    if (typeof dateVal.toDate === 'function') {
+      return dateVal.toDate();
+    }
+    if (typeof dateVal === 'number') {
+      return new Date(dateVal);
+    }
+    if (typeof dateVal === 'string') {
+      const match = dateVal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (match) {
+        return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+      }
+      const d = new Date(dateVal);
+      if (!isNaN(d.getTime())) {
+        return d;
+      }
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const companyId = formData.customer.netsuiteId || customer?.id || userData?.customer_id || userData?.parent_id;
+    if (!companyId || companyId === 'test_standalone_customer') {
+      setHasOverdueInvoice(false);
+      setOverdueInvoiceNum(null);
+      return;
+    }
+
+    const checkInvoices = async () => {
+      try {
+        const invoicesRef = collection(db, `companies/${companyId}/invoices`);
+        const querySnapshot = await getDocs(invoicesRef);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        let foundOverdue = false;
+        let overdueNum = null;
+
+        for (const docSnap of querySnapshot.docs) {
+          const data = docSnap.data();
+          const status = data.status || '';
+          const isPaid = status.toLowerCase() === 'paid in full' || status.toLowerCase() === 'paid';
+          if (!isPaid) {
+            const invoiceDate = parseInvoiceDate(data.date);
+            if (invoiceDate && invoiceDate < sevenDaysAgo) {
+              foundOverdue = true;
+              overdueNum = data.invoiceNum || docSnap.id;
+              break;
+            }
+          }
+        }
+
+        setHasOverdueInvoice(foundOverdue);
+        setOverdueInvoiceNum(overdueNum);
+      } catch (err) {
+        console.error("Error checking invoices:", err);
+      }
+    };
+
+    checkInvoices();
+  }, [formData.customer.netsuiteId, customer?.id, userData]);
 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [addressPredictions, setAddressPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
@@ -1688,6 +1756,7 @@ const NewJobForm: React.FC = () => {
   };
 
   const isRestricted = userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435');
+  const isBlockedByInvoice = hasOverdueInvoice;
 
   return (
     <div className="new-job-premium">
@@ -1824,7 +1893,21 @@ const NewJobForm: React.FC = () => {
               </div>
             )}
 
-            {!isRestricted && (
+            {isBlockedByInvoice && !isRestricted && (
+              <div style={{ background: 'rgba(232, 28, 46, 0.1)', border: '1px solid var(--brand-red)', borderRadius: '12px', padding: '16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ background: 'var(--brand-red)', color: 'white', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Lock size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: '0 0 4px 0', color: 'var(--ink)', fontSize: '16px', fontWeight: 600 }}>Booking Restricted</h3>
+                  <p style={{ margin: 0, color: 'var(--ink)', opacity: 0.8, fontSize: '14px' }}>
+                    You cannot book a job because you have an outstanding invoice (Invoice #{overdueInvoiceNum || ''}) that is not Paid In Full and was created more than 7 days ago.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!isRestricted && !isBlockedByInvoice && (
               <>
                 <div className="step-tracker">
                   {[1, 2].map((s) => (

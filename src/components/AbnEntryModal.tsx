@@ -31,8 +31,8 @@ const AbnEntryModal: React.FC = () => {
   // 1. Logged in customer role
   // 2. Completed free trials (trial_credits_balance <= 0)
   // 3. Doesn't have a valid ABN already
-  const hasFinishedTrials = userData?.role === 'customer' && 
-    typeof companyData?.trial_credits_balance === 'number' && 
+  const hasFinishedTrials = userData?.role === 'customer' &&
+    typeof companyData?.trial_credits_balance === 'number' &&
     companyData.trial_credits_balance <= 0;
 
   const hasValidAbn = companyData?.abn && validateABN(companyData.abn);
@@ -56,12 +56,12 @@ const AbnEntryModal: React.FC = () => {
 
     try {
       const customerId = userData.customer_id || '';
-      
+
       // 1. Sync with NetSuite API (using callNetSuiteProxy)
       // Base NetSuite update scriptlet URL
       const NETSUITE_API_URL = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2165&deploy=1&compid=1048144&ns-at=AAEJ7tMQjAoBac5NMovu7TgzYYUBTkw80-MtaJaID2gsRUcr0hs";
       const nsUrl = `${NETSUITE_API_URL}&leadID=${encodeURIComponent(customerId)}&custentity_abn=${encodeURIComponent(cleanedAbn)}&abn=${encodeURIComponent(cleanedAbn)}`;
-      
+
       console.log(`[ABN Sync] Syncing with NetSuite: ${nsUrl}`);
       const callNetSuite = httpsCallable(functions, 'callNetSuiteProxy');
       const nsResponse = await callNetSuite({ url: nsUrl });
@@ -88,7 +88,7 @@ const AbnEntryModal: React.FC = () => {
       <div className="abn-modal-content glass">
         <h2>Enter Australian ABN</h2>
         <p>
-          You have completed your 5 free trials. To continue booking jobs and using our premium services, please enter your valid 11-digit Australian Business Number (ABN).
+          You have completed your 5 free trials. To continue booking jobs and using our services, please enter your valid 11-digit Australian Business Number (ABN).
         </p>
 
         <form onSubmit={handleSubmit}>

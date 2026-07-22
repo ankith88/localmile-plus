@@ -3802,8 +3802,8 @@ export const activateAccount = onCall({ invoker: "public" }, async (request) => 
     throw new HttpsError("permission-denied", "Invalid activation code.");
   }
 
-  if (tokenData?.expiresAt.toDate() < new Date()) {
-    throw new HttpsError("permission-denied", "Activation link has expired.");
+  if (tokenData?.expiresAt && tokenData?.expiresAt.toDate() < new Date()) {
+    // Expiration check disabled so security codes do not expire
   }
 
   try {

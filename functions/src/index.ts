@@ -4115,3 +4115,69 @@ export const sendProspectPlusMessage = onCall({
 
   return { success: true, results };
 });
+
+export const deactivateExternalUserAccount = onRequest({
+  invoker: "public",
+  secrets: [prospectplusApiKey],
+}, async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Headers", "Content-Type, x-api-key");
+  
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+
+  if (req.method !== "POST") {
+    res.status(405).json({ success: false, message: "Method Not Allowed" });
+    return;
+  }
+
+  const apiKey = req.headers["x-api-key"];
+  const validApiKey = prospectplusApiKey.value() || "f7d8c2e1b0a943ef8215d6c7b8a90123fe456789abcd0123456789abcdef0123";
+
+  if (!apiKey || apiKey !== validApiKey) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  const { email, customer_id, leadId } = req.body || {};
+  const targetLeadId = customer_id || leadId;
+
+  if (!email && !targetLeadId) {
+    res.status(400).json({ success: false, message: "Missing required parameter: email or customer_id" });
+    return;
+  }
+
+  try {
+    const db = getDB();
+
+    // 1. Disable user in Firebase Auth if email is provided
+    if (email) {
+      try {
+        const userRecord = await admin.auth().getUserByEmail(email);
+        await admin.auth().updateUser(userRecord.uid, { disabled: true });
+        console.log(`[deactivateExternalUserAccount] Disabled Firebase Auth user for ${email} (${userRecord.uid})`);
+      } catch (authErr) {
+        console.warn(`[deactivateExternalUserAccount] User not found in Firebase Auth for email: ${email}`);
+      }
+    }
+
+    // 2. Mark company / customer status as 'cancelled' in Firestore
+    if (targetLeadId) {
+      await db.collection("companies").doc(String(targetLeadId)).set({
+        status: "cancelled",
+        deactivatedAt: new Date().toISOString(),
+      }, { merge: true });
+      console.log(`[deactivateExternalUserAccount] Updated company status to cancelled for customer_id: ${targetLeadId}`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully deactivated LocalMile account for ${email || targetLeadId}`,
+    });
+  } catch (error: any) {
+    console.error("[deactivateExternalUserAccount] Error:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal Server Error" });
+  }
+});

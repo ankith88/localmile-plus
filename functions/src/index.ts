@@ -435,6 +435,228 @@ export const onJobCreated = onDocumentCreated({
     } catch (error) {
       console.error("[onJobCreated] Error pushing created job:", error);
     }
+
+    // Send 1st Job Notification email to Account Manager via ProspectPlus Email API
+    if (uid) {
+      try {
+        const userRef = db.collection("users").doc(uid);
+        const userDoc = await userRef.get();
+
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          if (userData?.role === "customer" && !userData?.firstJobEmailSent) {
+            await userRef.update({ firstJobEmailSent: true });
+
+            console.log(`[onJobCreated] 1st job created for customer ${uid} (Lead: ${leadId}). Fetching lead details from ProspectPlus...`);
+
+            let amEmail = "";
+            let amName = "Account Manager";
+            let companyName = afterData.customer?.company || userData?.company || "Valued Customer";
+            let contactName = `${afterData.customer?.firstName || userData?.first_name || ''} ${afterData.customer?.lastName || userData?.last_name || ''}`.trim() || "Customer";
+            let contactEmail = afterData.customer?.email || userData?.email || "";
+
+            try {
+              const leadRes = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
+                headers: { "x-api-key": prospectplusApiKey.value() }
+              });
+              if (leadRes.ok) {
+                const leadData = await leadRes.json() as any;
+                amEmail = leadData.accountManagerEmail || leadData.accountManagerAssignedEmail || "";
+                if (!amEmail && leadData.accountManagerAssigned && leadData.accountManagerAssigned.includes("@")) {
+                  amEmail = leadData.accountManagerAssigned;
+                }
+                amName = leadData.accountManagerAssignedName || leadData.accountManagerAssigned || "Account Manager";
+                if (leadData.companyName) companyName = leadData.companyName;
+              }
+            } catch (leadErr) {
+              console.error("[onJobCreated] Error fetching lead details from ProspectPlus:", leadErr);
+            }
+
+            const targetRecipient = amEmail || "fiona.harrison@mailplus.com.au";
+            const ccRecipients = [
+              "fiona.harrison@mailplus.com.au",
+              "dispatcher@mailplus.com.au",
+              "luke.forbes@mailplus.com.au"
+            ];
+
+            const displayService = typeof afterData.service === "string"
+              ? afterData.service.replace(/-/g, " ").toUpperCase()
+              : "Standard Service";
+
+            const jobRefStr = jobId.substring(0, 8).toUpperCase();
+            const createdDateStr = new Date().toLocaleDateString("en-AU", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              year: "numeric"
+            });
+
+            const emailHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MailPlus - 1st Job Created</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet" />
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100% !important;
+      -webkit-text-size-adjust: 100%;
+      -ms-text-size-adjust: 100%;
+    }
+    img {
+      border: 0;
+      outline: none;
+      text-decoration: none;
+      -ms-interpolation-mode: bicubic;
+    }
+    @media screen and (max-width: 600px) {
+      .email-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 8px !important;
+      }
+      .content-cell {
+        padding: 30px 20px !important;
+      }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; width: 100% !important; background-color: #f4f7f8; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f7f8; padding: 20px 0; width: 100%;">
+    <tr>
+      <td align="center">
+        <table class="email-container" align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 24px rgba(9, 92, 123, 0.06);">
+          
+          <tr>
+            <td class="content-cell" style="padding: 45px 35px; color: #2d3748; font-size: 15px; line-height: 1.6; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+              
+              <div class="greeting" style="font-size: 20px; color: #095c7b; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.5px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                Hi ${amName},
+              </div>
+              
+              <p style="margin: 0 0 16px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                Great news! <strong>${companyName}</strong> has just booked their <strong>1st job</strong> on LocalMile.Plus.
+              </p>
+
+              <div style="background-color: #f8fafb; border-radius: 8px; padding: 20px 24px; margin: 24px 0; border: 1px solid #e2e8f0; border-left: 4px solid #095c7b;">
+                <div style="font-size: 14px; font-weight: 700; color: #095c7b; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Job Details</div>
+                
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-size: 14px; color: #2d3748;">
+                  <tr>
+                    <td style="padding: 6px 0; color: #718096; width: 140px; font-weight: 500;">Customer / Company:</td>
+                    <td style="padding: 6px 0; font-weight: 600; color: #1a202c;">${companyName}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #718096; font-weight: 500;">Contact Name:</td>
+                    <td style="padding: 6px 0; font-weight: 500; color: #2d3748;">${contactName}</td>
+                  </tr>
+                  ${contactEmail ? `<tr>
+                    <td style="padding: 6px 0; color: #718096; font-weight: 500;">Contact Email:</td>
+                    <td style="padding: 6px 0; color: #095c7b;">${contactEmail}</td>
+                  </tr>` : ''}
+                  <tr>
+                    <td style="padding: 6px 0; color: #718096; font-weight: 500;">Job Reference:</td>
+                    <td style="padding: 6px 0; font-weight: 600; font-family: monospace; color: #1a202c;">#${jobRefStr}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #718096; font-weight: 500;">Service Type:</td>
+                    <td style="padding: 6px 0; font-weight: 500; color: #2d3748;">${displayService}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #718096; font-weight: 500;">Route / Suburbs:</td>
+                    <td style="padding: 6px 0; font-weight: 500; color: #2d3748;">${pickupSuburb || 'Site'} &rarr; ${deliverySuburb || 'Destination'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; color: #718096; font-weight: 500;">Creation Date:</td>
+                    <td style="padding: 6px 0; font-weight: 500; color: #2d3748;">${createdDateStr}</td>
+                  </tr>
+                </table>
+              </div>
+              
+              <p style="margin: 0 0 16px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                As the assigned Account Manager, please feel free to reach out to the customer to support them through their onboarding and first delivery experience.
+              </p>
+
+              <p style="margin: 0 0 6px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                Kind regards,
+              </p>
+              
+              <p style="margin: 0; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                <strong style="font-weight: 700; color: #2d3748;">MailPlus Customer Service Team</strong>
+              </p>
+
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #095c7b; padding: 25px 20px; text-align: center;">
+              <img
+                src="https://lh3.googleusercontent.com/d/1hhLMkl8NmyhkhDT9jDg9AYIhbIRsjQQD"
+                alt="MailPlus Logo"
+                width="135"
+                style="display: inline-block; vertical-align: middle; border: 0; outline: none; text-decoration: none; max-height: 42px; width: auto;"
+              />
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #f8fafb; padding: 30px 20px; text-align: center; border-top: 1px solid #edf2f7; font-size: 12px; color: #718096; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5;">
+              <p style="margin: 0 0 6px; font-size: 12px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                <strong style="font-weight: 700; color: #4a5568;">MailPlus</strong> | Business logistics, made simple.
+              </p>
+              <p style="margin: 0 0 15px; font-size: 12px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                Powered by MailPlus Australia
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #a0aec0; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5;">
+                &copy; ${new Date().getFullYear()} MailPlus. All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+            console.log(`[onJobCreated] Sending 1st job email to ${targetRecipient} (CC: ${ccRecipients.join(', ')}) via ProspectPlus API...`);
+            const sendEmailRes = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': prospectplusApiKey.value()
+              },
+              body: JSON.stringify({
+                to: targetRecipient,
+                cc: ccRecipients,
+                subject: `1st Job Created: ${companyName} (Ref: #${jobRefStr})`,
+                html: emailHtml,
+                from: 'localmile@mailplus.com.au',
+                metadata: {
+                  customerId: leadId,
+                  jobId: jobId,
+                  type: '1st_job_created'
+                }
+              })
+            });
+
+            if (!sendEmailRes.ok) {
+              console.error("[onJobCreated] Failed to send 1st job email via ProspectPlus:", await sendEmailRes.text());
+            } else {
+              console.log("[onJobCreated] Successfully sent 1st job email via ProspectPlus API.");
+            }
+          }
+        }
+      } catch (emailErr) {
+        console.error("[onJobCreated] Error in 1st job email notification:", emailErr);
+      }
+    }
   } else {
     console.warn(`[onJobCreated] No leadId found for job ${jobId}. Skipping ProspectPlus API call.`);
   }

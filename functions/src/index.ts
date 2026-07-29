@@ -445,8 +445,6 @@ export const onJobCreated = onDocumentCreated({
         if (userDoc.exists) {
           const userData = userDoc.data();
           if (userData?.role === "customer" && !userData?.firstJobEmailSent) {
-            await userRef.update({ firstJobEmailSent: true });
-
             console.log(`[onJobCreated] 1st job created for customer ${uid} (Lead: ${leadId}). Fetching lead details from ProspectPlus...`);
 
             let amEmail = "";
@@ -456,20 +454,42 @@ export const onJobCreated = onDocumentCreated({
             let contactEmail = afterData.customer?.email || userData?.email || "";
 
             try {
-              const leadRes = await fetch(`https://prospectplus.com.au/api/leads/${leadId}`, {
-                headers: { "x-api-key": prospectplusApiKey.value() }
-              });
-              if (leadRes.ok) {
-                const leadData = await leadRes.json() as any;
-                amEmail = leadData.accountManagerEmail || leadData.accountManagerAssignedEmail || "";
-                if (!amEmail && leadData.accountManagerAssigned && leadData.accountManagerAssigned.includes("@")) {
-                  amEmail = leadData.accountManagerAssigned;
-                }
-                amName = leadData.accountManagerAssignedName || leadData.accountManagerAssigned || "Account Manager";
+              let prospectDb: admin.firestore.Firestore;
+              try {
+                prospectDb = admin.app("prospectplus").firestore();
+              } catch {
+                prospectDb = admin.initializeApp({
+                  projectId: "mailplus-outbound-leads-crm"
+                }, "prospectplus").firestore();
+              }
+
+              const leadDoc = await prospectDb.collection("leads").doc(leadId).get();
+              if (leadDoc.exists) {
+                const leadData = leadDoc.data() || {};
                 if (leadData.companyName) companyName = leadData.companyName;
+
+                const assignedAM = leadData.accountManagerAssigned || leadData.accountManager || "";
+                if (assignedAM) {
+                  if (assignedAM.includes("@")) {
+                    amEmail = assignedAM;
+                  } else {
+                    amName = assignedAM;
+                    const usersSnap = await prospectDb.collection("users").get();
+                    usersSnap.forEach((uDoc) => {
+                      const uData = uDoc.data();
+                      const fullName = `${uData.firstName || ''} ${uData.lastName || ''}`.trim();
+                      if (fullName.toLowerCase() === assignedAM.trim().toLowerCase() && uData.email) {
+                        amEmail = uData.email;
+                        if (uData.firstName) {
+                          amName = uData.firstName;
+                        }
+                      }
+                    });
+                  }
+                }
               }
             } catch (leadErr) {
-              console.error("[onJobCreated] Error fetching lead details from ProspectPlus:", leadErr);
+              console.error("[onJobCreated] Error fetching lead details from ProspectPlus Firestore:", leadErr);
             }
 
             const targetRecipient = amEmail || "fiona.harrison@mailplus.com.au";
@@ -490,6 +510,25 @@ export const onJobCreated = onDocumentCreated({
               month: "long",
               year: "numeric"
             });
+
+            let jobDateStr = "To be confirmed";
+            if (afterData.date) {
+              try {
+                const parsedDate = new Date(afterData.date.includes("T") ? afterData.date : `${afterData.date}T00:00:00`);
+                if (!isNaN(parsedDate.getTime())) {
+                  jobDateStr = parsedDate.toLocaleDateString("en-AU", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric"
+                  });
+                } else {
+                  jobDateStr = afterData.date;
+                }
+              } catch (e) {
+                jobDateStr = afterData.date;
+              }
+            }
 
             const emailHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -572,6 +611,10 @@ export const onJobCreated = onDocumentCreated({
                     <td style="padding: 6px 0; font-weight: 500; color: #2d3748;">${pickupSuburb || 'Site'} &rarr; ${deliverySuburb || 'Destination'}</td>
                   </tr>
                   <tr>
+                    <td style="padding: 6px 0; color: #718096; font-weight: 500;">Scheduled Job Date:</td>
+                    <td style="padding: 6px 0; font-weight: 600; color: #1a202c;">${jobDateStr}</td>
+                  </tr>
+                  <tr>
                     <td style="padding: 6px 0; color: #718096; font-weight: 500;">Creation Date:</td>
                     <td style="padding: 6px 0; font-weight: 500; color: #2d3748;">${createdDateStr}</td>
                   </tr>
@@ -634,7 +677,7 @@ export const onJobCreated = onDocumentCreated({
               },
               body: JSON.stringify({
                 to: targetRecipient,
-                cc: ccRecipients,
+                cc: ccRecipients.join(','),
                 subject: `1st Job Created: ${companyName} (Ref: #${jobRefStr})`,
                 html: emailHtml,
                 from: 'localmile@mailplus.com.au',
@@ -649,6 +692,7 @@ export const onJobCreated = onDocumentCreated({
             if (!sendEmailRes.ok) {
               console.error("[onJobCreated] Failed to send 1st job email via ProspectPlus:", await sendEmailRes.text());
             } else {
+              await userRef.update({ firstJobEmailSent: true });
               console.log("[onJobCreated] Successfully sent 1st job email via ProspectPlus API.");
             }
           }

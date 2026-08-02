@@ -385,10 +385,18 @@ const CustomerHub: React.FC = () => {
                                                      const city = addr.city || '';
                                                      const state = addr.state || '';
                                                      const zip = addr.zip || '';
+                                                     const partnerLoc = addr.partnerLocation || '';
                                                      const addrStr = [street, city, state, zip].filter(p => p && String(p).trim()).join(', ');
                                                      return (
-                                                        <div key={idx} className="billing-address-badge" title={addrStr}>
-                                                           {addrStr || 'No Address Details'}
+                                                        <div key={idx} className="billing-address-badge" title={partnerLoc ? `${partnerLoc} - ${addrStr}` : addrStr}>
+                                                           {partnerLoc && (
+                                                              <div style={{ fontWeight: 600, color: 'var(--ink)', fontSize: '0.78rem', marginBottom: '2px' }}>
+                                                                 {partnerLoc}
+                                                              </div>
+                                                           )}
+                                                           <div style={{ color: partnerLoc ? 'var(--ink-soft)' : 'inherit' }}>
+                                                              {addrStr || 'No Address Details'}
+                                                           </div>
                                                         </div>
                                                      );
                                                   })}
@@ -474,10 +482,18 @@ const CustomerHub: React.FC = () => {
                                                      const city = addr.city || '';
                                                      const state = addr.state || '';
                                                      const zip = addr.zip || '';
+                                                     const partnerLoc = addr.partnerLocation || '';
                                                      const addrStr = [street, city, state, zip].filter(p => p && String(p).trim()).join(', ');
                                                      return (
-                                                        <div key={idx} className="billing-address-badge" title={addrStr}>
-                                                           {addrStr || 'No Address Details'}
+                                                        <div key={idx} className="billing-address-badge" title={partnerLoc ? `${partnerLoc} - ${addrStr}` : addrStr}>
+                                                           {partnerLoc && (
+                                                              <div style={{ fontWeight: 600, color: 'var(--ink)', fontSize: '0.78rem', marginBottom: '2px' }}>
+                                                                 {partnerLoc}
+                                                              </div>
+                                                           )}
+                                                           <div style={{ color: partnerLoc ? 'var(--ink-soft)' : 'inherit' }}>
+                                                              {addrStr || 'No Address Details'}
+                                                           </div>
                                                         </div>
                                                      );
                                                   })}
@@ -673,9 +689,8 @@ const CustomerHub: React.FC = () => {
            border-radius: 8px;
            color: var(--ink-soft);
            border: 1px solid rgba(26, 61, 51, 0.05);
-           white-space: nowrap;
-           overflow: hidden;
-           text-overflow: ellipsis;
+           white-space: normal;
+           word-break: break-word;
          }
          .customer-hub-premium { min-height: 100vh; background: var(--offwhite); padding: 40px 24px 100px; position: relative; overflow-x: hidden; }
         .mesh-bg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; filter: blur(100px); opacity: 0.5; }

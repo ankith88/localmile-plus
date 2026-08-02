@@ -260,11 +260,30 @@ const RequestPage: React.FC = () => {
         const jobsSnap = await getDocs(jobsQ);
         
         for (const jobDoc of jobsSnap.docs) {
+          let cancelCustomerId = request.netsuiteCustomerId || request.customer?.netsuiteId || "";
+          const pId = request.parent_id || parent?.id || userData?.parent_id || "";
+          if (userData?.role === 'parent' && pId) {
+            try {
+              if (request.customer?.company) {
+                const custQ = query(collection(db, `companies/${pId}/customers`), where('companyName', '==', request.customer.company));
+                const custSnap = await getDocs(custQ);
+                if (!custSnap.empty) {
+                  const cData = custSnap.docs[0].data();
+                  if (cData.companyId || cData.customerInternalId) {
+                    cancelCustomerId = cData.companyId || cData.customerInternalId;
+                  }
+                }
+              }
+            } catch (e) {
+              console.error("Failed to fetch sub-customer companyId for cancel:", e);
+            }
+          }
+
           const params = new URLSearchParams({
             job_id: jobDoc.id,
             request_id: id,
-            customer_id: request.netsuiteCustomerId || request.customer?.netsuiteId || "",
-            parent_id: request.parent_id || ""
+            customer_id: cancelCustomerId,
+            parent_id: pId
           });
 
           await fetch(`${NETSUITE_API}&${params.toString()}`).catch(e => console.error("NetSuite Instance Cancel Error:", e));
@@ -342,7 +361,7 @@ const RequestPage: React.FC = () => {
         let jobDocRef;
         const today = formatDateForInput(new Date());
         let finalJobId = "";
-        const netsuiteCustomerId = request.netsuiteCustomerId || request.customer?.netsuiteId || "";
+        let netsuiteCustomerId = request.netsuiteCustomerId || request.customer?.netsuiteId || "";
         
         setAcceptProgress(15);
         setAcceptStatus("Analyzing service requirements...");
@@ -363,6 +382,9 @@ const RequestPage: React.FC = () => {
               const custSnap = await getDocs(custQ);
               if (!custSnap.empty) {
                 const c = custSnap.docs[0].data();
+                if (userData?.role === 'parent' && (c.companyId || c.customerInternalId)) {
+                  netsuiteCustomerId = c.companyId || c.customerInternalId;
+                }
                 if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
                   serviceInternalId = c.lpoServiceAMPOInternalID || '';
                   serviceRate = c.lpoServiceAMPORate || '';
@@ -440,6 +462,9 @@ const RequestPage: React.FC = () => {
             const custSnap = await getDocs(custQ);
             if (!custSnap.empty) {
               const c = custSnap.docs[0].data();
+              if (userData?.role === 'parent' && (c.companyId || c.customerInternalId)) {
+                netsuiteCustomerId = c.companyId || c.customerInternalId;
+              }
               if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
                 serviceInternalId = c.lpoServiceAMPOInternalID || '';
                 serviceRate = c.lpoServiceAMPORate || '';
@@ -646,10 +671,30 @@ const RequestPage: React.FC = () => {
       // NetSuite Integration for Rejection Alert
       const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2532&deploy=1&compid=1048144&ns-at=AAEJ7tMQboW4e_4uOdEOkAJSDSB2d-67rLJ9FX2eFCl6Rfo5vSY";
       
+      let rejectCustomerId = request.netsuiteCustomerId || request.customer?.netsuiteId || "";
+      const pId = parent?.id || request.parent_id || userData?.parent_id || "";
+      if (userData?.role === 'parent' && pId && request.customer?.company) {
+        try {
+          const custQ = query(
+            collection(db, `companies/${pId}/customers`),
+            where('companyName', '==', request.customer.company)
+          );
+          const custSnap = await getDocs(custQ);
+          if (!custSnap.empty) {
+            const cData = custSnap.docs[0].data();
+            if (cData.companyId || cData.customerInternalId) {
+              rejectCustomerId = cData.companyId || cData.customerInternalId;
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch customer companyId for reject:", e);
+        }
+      }
+
       const params = new URLSearchParams({
         action: 'reject',
         request_id: request.id,
-        customer_id: request.netsuiteCustomerId || request.customer?.netsuiteId || "",
+        customer_id: rejectCustomerId,
         parent_id: parent?.id || request.parent_id || "",
         reason: rejectReason,
         notes: rejectNotes.trim()

@@ -337,17 +337,65 @@ const Dashboard: React.FC = () => {
       if (job) {
         const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2659&deploy=1&compid=1048144&ns-at=AAEJ7tMQotYIcRX7i2nlMeRMASDYV0VaDuDV06BPqb9AWt3leUU";
         
-        const params = new URLSearchParams({
-          job_id: id,
-          request_id: job.originalRequestId || "",
-          customer_id: job.netsuiteCustomerId || job.customer?.netsuiteId || "",
-          parent_id: job.parent_id || ""
-        });
+        let cancelCustomerId = job.netsuiteCustomerId || job.customer?.netsuiteId || "";
+        const pId = job.parent_id || userData?.parent_id || "";
+        if (userData?.role === 'parent' && pId && job.customer?.company) {
+          try {
+            const custQ = query(collection(db, `companies/${pId}/customers`), where('companyName', '==', job.customer.company));
+            getDocs(custQ).then(custSnap => {
+              if (!custSnap.empty) {
+                const cData = custSnap.docs[0].data();
+                if (cData.companyId || cData.customerInternalId) {
+                  cancelCustomerId = cData.companyId || cData.customerInternalId;
+                }
+              }
+              const params = new URLSearchParams({
+                job_id: id,
+                request_id: job.originalRequestId || "",
+                customer_id: cancelCustomerId,
+                parent_id: job.parent_id || ""
+              });
+              fetch(`${NETSUITE_API}&${params.toString()}`)
+                .then(res => res.json())
+                .then(data => console.log("NetSuite Job Cancellation Sync:", data))
+                .catch(err => console.error("NetSuite Job Cancellation Error:", err));
+            }).catch(() => {
+              const params = new URLSearchParams({
+                job_id: id,
+                request_id: job.originalRequestId || "",
+                customer_id: cancelCustomerId,
+                parent_id: job.parent_id || ""
+              });
+              fetch(`${NETSUITE_API}&${params.toString()}`)
+                .then(res => res.json())
+                .then(data => console.log("NetSuite Job Cancellation Sync:", data))
+                .catch(err => console.error("NetSuite Job Cancellation Error:", err));
+            });
+          } catch {
+            const params = new URLSearchParams({
+              job_id: id,
+              request_id: job.originalRequestId || "",
+              customer_id: cancelCustomerId,
+              parent_id: job.parent_id || ""
+            });
+            fetch(`${NETSUITE_API}&${params.toString()}`)
+              .then(res => res.json())
+              .then(data => console.log("NetSuite Job Cancellation Sync:", data))
+              .catch(err => console.error("NetSuite Job Cancellation Error:", err));
+          }
+        } else {
+          const params = new URLSearchParams({
+            job_id: id,
+            request_id: job.originalRequestId || "",
+            customer_id: cancelCustomerId,
+            parent_id: job.parent_id || ""
+          });
 
-        fetch(`${NETSUITE_API}&${params.toString()}`)
-          .then(res => res.json())
-          .then(data => console.log("NetSuite Job Cancellation Sync:", data))
-          .catch(err => console.error("NetSuite Job Cancellation Error:", err));
+          fetch(`${NETSUITE_API}&${params.toString()}`)
+            .then(res => res.json())
+            .then(data => console.log("NetSuite Job Cancellation Sync:", data))
+            .catch(err => console.error("NetSuite Job Cancellation Error:", err));
+        }
       }
       
       await deleteDoc(doc(db, 'jobs', id));

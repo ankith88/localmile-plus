@@ -58,6 +58,7 @@ interface JobData {
     billingZip?: string;
     billingLatitude?: string | number | null;
     billingLongitude?: string | number | null;
+    billingPartnerLocation?: string;
   };
   service: ServiceType;
   serviceInternalId?: string;
@@ -674,7 +675,8 @@ const NewJobForm: React.FC = () => {
         billingState: defaultBillingAddress?.state || '',
         billingZip: defaultBillingAddress?.zip || '',
         billingLatitude: defaultBillingAddress?.latitude || null,
-        billingLongitude: defaultBillingAddress?.longitude || null
+        billingLongitude: defaultBillingAddress?.longitude || null,
+        billingPartnerLocation: defaultBillingAddress?.partnerLocation || ''
       },
       service: defaultService,
       serviceInternalId: defaultId,
@@ -1143,8 +1145,9 @@ const NewJobForm: React.FC = () => {
           { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
       } else if (data.service === 'AMPO') {
+        const partnerLocName = (data.customer as any).billingPartnerLocation || (data.customer as any).billingAddresses?.[0]?.partnerLocation;
         const poBoxLoc = {
-          name: `${data.customer.company} - PO Box`,
+          name: (partnerLocName && String(partnerLocName).trim()) ? String(partnerLocName).trim() : `${data.customer.company} - PO Box`,
           address: data.customer.billingAddress1 || data.customer.billingStreet || '',
           suburb: data.customer.billingCity || '',
           state: data.customer.billingState || '',
@@ -1439,6 +1442,14 @@ const NewJobForm: React.FC = () => {
         localStorage.removeItem('edit_request_draft');
       } else {
         const isDirectBook = (userData?.role === 'customer' || userData?.role === 'parent') && !formData.preferredTime;
+        let parentSubCustomerId = "";
+        if (userData?.role === 'parent') {
+          const matchedCust = allCustomers.find(c =>
+            (c.companyName || c.company_name || c.company || '').toLowerCase() === (formData.customer.company || '').toLowerCase()
+          );
+          parentSubCustomerId = formData.customer.netsuiteId || nsResult.customerInternalId || matchedCust?.companyId || matchedCust?.customerInternalId || matchedCust?.id || "";
+        }
+
         const cleanData = JSON.parse(JSON.stringify({
           ...formData,
           customer: finalCustomerData,
@@ -1446,10 +1457,10 @@ const NewJobForm: React.FC = () => {
           stops,
           recipient: userData?.role === 'customer' ? recipientData : null,
           parent_id: parent?.id || userData?.parent_id || "",
-          customer_id: customer?.id || userData?.customer_id || "",
+          customer_id: userData?.role === 'parent' ? (parentSubCustomerId || "") : (customer?.id || userData?.customer_id || ""),
           uid: userData?.uid,
           isExistingCustomer,
-          netsuiteCustomerId: nsResult.customerInternalId || formData.customer.netsuiteId || null,
+          netsuiteCustomerId: userData?.role === 'parent' ? (parentSubCustomerId || nsResult.customerInternalId || formData.customer.netsuiteId || null) : (nsResult.customerInternalId || formData.customer.netsuiteId || null),
           status: isDirectBook ? 'scheduled' : initialRequestStatus,
           skippedDates: [],
           recurrenceStatus: 'active',
@@ -1633,7 +1644,9 @@ const NewJobForm: React.FC = () => {
               const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2650&deploy=1&compid=1048144&ns-at=AAEJ7tMQwOy-VLSQwqUcq11USKGh9PAqMVQtMt6Mu_VXgYTiUyM";
               
               const parentId = parent?.id || userData?.parent_id || "";
-              const customerIdVal = userData?.customer_id || "";
+              const customerIdVal = userData?.role === 'parent'
+                ? (parentSubCustomerId || nsResult.customerInternalId || formData.customer.netsuiteId || "")
+                : (userData?.customer_id || "");
 
               const params = new URLSearchParams({
                 job_id: directJobId,
@@ -1667,9 +1680,25 @@ const NewJobForm: React.FC = () => {
                 is_free_job: isFreeJob.toString()
               });
 
-              const res = await fetch(`${NETSUITE_API}&${params.toString()}`);
-              const data = await res.json();
-              console.log("NetSuite Script 2650 Response:", data);
+              const fullUrl2650 = `${NETSUITE_API}&${params.toString()}`;
+              try {
+                const res = await fetch(fullUrl2650);
+                if (res.ok) {
+                  const data = await res.json();
+                  console.log("NetSuite Script 2650 Response:", data);
+                } else {
+                  console.warn("NetSuite Script 2650 non-200 response, trying no-cors mode:", res.status);
+                  await fetch(fullUrl2650, { mode: 'no-cors' });
+                }
+              } catch (fetchErr) {
+                console.warn("NetSuite 2650 CORS/Network error, falling back to no-cors mode:", fetchErr);
+                try {
+                  await fetch(fullUrl2650, { mode: 'no-cors' });
+                  console.log("NetSuite Script 2650 dispatched via no-cors mode.");
+                } catch (noCorsErr) {
+                  console.error("NetSuite 2650 no-cors fallback error:", noCorsErr);
+                }
+              }
             } catch (e) {
               console.error("NetSuite 2650 sync failed:", e);
             }
@@ -1684,19 +1713,40 @@ const NewJobForm: React.FC = () => {
 
         // 3. Second NetSuite API (Job Confirmation with Request ID)
         try {
-          let confirmResponse;
+          let confirmUrl = '';
           if (userData?.role === 'customer') {
             const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2646&deploy=1&compid=1048144&ns-at=AAEJ7tMQGy_V6q4A1r9Jg30iQSZhzKVAi6M4UjCI17mvD37SfLM";
             const customer_id = userData?.customer_id || "";
-            confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&customer_id=${customer_id}`);
+            confirmUrl = `${SECOND_NETSUITE_API}&request_id=${finalRequestId}&customer_id=${customer_id}`;
           } else {
             const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2528&deploy=1&compid=1048144&ns-at=AAEJ7tMQM_E8dKF2qjDMy9ESy5q883g7xrb8uKwfgGOku62wheU";
-            const customer_id = nsResult.customerInternalId || formData.customer.netsuiteId || "";
-            confirmResponse = await fetch(`${SECOND_NETSUITE_API}&request_id=${finalRequestId}&parent_id=${parent?.id || ""}&customer_id=${customer_id}`);
+            let customer_id = nsResult.customerInternalId || formData.customer.netsuiteId || "";
+            if (userData?.role === 'parent') {
+              const matchedCust = allCustomers.find(c =>
+                (c.companyName || c.company_name || c.company || '').toLowerCase() === (formData.customer.company || '').toLowerCase()
+              );
+              customer_id = formData.customer.netsuiteId || nsResult.customerInternalId || matchedCust?.companyId || matchedCust?.customerInternalId || matchedCust?.id || "";
+            }
+            confirmUrl = `${SECOND_NETSUITE_API}&request_id=${finalRequestId}&parent_id=${parent?.id || ""}&customer_id=${customer_id}`;
           }
-          const confirmResult = await confirmResponse.json();
-          if (confirmResult.success && confirmResult.message) {
-            setNetsuiteMessage(confirmResult.message);
+
+          try {
+            const confirmResponse = await fetch(confirmUrl);
+            if (confirmResponse.ok) {
+              const confirmResult = await confirmResponse.json();
+              if (confirmResult.success && confirmResult.message) {
+                setNetsuiteMessage(confirmResult.message);
+              }
+            } else {
+              await fetch(confirmUrl, { mode: 'no-cors' });
+            }
+          } catch (fetchErr) {
+            console.warn("Secondary NetSuite sync CORS/Network error, falling back to no-cors mode:", fetchErr);
+            try {
+              await fetch(confirmUrl, { mode: 'no-cors' });
+            } catch (noCorsErr) {
+              console.error("Secondary NetSuite no-cors fallback error:", noCorsErr);
+            }
           }
         } catch (e) {
           console.error("Secondary NetSuite sync failed", e);
@@ -2285,7 +2335,8 @@ const NewJobForm: React.FC = () => {
                                     billingState: serviceObj?.billingAddress?.state || '',
                                     billingZip: serviceObj?.billingAddress?.zip || '',
                                     billingLatitude: serviceObj?.billingAddress?.latitude || null,
-                                    billingLongitude: serviceObj?.billingAddress?.longitude || null
+                                    billingLongitude: serviceObj?.billingAddress?.longitude || null,
+                                    billingPartnerLocation: serviceObj?.billingAddress?.partnerLocation || ''
                                   }
                                 }));
                               }}
@@ -2294,7 +2345,7 @@ const NewJobForm: React.FC = () => {
                               {availableServices.map(s => {
                                 const billingAddr = (s as any).billingAddress;
                                 const addressLabel = s.id === 'AMPO' && billingAddr
-                                  ? `AMPO - ${billingAddr.address1 || billingAddr.street || billingAddr.city}`
+                                  ? `AMPO - ${billingAddr.partnerLocation || billingAddr.address1 || billingAddr.street || billingAddr.city}`
                                   : s.id;
                                 return (
                                   <option key={s.internalId} value={s.internalId}>
@@ -2309,7 +2360,11 @@ const NewJobForm: React.FC = () => {
                           {(() => {
                             const parentLocStr = `${(parent as any)?.address1 || (parent as any)?.address || ''} ${(parent as any)?.street || ''}, ${(parent as any)?.city || (parent as any)?.location || (parent as any)?.suburb || ''} ${(parent as any)?.state || ''} ${(parent as any)?.zip || (parent as any)?.postcode || ''}`.trim();
                             const customerLocStr = `${formData.customer.address || ''}, ${formData.customer.suburb || ''} ${formData.customer.state || ''} ${formData.customer.postcode || ''}`.trim();
-                            const poBoxStr = `${formData.customer.billingAddress1 || formData.customer.billingStreet || ''}, ${formData.customer.billingCity || ''} ${formData.customer.billingState || ''} ${formData.customer.billingZip || ''}`.trim();
+                            const partnerLocStr = (formData.customer as any).billingPartnerLocation || '';
+                            const rawPoBoxStr = `${formData.customer.billingAddress1 || formData.customer.billingStreet || ''}, ${formData.customer.billingCity || ''} ${formData.customer.billingState || ''} ${formData.customer.billingZip || ''}`.trim();
+                            const poBoxStr = partnerLocStr
+                              ? `${partnerLocStr} (${rawPoBoxStr.replace(/^,\s*/, '')})`
+                              : rawPoBoxStr;
 
                             let pickup = '';
                             let delivery = '';

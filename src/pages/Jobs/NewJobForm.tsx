@@ -16,7 +16,8 @@ import {
   Database,
   Sparkles,
   Search,
-  Circle
+  Circle,
+  AlertTriangle
 } from 'lucide-react';
 import { useJsApiLoader, GoogleMap, Marker, Polyline } from '@react-google-maps/api';
 import { formatDateForInput, getDefaultBookingDate, parseLocalDate, getDayName } from '../../utils/scheduling';
@@ -250,7 +251,7 @@ const NewJobForm: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [animating, setAnimating] = useState(false);
-  const [netsuiteMessage, setNetsuiteMessage] = useState<string | null>(null);
+  const [netsuiteMessage] = useState<string | null>(null);
   const [customerStatus, setCustomerStatus] = useState<string | null>(null);
   const [isAwaitingTC, setIsAwaitingTC] = useState(false);
   const [isExistingCustomer, setIsExistingCustomer] = useState(false);
@@ -281,6 +282,56 @@ const NewJobForm: React.FC = () => {
   });
 
   const [trialCredits, setTrialCredits] = useState<number | null>(null);
+
+  const notifiedMissingPoBoxRef = useRef<Set<string>>(new Set());
+
+  const triggerMissingPoBoxNotification = async (serviceName: string, serviceId?: string) => {
+    const notifKey = `${formData.customer.company}_${serviceId || serviceName}`;
+    if (notifiedMissingPoBoxRef.current.has(notifKey)) return;
+    notifiedMissingPoBoxRef.current.add(notifKey);
+
+    const subcustomerName = formData.customer.company || 'Subcustomer';
+    const parentName = parent?.name || companyData?.name || (userData as any)?.companyName || 'Parent Account';
+    const userEmail = userData?.email || 'Parent User';
+    const recipients = ["mailplusit@mailplus.com.au", "popie.popie@mailplus.com.au"];
+    const subject = `ACTION REQUIRED: Missing PO Box Details for ${subcustomerName} (${serviceName || 'AMPO Service'})`;
+
+    const messageText = `A user logged in under parent account '${parentName}' (${userEmail}) attempted to book a job for ${serviceName || 'AMPO Service'}, but this subcustomer (${subcustomerName}) does not have linked PO Box address details in the system.
+
+Please create/add the new PO Box address details for ${subcustomerName} in NetSuite/system and resync so that the user can create jobs for this service.`;
+
+    try {
+      const notifyFn = httpsCallable(functions, 'notifyMissingPoBox');
+      await notifyFn({
+        subcustomerName,
+        subcustomerId: formData.customer.netsuiteId || '',
+        parentName,
+        parentId: parent?.id || userData?.parent_id || '',
+        serviceName: serviceName || 'AMPO Service',
+        userEmail
+      });
+      console.log(`[Missing PO Box Notification] Dispatched email via notifyMissingPoBox for ${subcustomerName} (${serviceName})`);
+    } catch (err) {
+      console.warn("[Missing PO Box Notification] notifyMissingPoBox not deployed yet, falling back to sendSupportEmail:", err);
+      try {
+        const supportFn = httpsCallable(functions, 'sendSupportEmail');
+        await supportFn({
+          to: recipients,
+          subject: subject,
+          message: messageText,
+          metadata: {
+            senderName: parentName,
+            senderEmail: userEmail,
+            companyName: subcustomerName,
+            serviceType: serviceName
+          }
+        });
+        console.log(`[Missing PO Box Notification] Dispatched email via sendSupportEmail fallback for ${subcustomerName} (${serviceName})`);
+      } catch (fallbackErr) {
+        console.error("[Missing PO Box Notification] Fallback sendSupportEmail failed:", fallbackErr);
+      }
+    }
+  };
 
 
 
@@ -575,18 +626,22 @@ const NewJobForm: React.FC = () => {
     if (userData?.role === 'parent' && Array.isArray(servicesListRaw)) {
       let ampoCount = 0;
       servicesListRaw.forEach((s: any) => {
-        let billingAddress = null;
-        if (s.name === 'AMPO' && Array.isArray(c.billingAddresses)) {
-          if (c.billingAddresses[ampoCount]) {
+        let billingAddress = s.billingAddress || s.address || s.poBoxAddress || null;
+        const normName = (s.name || '').toLowerCase();
+        const isPoBoxService = normName.includes('ampo') || normName === 'lpo-to-site' || normName === 'australia post-to-site';
+
+        if (isPoBoxService) {
+          if (!billingAddress && Array.isArray(c.billingAddresses) && c.billingAddresses[ampoCount]) {
             billingAddress = c.billingAddresses[ampoCount];
           }
           ampoCount++;
         }
+
         services.push({
           id: s.name,
           internalId: s.id,
           rate: s.rate || '10.00',
-          billingAddress: billingAddress
+          billingAddress: isPoBoxService ? billingAddress : null
         });
       });
     } else {
@@ -640,6 +695,15 @@ const NewJobForm: React.FC = () => {
 
     const useParentPrefill = userData?.role === 'parent' && !hasContactDetails;
 
+    const bAddr = defaultBillingAddress;
+    const bStreet = bAddr?.address1 || bAddr?.street || bAddr?.address || '';
+    const bCity = bAddr?.city || bAddr?.suburb || '';
+    const bState = bAddr?.state || '';
+    const bZip = bAddr?.zip || bAddr?.postcode || '';
+    const bLat = bAddr?.latitude || bAddr?.lat || null;
+    const bLng = bAddr?.longitude || bAddr?.lng || null;
+    const bPartner = bAddr?.partnerLocation || '';
+
     setFormData({
       ...formData,
       customer: {
@@ -656,27 +720,36 @@ const NewJobForm: React.FC = () => {
         phone: useParentPrefill 
           ? (userData?.mobile || '') 
           : (c.customerPhone || c.phone || ''),
-        address: c.address1 || c.address?.street || '',
-        suburb: c.city || c.address?.suburb || '',
+        address: (() => {
+          const addr1 = c.address1 || c.addressLine1 || (typeof c.address === 'object' ? c.address?.address1 : '') || '';
+          const street = c.street || c.streetAddress || (typeof c.address === 'object' ? c.address?.street : '') || '';
+          if (addr1 && street && !addr1.toLowerCase().includes(street.toLowerCase())) {
+            return `${addr1} ${street}`.trim();
+          }
+          return addr1 || street || (typeof c.address === 'string' && c.address !== '[object Object]' ? c.address : '') || '';
+        })(),
+        suburb: c.city || c.suburb || c.address?.suburb || '',
         state: c.state || c.address?.state || '',
-        postcode: c.zip || c.address?.postcode || '',
+        postcode: c.zip || c.postcode || c.address?.postcode || '',
         instructions: c.instructions || '',
         netsuiteId: c.companyId || c.customerInternalId || undefined,
-        coordinates: c.coordinates || undefined,
-        lpoServicePMPOInternalID: c.lpoServicePMPOInternalID || null,
-        lpoServicePMPORate: c.lpoServicePMPORate || null,
-        lpoServiceAMPOInternalID: c.lpoServiceAMPOInternalID || null,
-        lpoServiceAMPORate: c.lpoServiceAMPORate || null,
-        lpoServiceH2HInternalID: c.lpoServiceH2HInternalID || null,
-        lpoServiceH2HRate: c.lpoServiceH2HRate || null,
-        billingAddress1: defaultBillingAddress?.address1 || '',
-        billingStreet: defaultBillingAddress?.street || '',
-        billingCity: defaultBillingAddress?.city || '',
-        billingState: defaultBillingAddress?.state || '',
-        billingZip: defaultBillingAddress?.zip || '',
-        billingLatitude: defaultBillingAddress?.latitude || null,
-        billingLongitude: defaultBillingAddress?.longitude || null,
-        billingPartnerLocation: defaultBillingAddress?.partnerLocation || ''
+        coordinates: (c.latitude && c.longitude) 
+          ? { lat: parseFloat(c.latitude), lng: parseFloat(c.longitude) } 
+          : (c.coordinates || undefined),
+        lpoServicePMPOInternalID: userData?.role === 'parent' ? undefined : (c.lpoServicePMPOInternalID || null),
+        lpoServicePMPORate: userData?.role === 'parent' ? undefined : (c.lpoServicePMPORate || null),
+        lpoServiceAMPOInternalID: userData?.role === 'parent' ? undefined : (c.lpoServiceAMPOInternalID || null),
+        lpoServiceAMPORate: userData?.role === 'parent' ? undefined : (c.lpoServiceAMPORate || null),
+        lpoServiceH2HInternalID: userData?.role === 'parent' ? undefined : (c.lpoServiceH2HInternalID || null),
+        lpoServiceH2HRate: userData?.role === 'parent' ? undefined : (c.lpoServiceH2HRate || null),
+        billingAddress1: bStreet,
+        billingStreet: bStreet,
+        billingCity: bCity,
+        billingState: bState,
+        billingZip: bZip,
+        billingLatitude: bLat,
+        billingLongitude: bLng,
+        billingPartnerLocation: bPartner
       },
       service: defaultService,
       serviceInternalId: defaultId,
@@ -876,8 +949,14 @@ const NewJobForm: React.FC = () => {
           if (compDoc.exists()) {
             const data = compDoc.data();
             
-            const territoryArray = data.franchiseeTerritoryJSON;
-            const isValid = Array.isArray(territoryArray) && territoryArray.includes(searchAddress);
+            let territoryArray = data.franchiseeTerritoryJSON;
+            if (typeof territoryArray === 'string') {
+              try {
+                territoryArray = JSON.parse(territoryArray);
+              } catch (e) {}
+            }
+            const searchUpper = searchAddress.trim().toUpperCase();
+            const isValid = Array.isArray(territoryArray) && territoryArray.some((t: string) => String(t).trim().toUpperCase() === searchUpper);
 
             if (!isValid && userSuburb !== "" && !isAusPostPrefilled) {
               setValidationError(`Sorry, the address ${searchAddress} is outside our coverage.`);
@@ -1108,18 +1187,40 @@ const NewJobForm: React.FC = () => {
       lng: recipientData.coordinates?.lng ? parseFloat(recipientData.coordinates.lng as any) : undefined
     };
 
-    const rawParentLat = parentData?.latitude ?? parentData?.coordinates?.lat;
-    const rawParentLng = parentData?.longitude ?? parentData?.coordinates?.lng;
+    const pData = parentData || parent || companyData;
+
+    const getParentStreetAddress = (p: any) => {
+      if (!p) return '';
+      const addr1 = p.address1 || p.addressLine1 || p.shippingAddress1 || (typeof p.address === 'object' ? p.address?.address1 : '') || '';
+      const street = p.street || p.streetAddress || p.shippingStreet || (typeof p.address === 'object' ? p.address?.street : '') || '';
+      if (addr1 && street && !addr1.toLowerCase().includes(street.toLowerCase())) {
+        return `${addr1} ${street}`.trim();
+      }
+      if (addr1) return addr1;
+      if (street) return street;
+      if (typeof p.address === 'string' && p.address !== '[object Object]') return p.address;
+      return '';
+    };
+
+    const rawParentLat = pData?.latitude ?? pData?.coordinates?.lat;
+    const rawParentLng = pData?.longitude ?? pData?.coordinates?.lng;
 
     const parentLoc = {
-      name: parentData?.name || '',
-      address: parentData?.address1 || parentData?.address || '',
-      suburb: parentData?.city || parentData?.location || parentData?.suburb || '',
-      state: parentData?.state || 'NSW',
-      postcode: parentData?.zip || parentData?.postcode || '',
+      name: pData?.name || pData?.companyName || pData?.company || '',
+      address: getParentStreetAddress(pData),
+      suburb: pData?.city || pData?.location || pData?.suburb || pData?.zipCity || '',
+      state: pData?.state || pData?.province || 'NSW',
+      postcode: pData?.zip || pData?.postcode || '',
       lat: rawParentLat ? parseFloat(rawParentLat) : undefined,
       lng: rawParentLng ? parseFloat(rawParentLng) : undefined
     };
+
+    const normService = (data.service || '').toLowerCase();
+    const isAMPO = normService === 'ampo' || normService === 'lpo-to-site' || normService === 'australia post-to-site';
+    const isH2H = normService === 'h2h';
+    const isH2H2 = normService === 'h2h 2' || normService === 'h2h2';
+    const isPMPO = normService === 'pmpo' || normService === 'site-to-lpo' || normService === 'site-to-australia post';
+    const isRoundTrip = normService === 'round-trip' || normService === 'roundtrip';
 
     if (userData?.role === 'customer') {
       if (independentServiceType === 'outbound') {
@@ -1134,21 +1235,22 @@ const NewJobForm: React.FC = () => {
         );
       }
     } else if (userData?.role === 'parent') {
-      if (data.service === 'H2H') {
+      if (isH2H) {
         stops.push(
           { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
-      } else if (data.service === 'H2H 2') {
+      } else if (isH2H2) {
         stops.push(
           { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
-      } else if (data.service === 'AMPO') {
+      } else if (isAMPO) {
         const partnerLocName = (data.customer as any).billingPartnerLocation || (data.customer as any).billingAddresses?.[0]?.partnerLocation;
+        const streetAddr = data.customer.billingAddress1 || data.customer.billingStreet || (data.customer as any).billingAddress || '';
         const poBoxLoc = {
           name: (partnerLocName && String(partnerLocName).trim()) ? String(partnerLocName).trim() : `${data.customer.company} - PO Box`,
-          address: data.customer.billingAddress1 || data.customer.billingStreet || '',
+          address: streetAddr,
           suburb: data.customer.billingCity || '',
           state: data.customer.billingState || '',
           postcode: data.customer.billingZip || '',
@@ -1166,17 +1268,27 @@ const NewJobForm: React.FC = () => {
         );
       }
     } else {
-      if (data.service === 'site-to-lpo') {
+      if (isAMPO) {
+        const partnerLocName = (data.customer as any).billingPartnerLocation || (data.customer as any).billingAddresses?.[0]?.partnerLocation;
+        const poBoxLoc = {
+          name: (partnerLocName && String(partnerLocName).trim()) ? String(partnerLocName).trim() : `${data.customer.company} - PO Box`,
+          address: data.customer.billingAddress1 || data.customer.billingStreet || '',
+          suburb: data.customer.billingCity || '',
+          state: data.customer.billingState || '',
+          postcode: data.customer.billingZip || '',
+          lat: data.customer.billingLatitude ? parseFloat(data.customer.billingLatitude as any) : undefined,
+          lng: data.customer.billingLongitude ? parseFloat(data.customer.billingLongitude as any) : undefined
+        };
+        stops.push(
+          { type: 'pickup', label: 'Pickup PO Box', locationName: poBoxLoc.name, address: poBoxLoc.address, suburb: poBoxLoc.suburb, state: poBoxLoc.state, postcode: poBoxLoc.postcode, lat: poBoxLoc.lat, lng: poBoxLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        );
+      } else if (isPMPO) {
         stops.push(
           { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
-      } else if (data.service === 'lpo-to-site') {
-        stops.push(
-          { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
-          { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
-        );
-      } else if (data.service === 'round-trip') {
+      } else if (isRoundTrip) {
         stops.push(
           { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null },
@@ -1241,6 +1353,21 @@ const NewJobForm: React.FC = () => {
       }
     }
 
+    // Validate Parent AMPO Service PO Box availability
+    if (userData?.role === 'parent') {
+      const normSvc = (formData.service || '').toLowerCase();
+      const isAmpoSvc = normSvc.includes('ampo') || normSvc === 'lpo-to-site' || normSvc === 'australia post-to-site';
+      const currentServiceObj = availableServices.find(s => s.internalId === formData.serviceInternalId);
+      const hasPoBox = Boolean(currentServiceObj?.billingAddress || formData.customer.billingAddress1 || formData.customer.billingStreet);
+
+      if (isAmpoSvc && !hasPoBox) {
+        triggerMissingPoBoxNotification(formData.service, formData.serviceInternalId);
+        setValidationError(`Job creation for ${formData.service} is disabled because there is no linked PO Box address for this subcustomer. A notification has been sent to MailPlus IT & Support to configure the PO Box details.`);
+        setIsProcessing(false);
+        return;
+      }
+    }
+
     setIsProcessing(true);
     setProcessingProgress(10);
     setProcessingMessage('Validating request details...');
@@ -1249,6 +1376,7 @@ const NewJobForm: React.FC = () => {
     try {
       const isEditing = window.location.search.includes('edit=true');
       const requestId = new URLSearchParams(window.location.search).get('id');
+      const isDirectBook = (userData?.role === 'customer' || userData?.role === 'parent') && !formData.preferredTime;
       const stops = generateStops(formData, parent || customer);
 
       let finalService = formData.service;
@@ -1350,7 +1478,47 @@ const NewJobForm: React.FC = () => {
       const isSiteToAusPost = finalService === 'site-to-australia post' || finalService === 'site-to-lpo';
       const isAusPostToSite = finalService === 'australia post-to-site' || finalService === 'lpo-to-site';
 
-      if (userData?.role === 'customer' && companyData) {
+      if (userData?.role === 'parent') {
+        const sId = formData.serviceInternalId || null;
+        const sRate = formData.serviceRate || null;
+        if (finalService === 'H2H') {
+          conditionalServiceData = {
+            imServiceH2HInternalID: sId,
+            imServiceH2HIRate: sRate,
+            imServiceAMPOInternalID: null,
+            imServiceAMPORate: null,
+            imServiceH2H2InternalID: null,
+            imServiceH2H2Rate: null
+          };
+        } else if (finalService === 'AMPO') {
+          conditionalServiceData = {
+            imServiceH2HInternalID: null,
+            imServiceH2HIRate: null,
+            imServiceAMPOInternalID: sId,
+            imServiceAMPORate: sRate,
+            imServiceH2H2InternalID: null,
+            imServiceH2H2Rate: null
+          };
+        } else if (finalService === 'H2H 2') {
+          conditionalServiceData = {
+            imServiceH2HInternalID: null,
+            imServiceH2HIRate: null,
+            imServiceAMPOInternalID: null,
+            imServiceAMPORate: null,
+            imServiceH2H2InternalID: sId,
+            imServiceH2H2Rate: sRate
+          };
+        } else {
+          conditionalServiceData = {
+            imServiceH2HInternalID: null,
+            imServiceH2HIRate: null,
+            imServiceAMPOInternalID: null,
+            imServiceAMPORate: null,
+            imServiceH2H2InternalID: null,
+            imServiceH2H2Rate: null
+          };
+        }
+      } else if (userData?.role === 'customer' && companyData) {
         if (isSiteToAusPost) {
           const balance = companyProfileData?.trial_credits_balance ?? companyData.trial_credits_balance;
           const isTrial = typeof balance === 'number' && balance > 0;
@@ -1404,12 +1572,22 @@ const NewJobForm: React.FC = () => {
         phone: userData?.mobile || formData.customer.phone
       };
 
+      if (userData?.role === 'parent') {
+        delete (finalCustomerData as any).lpoServicePMPOInternalID;
+        delete (finalCustomerData as any).lpoServicePMPORate;
+        delete (finalCustomerData as any).lpoServiceAMPOInternalID;
+        delete (finalCustomerData as any).lpoServiceAMPORate;
+        delete (finalCustomerData as any).lpoServiceH2HInternalID;
+        delete (finalCustomerData as any).lpoServiceH2HRate;
+      }
+
       if (isEditing && requestId) {
         const cleanUpdate = JSON.parse(JSON.stringify({
           ...formData,
           customer: finalCustomerData,
           service: finalService,
           stops,
+          recipient: (userData?.role === 'customer' || userData?.role === 'parent') ? recipientData : null,
           isExistingCustomer,
           netsuiteCustomerId: nsResult.customerInternalId || formData.customer.netsuiteId || null,
           appJobGroupId: null,
@@ -1441,7 +1619,6 @@ const NewJobForm: React.FC = () => {
         });
         localStorage.removeItem('edit_request_draft');
       } else {
-        const isDirectBook = (userData?.role === 'customer' || userData?.role === 'parent') && !formData.preferredTime;
         let parentSubCustomerId = "";
         if (userData?.role === 'parent') {
           const matchedCust = allCustomers.find(c =>
@@ -1455,7 +1632,7 @@ const NewJobForm: React.FC = () => {
           customer: finalCustomerData,
           service: finalService,
           stops,
-          recipient: userData?.role === 'customer' ? recipientData : null,
+          recipient: (userData?.role === 'customer' || userData?.role === 'parent') ? recipientData : null,
           parent_id: parent?.id || userData?.parent_id || "",
           customer_id: userData?.role === 'parent' ? (parentSubCustomerId || "") : (customer?.id || userData?.customer_id || ""),
           uid: userData?.uid,
@@ -1682,22 +1859,10 @@ const NewJobForm: React.FC = () => {
 
               const fullUrl2650 = `${NETSUITE_API}&${params.toString()}`;
               try {
-                const res = await fetch(fullUrl2650);
-                if (res.ok) {
-                  const data = await res.json();
-                  console.log("NetSuite Script 2650 Response:", data);
-                } else {
-                  console.warn("NetSuite Script 2650 non-200 response, trying no-cors mode:", res.status);
-                  await fetch(fullUrl2650, { mode: 'no-cors' });
-                }
+                await fetch(fullUrl2650, { mode: 'no-cors' });
+                console.log("NetSuite Script 2650 dispatched.");
               } catch (fetchErr) {
-                console.warn("NetSuite 2650 CORS/Network error, falling back to no-cors mode:", fetchErr);
-                try {
-                  await fetch(fullUrl2650, { mode: 'no-cors' });
-                  console.log("NetSuite Script 2650 dispatched via no-cors mode.");
-                } catch (noCorsErr) {
-                  console.error("NetSuite 2650 no-cors fallback error:", noCorsErr);
-                }
+                console.error("NetSuite Script 2650 error:", fetchErr);
               }
             } catch (e) {
               console.error("NetSuite 2650 sync failed:", e);
@@ -1707,49 +1872,33 @@ const NewJobForm: React.FC = () => {
 
       }
 
-      if (!(userData?.role === 'customer' && !formData.preferredTime)) {
+      if (!isDirectBook) {
         setProcessingProgress(80);
-        setProcessingMessage('Synchronising job data...');
+        setProcessingMessage('Synchronising job data with NetSuite...');
 
-        // 3. Second NetSuite API (Job Confirmation with Request ID)
+        // Always call NetSuite Script 2646 for preferred time bookings irrespective of role
         try {
-          let confirmUrl = '';
-          if (userData?.role === 'customer') {
-            const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2646&deploy=1&compid=1048144&ns-at=AAEJ7tMQGy_V6q4A1r9Jg30iQSZhzKVAi6M4UjCI17mvD37SfLM";
-            const customer_id = userData?.customer_id || "";
-            confirmUrl = `${SECOND_NETSUITE_API}&request_id=${finalRequestId}&customer_id=${customer_id}`;
-          } else {
-            const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2528&deploy=1&compid=1048144&ns-at=AAEJ7tMQM_E8dKF2qjDMy9ESy5q883g7xrb8uKwfgGOku62wheU";
-            let customer_id = nsResult.customerInternalId || formData.customer.netsuiteId || "";
-            if (userData?.role === 'parent') {
-              const matchedCust = allCustomers.find(c =>
-                (c.companyName || c.company_name || c.company || '').toLowerCase() === (formData.customer.company || '').toLowerCase()
-              );
-              customer_id = formData.customer.netsuiteId || nsResult.customerInternalId || matchedCust?.companyId || matchedCust?.customerInternalId || matchedCust?.id || "";
-            }
-            confirmUrl = `${SECOND_NETSUITE_API}&request_id=${finalRequestId}&parent_id=${parent?.id || ""}&customer_id=${customer_id}`;
+          const NETSUITE_SCRIPT_2646 = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2646&deploy=1&compid=1048144&ns-at=AAEJ7tMQGy_V6q4A1r9Jg30iQSZhzKVAi6M4UjCI17mvD37SfLM";
+          
+          let custIdFor2646 = userData?.customer_id || "";
+          if (userData?.role === 'parent') {
+            const matchedCust = allCustomers.find(c =>
+              (c.companyName || c.company_name || c.company || '').toLowerCase() === (formData.customer.company || '').toLowerCase()
+            );
+            custIdFor2646 = formData.customer.netsuiteId || nsResult.customerInternalId || matchedCust?.companyId || matchedCust?.customerInternalId || matchedCust?.id || "";
           }
+          const parentIdFor2646 = parent?.id || userData?.parent_id || "";
+
+          const confirmUrl = `${NETSUITE_SCRIPT_2646}&request_id=${finalRequestId}&customer_id=${custIdFor2646}&parent_id=${parentIdFor2646}`;
 
           try {
-            const confirmResponse = await fetch(confirmUrl);
-            if (confirmResponse.ok) {
-              const confirmResult = await confirmResponse.json();
-              if (confirmResult.success && confirmResult.message) {
-                setNetsuiteMessage(confirmResult.message);
-              }
-            } else {
-              await fetch(confirmUrl, { mode: 'no-cors' });
-            }
+            await fetch(confirmUrl, { mode: 'no-cors' });
+            console.log("NetSuite Script 2646 dispatched.");
           } catch (fetchErr) {
-            console.warn("Secondary NetSuite sync CORS/Network error, falling back to no-cors mode:", fetchErr);
-            try {
-              await fetch(confirmUrl, { mode: 'no-cors' });
-            } catch (noCorsErr) {
-              console.error("Secondary NetSuite no-cors fallback error:", noCorsErr);
-            }
+            console.error("NetSuite Script 2646 error:", fetchErr);
           }
         } catch (e) {
-          console.error("Secondary NetSuite sync failed", e);
+          console.error("NetSuite 2646 sync failed:", e);
         }
       }
 
@@ -2322,6 +2471,15 @@ const NewJobForm: React.FC = () => {
                               onChange={(e) => {
                                 const selectedInternalId = e.target.value;
                                 const serviceObj = availableServices.find(s => s.internalId === selectedInternalId);
+                                const bAddr = serviceObj?.billingAddress;
+                                const bStreet = bAddr?.address1 || bAddr?.street || bAddr?.address || '';
+                                const bCity = bAddr?.city || bAddr?.suburb || '';
+                                const bState = bAddr?.state || '';
+                                const bZip = bAddr?.zip || bAddr?.postcode || '';
+                                const bLat = bAddr?.latitude || bAddr?.lat || null;
+                                const bLng = bAddr?.longitude || bAddr?.lng || null;
+                                const bPartner = bAddr?.partnerLocation || '';
+
                                 setFormData(prev => ({
                                   ...prev,
                                   service: serviceObj?.id || '',
@@ -2329,14 +2487,14 @@ const NewJobForm: React.FC = () => {
                                   serviceRate: serviceObj?.rate || '',
                                   customer: {
                                     ...prev.customer,
-                                    billingAddress1: serviceObj?.billingAddress?.address1 || '',
-                                    billingStreet: serviceObj?.billingAddress?.street || '',
-                                    billingCity: serviceObj?.billingAddress?.city || '',
-                                    billingState: serviceObj?.billingAddress?.state || '',
-                                    billingZip: serviceObj?.billingAddress?.zip || '',
-                                    billingLatitude: serviceObj?.billingAddress?.latitude || null,
-                                    billingLongitude: serviceObj?.billingAddress?.longitude || null,
-                                    billingPartnerLocation: serviceObj?.billingAddress?.partnerLocation || ''
+                                    billingAddress1: bStreet,
+                                    billingStreet: bStreet,
+                                    billingCity: bCity,
+                                    billingState: bState,
+                                    billingZip: bZip,
+                                    billingLatitude: bLat,
+                                    billingLongitude: bLng,
+                                    billingPartnerLocation: bPartner
                                   }
                                 }));
                               }}
@@ -2344,9 +2502,23 @@ const NewJobForm: React.FC = () => {
                             >
                               {availableServices.map(s => {
                                 const billingAddr = (s as any).billingAddress;
-                                const addressLabel = s.id === 'AMPO' && billingAddr
-                                  ? `AMPO - ${billingAddr.partnerLocation || billingAddr.address1 || billingAddr.street || billingAddr.city}`
-                                  : s.id;
+                                let addressLabel = s.id;
+                                if (billingAddr) {
+                                  const partnerLoc = billingAddr.partnerLocation;
+                                  const street = billingAddr.address1 || billingAddr.street || billingAddr.address || '';
+                                  const city = billingAddr.city || billingAddr.suburb || '';
+                                  const state = billingAddr.state || '';
+                                  const zip = billingAddr.zip || billingAddr.postcode || '';
+                                  const addrParts = [street, city, state, zip].filter(p => p && String(p).trim()).join(', ');
+
+                                  if (partnerLoc && addrParts) {
+                                    addressLabel = `${s.id} - ${partnerLoc} (${addrParts})`;
+                                  } else if (partnerLoc) {
+                                    addressLabel = `${s.id} - ${partnerLoc}`;
+                                  } else if (addrParts) {
+                                    addressLabel = `${s.id} - ${addrParts}`;
+                                  }
+                                }
                                 return (
                                   <option key={s.internalId} value={s.internalId}>
                                     {addressLabel} (${parseFloat(s.rate).toFixed(2)})
@@ -2356,9 +2528,51 @@ const NewJobForm: React.FC = () => {
                             </select>
                           </div>
 
+                          {/* Alert when selected AMPO service has no linked PO Box address */}
+                          {(() => {
+                            const normSvc = (formData.service || '').toLowerCase();
+                            const isAmpoSvc = normSvc.includes('ampo') || normSvc === 'lpo-to-site' || normSvc === 'australia post-to-site';
+                            const currentServiceObj = availableServices.find(s => s.internalId === formData.serviceInternalId);
+                            const hasPoBox = Boolean(currentServiceObj?.billingAddress || formData.customer.billingAddress1 || formData.customer.billingStreet);
+
+                            if (isAmpoSvc && !hasPoBox) {
+                              triggerMissingPoBoxNotification(formData.service, formData.serviceInternalId);
+                              return (
+                                <div style={{
+                                  background: '#fffbeeb',
+                                  border: '1px solid #fde68a',
+                                  borderRadius: '12px',
+                                  padding: '14px 16px',
+                                  marginBottom: '16px',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                  color: '#92400e',
+                                  gridColumn: '1 / -1'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '0.88rem', color: '#b45309' }}>
+                                    <AlertTriangle size={18} />
+                                    <span>PO Box Details Missing for {formData.service}</span>
+                                  </div>
+                                  <div style={{ fontSize: '0.82rem', lineHeight: '1.4', color: '#78350f' }}>
+                                    This service cannot be linked with a PO Box address. Job creation is disabled for this service.
+                                    A notification email has been sent to <strong>mailplusit@mailplus.com.au</strong> and <strong>popie.popie@mailplus.com.au</strong> so that the new PO Box details can be created and resynced for <strong>{formData.customer.company}</strong>.
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
                           {/* Dynamic pickup & delivery preview */}
                           {(() => {
-                            const parentLocStr = `${(parent as any)?.address1 || (parent as any)?.address || ''} ${(parent as any)?.street || ''}, ${(parent as any)?.city || (parent as any)?.location || (parent as any)?.suburb || ''} ${(parent as any)?.state || ''} ${(parent as any)?.zip || (parent as any)?.postcode || ''}`.trim();
+                            const pEntity = parent || companyData;
+                            const pAddr1 = (pEntity as any)?.address1 || (pEntity as any)?.addressLine1 || (typeof (pEntity as any)?.address === 'object' ? (pEntity as any)?.address?.address1 : '') || '';
+                            const pStreet = (pEntity as any)?.street || (pEntity as any)?.streetAddress || (typeof (pEntity as any)?.address === 'object' ? (pEntity as any)?.address?.street : '') || '';
+                            const pStreetFull = (pAddr1 && pStreet && !pAddr1.toLowerCase().includes(pStreet.toLowerCase()))
+                              ? `${pAddr1} ${pStreet}`.trim()
+                              : (pAddr1 || pStreet || (typeof (pEntity as any)?.address === 'string' && (pEntity as any)?.address !== '[object Object]' ? (pEntity as any)?.address : '') || '');
+                            const parentLocStr = `${pStreetFull}, ${(pEntity as any)?.city || (pEntity as any)?.location || (pEntity as any)?.suburb || ''} ${(pEntity as any)?.state || ''} ${(pEntity as any)?.zip || (pEntity as any)?.postcode || ''}`.replace(/^,\s*/, '').trim();
                             const customerLocStr = `${formData.customer.address || ''}, ${formData.customer.suburb || ''} ${formData.customer.state || ''} ${formData.customer.postcode || ''}`.trim();
                             const partnerLocStr = (formData.customer as any).billingPartnerLocation || '';
                             const rawPoBoxStr = `${formData.customer.billingAddress1 || formData.customer.billingStreet || ''}, ${formData.customer.billingCity || ''} ${formData.customer.billingState || ''} ${formData.customer.billingZip || ''}`.trim();

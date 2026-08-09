@@ -382,20 +382,30 @@ const RequestPage: React.FC = () => {
               const custSnap = await getDocs(custQ);
               if (!custSnap.empty) {
                 const c = custSnap.docs[0].data();
-                if (userData?.role === 'parent' && (c.companyId || c.customerInternalId)) {
-                  netsuiteCustomerId = c.companyId || c.customerInternalId;
-                }
-                if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
-                  serviceInternalId = c.lpoServiceAMPOInternalID || '';
-                  serviceRate = c.lpoServiceAMPORate || '';
-                                } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                  serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
-                    ? companyDataFromDb.serviceTrialInternalID
-                    : (c.lpoServicePMPOInternalID || '');
-                  serviceRate = c.lpoServicePMPORate || '';
-                } else if (request.service === 'round-trip') {
-                  serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
-                  serviceRate = c.lpoServiceAMPOPMPORate || '';
+                if (userData?.role === 'parent') {
+                  if (c.companyId || c.customerInternalId) {
+                    netsuiteCustomerId = c.companyId || c.customerInternalId;
+                  }
+                  if (Array.isArray(c.serviceList)) {
+                    const matched = c.serviceList.find((s: any) => s.name === request.service);
+                    if (matched) {
+                      serviceInternalId = matched.id || '';
+                      serviceRate = matched.rate || '';
+                    }
+                  }
+                } else {
+                  if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
+                    serviceInternalId = c.lpoServiceAMPOInternalID || '';
+                    serviceRate = c.lpoServiceAMPORate || '';
+                  } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
+                    serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
+                      ? companyDataFromDb.serviceTrialInternalID
+                      : (c.lpoServicePMPOInternalID || '');
+                    serviceRate = c.lpoServicePMPORate || '';
+                  } else if (request.service === 'round-trip') {
+                    serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
+                    serviceRate = c.lpoServiceAMPOPMPORate || '';
+                  }
                 }
               }
             }
@@ -462,20 +472,30 @@ const RequestPage: React.FC = () => {
             const custSnap = await getDocs(custQ);
             if (!custSnap.empty) {
               const c = custSnap.docs[0].data();
-              if (userData?.role === 'parent' && (c.companyId || c.customerInternalId)) {
-                netsuiteCustomerId = c.companyId || c.customerInternalId;
-              }
-              if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
-                serviceInternalId = c.lpoServiceAMPOInternalID || '';
-                serviceRate = c.lpoServiceAMPORate || '';
-              } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
-                  ? companyDataFromDb.serviceTrialInternalID
-                  : (c.lpoServicePMPOInternalID || '');
-                serviceRate = c.lpoServicePMPORate || '';
-              } else if (request.service === 'round-trip') {
-                serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
-                serviceRate = c.lpoServiceAMPOPMPORate || '';
+              if (userData?.role === 'parent') {
+                if (c.companyId || c.customerInternalId) {
+                  netsuiteCustomerId = c.companyId || c.customerInternalId;
+                }
+                if (Array.isArray(c.serviceList)) {
+                  const matched = c.serviceList.find((s: any) => s.name === request.service);
+                  if (matched) {
+                    serviceInternalId = matched.id || '';
+                    serviceRate = matched.rate || '';
+                  }
+                }
+              } else {
+                if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
+                  serviceInternalId = c.lpoServiceAMPOInternalID || '';
+                  serviceRate = c.lpoServiceAMPORate || '';
+                } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
+                  serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
+                    ? companyDataFromDb.serviceTrialInternalID
+                    : (c.lpoServicePMPOInternalID || '');
+                  serviceRate = c.lpoServicePMPORate || '';
+                } else if (request.service === 'round-trip') {
+                  serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
+                  serviceRate = c.lpoServiceAMPOPMPORate || '';
+                }
               }
             }
           } catch (err) {

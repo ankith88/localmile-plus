@@ -1611,7 +1611,9 @@ export const sendSupportEmail = onCall({
       "ankith.ravindran@maillplus.com.au",
       "michael.mcdaid@mailplus.com.au",
       "kerry.oneill@mailplus.com.au",
-      "dispatcher@mailplus.com.au"
+      "dispatcher@mailplus.com.au",
+      "mailplusit@mailplus.com.au",
+      "popie.popie@mailplus.com.au"
     ];
 
     const isAllowed = checkRecipients.every(r => allowedRecipients.includes(r.trim().toLowerCase()));
@@ -1718,6 +1720,71 @@ export const sendSupportEmail = onCall({
   } catch (error: any) {
     console.error("Error sending support email:", error);
     throw new HttpsError("internal", error.message);
+  }
+});
+
+// Logic: notifyMissingPoBox
+export const notifyMissingPoBox = onCall({
+  invoker: "public",
+  cors: true,
+  secrets: [prospectplusApiKey],
+}, async (request) => {
+  console.log("[Missing PO Box Notification] Function triggered");
+  const { subcustomerName, subcustomerId, parentName, parentId, serviceName, userEmail } = request.data || {};
+
+  const recipients = ["mailplusit@mailplus.com.au", "popie.popie@mailplus.com.au"];
+  const subject = `ACTION REQUIRED: Missing PO Box Details for ${subcustomerName || 'Subcustomer'} (${serviceName || 'AMPO Service'})`;
+
+  const htmlContent = `
+    <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <h2 style="color: #d97706; margin-top: 0;">Missing PO Box Details Alert</h2>
+      <p>A user logged in under parent account <strong>${parentName || 'Parent'}</strong> attempted to select or book a job for <strong>${serviceName || 'AMPO Service'}</strong>, but this service does not have linked PO Box address details in the system.</p>
+      
+      <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 6px; padding: 15px; margin: 20px 0;">
+        <h3 style="margin-top: 0; color: #92400e; font-size: 16px;">Subcustomer & Service Details</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr><td style="padding: 6px 0; color: #666; width: 160px;"><strong>Subcustomer Name:</strong></td><td>${subcustomerName || 'N/A'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #666;"><strong>Subcustomer ID:</strong></td><td>${subcustomerId || 'N/A'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #666;"><strong>Parent Account:</strong></td><td>${parentName || 'N/A'} (ID: ${parentId || 'N/A'})</td></tr>
+          <tr><td style="padding: 6px 0; color: #666;"><strong>Service Name:</strong></td><td><span style="background: #fef08a; padding: 2px 6px; border-radius: 4px; font-weight: bold;">${serviceName || 'AMPO Service'}</span></td></tr>
+          <tr><td style="padding: 6px 0; color: #666;"><strong>Attempted By:</strong></td><td>${userEmail || 'Parent User'}</td></tr>
+        </table>
+      </div>
+
+      <p style="color: #b45309; font-weight: bold;">Action Required:</p>
+      <p>Please create/add the new PO Box address details for <strong>${subcustomerName || 'this subcustomer'}</strong> in NetSuite/system and resync so that the user can create jobs for this PO Box service.</p>
+      
+      <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;">
+      <p style="font-size: 12px; color: #999;">This is an automated notification sent via LocalMile.Plus.</p>
+    </div>
+  `;
+
+  try {
+    const response = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': prospectplusApiKey.value()
+      },
+      body: JSON.stringify({
+        to: recipients.join(","),
+        subject: subject,
+        html: htmlContent,
+        from: 'localmile@mailplus.com.au'
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[Missing PO Box Email] ProspectPlus API failed with status ${response.status}:`, errText);
+      throw new Error(`ProspectPlus API failed: ${errText}`);
+    }
+
+    console.log("[Missing PO Box Email] Notification email sent successfully.");
+    return { success: true, message: "Notification email sent to mailplusit@mailplus.com.au and popie.popie@mailplus.com.au" };
+  } catch (err: any) {
+    console.error("[Missing PO Box Email] Error sending notification:", err);
+    return { success: false, error: err.message };
   }
 });
 
@@ -3893,18 +3960,33 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       lng: customer.coordinates?.lng ? parseFloat(customer.coordinates.lng) : undefined
     };
 
+    const normService = (service || '').toLowerCase();
+    const isAMPO = normService === 'ampo' || normService === 'lpo-to-site' || normService === 'australia post-to-site';
+    const isPMPO = normService === 'pmpo' || normService === 'site-to-lpo' || normService === 'site-to-australia post';
+    const isRoundTrip = normService === 'round-trip' || normService === 'roundtrip';
+
     const stops: any[] = [];
-    if (service === 'site-to-lpo' || service === 'site-to-australia post') {
+    if (isPMPO) {
       stops.push(
         { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
         { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
       );
-    } else if (service === 'lpo-to-site' || service === 'australia post-to-site') {
+    } else if (isAMPO) {
+      const partnerLocName = (customer as any).billingPartnerLocation || (customer as any).billingAddresses?.[0]?.partnerLocation;
+      const poBoxLoc = {
+        name: (partnerLocName && String(partnerLocName).trim()) ? String(partnerLocName).trim() : `${customer.company} - PO Box`,
+        address: customer.billingAddress1 || customer.billingStreet || '',
+        suburb: customer.billingCity || '',
+        state: customer.billingState || '',
+        postcode: customer.billingZip || '',
+        lat: customer.billingLatitude ? parseFloat(customer.billingLatitude) : undefined,
+        lng: customer.billingLongitude ? parseFloat(customer.billingLongitude) : undefined
+      };
       stops.push(
-        { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
-        { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        { type: 'pickup', label: 'Pickup PO Box', locationName: poBoxLoc.name, address: poBoxLoc.address, suburb: poBoxLoc.suburb, state: poBoxLoc.state, postcode: poBoxLoc.postcode, lat: poBoxLoc.lat, lng: poBoxLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+        { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
       );
-    } else if (service === 'round-trip') {
+    } else if (isRoundTrip) {
       stops.push(
         { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
         { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null },

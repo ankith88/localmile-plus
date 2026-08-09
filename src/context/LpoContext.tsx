@@ -213,11 +213,16 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const parentsSnapshot = await getDocs(collection(db, 'companies'));
             setAllParents(parentsSnapshot.docs.map(doc => {
               const data = doc.data();
+              const addr1 = data.address1 || data.addressLine1 || (typeof data.address === 'object' ? data.address?.address1 : '') || '';
+              const street = data.street || data.streetAddress || (typeof data.address === 'object' ? data.address?.street : '') || '';
+              const combinedAddress = (addr1 && street && !addr1.toLowerCase().includes(street.toLowerCase()))
+                ? `${addr1} ${street}`.trim()
+                : (addr1 || street || (typeof data.address === 'string' && data.address !== '[object Object]' ? data.address : '') || '');
               return {
                 id: doc.id,
                 name: data.name || data.companyName || 'Unknown Company',
                 location: data.Location || data.city || '',
-                address: data.address1 || '',
+                address: combinedAddress,
                 ...data
               } as ParentEntity;
             }));
@@ -271,11 +276,16 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const parentDoc = await getDoc(doc(db, 'companies', userData.parent_id));
         if (active && parentDoc.exists()) {
           const data = parentDoc.data();
+          const addr1 = data?.address1 || data?.addressLine1 || (typeof data?.address === 'object' ? data?.address?.address1 : '') || '';
+          const street = data?.street || data?.streetAddress || (typeof data?.address === 'object' ? data?.address?.street : '') || '';
+          const combinedAddress = (addr1 && street && !addr1.toLowerCase().includes(street.toLowerCase()))
+            ? `${addr1} ${street}`.trim()
+            : (addr1 || street || (typeof data?.address === 'string' && data?.address !== '[object Object]' ? data?.address : '') || '');
           setParent({ 
             id: userData.parent_id, 
             name: data?.name || data?.companyName || 'Unknown Company',
             location: data?.Location || data?.city || '',
-            address: data?.address1 || '',
+            address: combinedAddress,
             ...data 
           } as ParentEntity);
           setCustomer(null);

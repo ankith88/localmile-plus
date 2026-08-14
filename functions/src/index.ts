@@ -3907,24 +3907,50 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
     const db = getDB();
     const companyRef = db.collection("companies").doc(String(companyId));
     const companyDoc = await companyRef.get();
-    if (!companyDoc.exists) {
-      res.status(404).send({ success: false, message: `Company ${companyId} not found.` });
-      return;
+    let companyData: any = {};
+
+    if (companyDoc.exists) {
+      companyData = companyDoc.data() || {};
+    } else if (req.body.customer) {
+      companyData = {
+        companyName: req.body.customer.company || '',
+        address: req.body.customer.address || '',
+        suburb: req.body.customer.suburb || '',
+        state: req.body.customer.state || '',
+        postcode: req.body.customer.postcode || '',
+        email: req.body.customer.email || '',
+        phone: req.body.customer.phone || '',
+        franchisee: req.body.parentId || '',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      await companyRef.set(companyData, { merge: true });
     }
 
-    const companyData = companyDoc.data() || {};
     const parentId = String(req.body.parentId || companyData.franchisee || "");
-    if (!parentId) {
-      res.status(400).send({ success: false, message: "Missing LPO/Franchisee parentId. Please specify parentId in the payload or ensure the company has a franchisee field set." });
-      return;
+    let lpoData: any = {};
+    if (parentId) {
+      let lpoDoc = await db.collection("lpo").doc(parentId).get();
+      if (!lpoDoc.exists) {
+        lpoDoc = await db.collection("companies").doc(parentId).get();
+      }
+      if (!lpoDoc.exists) {
+        const lpoQuery = await db.collection("lpo").where("name", "==", parentId).limit(1).get();
+        if (!lpoQuery.empty) {
+          lpoDoc = lpoQuery.docs[0];
+        }
+      }
+      if (lpoDoc.exists) {
+        lpoData = lpoDoc.data() || {};
+      } else {
+        lpoData = {
+          name: parentId,
+          address: req.body.customer?.address || '',
+          city: req.body.customer?.suburb || '',
+          state: req.body.customer?.state || 'NSW',
+          zip: req.body.customer?.postcode || ''
+        };
+      }
     }
-
-    const lpoDoc = await db.collection("lpo").doc(parentId).get();
-    if (!lpoDoc.exists) {
-      res.status(404).send({ success: false, message: `LPO/Franchisee with ID ${parentId} not found.` });
-      return;
-    }
-    const lpoData = lpoDoc.data() || {};
 
     const { startDate, frequency, service, customer, preferredTime, billing, recipient, auspostContact } = req.body;
     if (!startDate || !frequency || !Array.isArray(frequency) || !service || !customer) {
@@ -3940,24 +3966,42 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
     const rawParentLat = lpoData.latitude ?? lpoData.coordinates?.lat;
     const rawParentLng = lpoData.longitude ?? lpoData.coordinates?.lng;
 
-    const parentLoc = {
-      name: lpoData.name || '',
+    const parentLoc: any = {
+      name: lpoData.name || parentId || 'MailPlus Franchisee',
       address: lpoData.address1 || lpoData.address || '',
       suburb: lpoData.city || lpoData.location || lpoData.suburb || '',
       state: lpoData.state || 'NSW',
-      postcode: lpoData.zip || lpoData.postcode || '',
-      lat: rawParentLat ? parseFloat(rawParentLat) : undefined,
-      lng: rawParentLng ? parseFloat(rawParentLng) : undefined
+      postcode: lpoData.zip || lpoData.postcode || ''
     };
+    if (rawParentLat && !isNaN(parseFloat(rawParentLat))) parentLoc.lat = parseFloat(rawParentLat);
+    if (rawParentLng && !isNaN(parseFloat(rawParentLng))) parentLoc.lng = parseFloat(rawParentLng);
 
-    const customerLoc = {
+    const customerLoc: any = {
       name: customer.company,
       address: customer.address,
       suburb: customer.suburb,
       state: customer.state,
-      postcode: customer.postcode,
-      lat: customer.coordinates?.lat ? parseFloat(customer.coordinates.lat) : undefined,
-      lng: customer.coordinates?.lng ? parseFloat(customer.coordinates.lng) : undefined
+      postcode: customer.postcode
+    };
+    if (customer.coordinates?.lat && !isNaN(parseFloat(customer.coordinates.lat))) customerLoc.lat = parseFloat(customer.coordinates.lat);
+    if (customer.coordinates?.lng && !isNaN(parseFloat(customer.coordinates.lng))) customerLoc.lng = parseFloat(customer.coordinates.lng);
+
+    const createStop = (type: string, label: string, loc: any, sequence: number) => {
+      const stop: any = {
+        type,
+        label,
+        locationName: loc.name || '',
+        address: loc.address || '',
+        suburb: loc.suburb || '',
+        state: loc.state || '',
+        postcode: loc.postcode || '',
+        sequence,
+        status: 'pending',
+        appJobId: null
+      };
+      if (typeof loc.lat === 'number' && !isNaN(loc.lat)) stop.lat = loc.lat;
+      if (typeof loc.lng === 'number' && !isNaN(loc.lng)) stop.lng = loc.lng;
+      return stop;
     };
 
     const normService = (service || '').toLowerCase();
@@ -3968,30 +4012,31 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
     const stops: any[] = [];
     if (isPMPO) {
       stops.push(
-        { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
-        { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        createStop('pickup', 'Pickup Site', customerLoc, 1),
+        createStop('delivery', 'Delivery Parent', parentLoc, 2)
       );
     } else if (isAMPO) {
       const partnerLocName = (customer as any).billingPartnerLocation || (customer as any).billingAddresses?.[0]?.partnerLocation;
-      const poBoxLoc = {
+      const poBoxLoc: any = {
         name: (partnerLocName && String(partnerLocName).trim()) ? String(partnerLocName).trim() : `${customer.company} - PO Box`,
         address: customer.billingAddress1 || customer.billingStreet || '',
         suburb: customer.billingCity || '',
         state: customer.billingState || '',
-        postcode: customer.billingZip || '',
-        lat: customer.billingLatitude ? parseFloat(customer.billingLatitude) : undefined,
-        lng: customer.billingLongitude ? parseFloat(customer.billingLongitude) : undefined
+        postcode: customer.billingZip || ''
       };
+      if (customer.billingLatitude && !isNaN(parseFloat(customer.billingLatitude))) poBoxLoc.lat = parseFloat(customer.billingLatitude);
+      if (customer.billingLongitude && !isNaN(parseFloat(customer.billingLongitude))) poBoxLoc.lng = parseFloat(customer.billingLongitude);
+
       stops.push(
-        { type: 'pickup', label: 'Pickup PO Box', locationName: poBoxLoc.name, address: poBoxLoc.address, suburb: poBoxLoc.suburb, state: poBoxLoc.state, postcode: poBoxLoc.postcode, lat: poBoxLoc.lat, lng: poBoxLoc.lng, sequence: 1, status: 'pending', appJobId: null },
-        { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        createStop('pickup', 'Pickup PO Box', poBoxLoc, 1),
+        createStop('delivery', 'Delivery Parent', parentLoc, 2)
       );
     } else if (isRoundTrip) {
       stops.push(
-        { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
-        { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null },
-        { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 3, status: 'pending', appJobId: null },
-        { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 4, status: 'pending', appJobId: null }
+        createStop('pickup', 'Pickup Parent', parentLoc, 1),
+        createStop('delivery', 'Delivery Site', customerLoc, 2),
+        createStop('pickup', 'Pickup Site', customerLoc, 3),
+        createStop('delivery', 'Delivery Parent', parentLoc, 4)
       );
     }
 
@@ -4011,7 +4056,7 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
 
     const newScheduledJob = {
       customer_id: companyId,
-      parent_id: parentId,
+      parent_id: parentId || "",
       status: 'scheduled',
       recurrenceStatus: 'active',
       skippedDates: [],
@@ -4048,11 +4093,46 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
 
     const docRef = await db.collection("scheduled_jobs").add(newScheduledJob);
 
+    // If starting today or in the past, and today matches the frequency schedule, create immediate job instance for today
+    const sydneyTimeFormatter = new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Sydney',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short'
+    });
+    const parts = sydneyTimeFormatter.formatToParts(new Date());
+    let year = '', month = '', day = '', todayDayName = '';
+    for (const part of parts) {
+      if (part.type === 'year') year = part.value;
+      if (part.type === 'month') month = part.value;
+      if (part.type === 'day') day = part.value;
+      if (part.type === 'weekday') todayDayName = part.value;
+    }
+    todayDayName = todayDayName.substring(0, 3);
+    const todayStr = `${year}-${month}-${day}`;
+
+    let immediateInstanceId: string | null = null;
+    if (startDate <= todayStr && Array.isArray(frequency) && frequency.includes(todayDayName)) {
+      const immediateJob = {
+        ...newScheduledJob,
+        jobType: 'scheduled_instance',
+        scheduledJobId: docRef.id,
+        date: todayStr,
+        status: 'scheduled',
+        syncedWithNetSuite: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      const jobInstanceRef = await db.collection("jobs").add(immediateJob);
+      immediateInstanceId = jobInstanceRef.id;
+    }
+
     res.status(201).send({
       success: true,
       message: "Scheduled job created successfully.",
       data: {
-        id: docRef.id
+        id: docRef.id,
+        ...(immediateInstanceId ? { immediateInstanceId } : {})
       }
     });
 
@@ -4195,7 +4275,7 @@ apiApp.get("/api/v1/jobs", async (req: express.Request, res: express.Response) =
     const jobs: any[] = [];
     jobsSnapshot.forEach(doc => {
       const data = doc.data();
-      if (data.syncedWithNetSuite == null) {
+      if (data.syncedWithNetSuite == null || data.syncedWithNetSuite === false) {
         jobs.push({ id: doc.id, ...data });
       }
     });

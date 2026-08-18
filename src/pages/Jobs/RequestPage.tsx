@@ -725,6 +725,76 @@ const RequestPage: React.FC = () => {
         .then(data => console.log("NetSuite Reject Sync:", data))
         .catch(err => console.error("NetSuite Reject Error:", err));
 
+      // Trigger Email Notifications
+      const sendSupportEmailFn = httpsCallable(functions, 'sendSupportEmail');
+      const companyName = request.customer?.company || companyData?.companyName || 'Unknown Company';
+      const refId = request.id.substring(0, 8).toUpperCase();
+
+      // 1. Email to Dispatcher (CCing fiona.harrison@mailplus.com.au)
+      const dispatcherHtml = `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px;">
+          <h2 style="color: #dc2626; margin-top: 0;">Job Request Declined Notice</h2>
+          <p>A job request has been declined in the LocalMile.Plus portal.</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #fdf2f2; padding: 15px; border-radius: 6px;">
+            <tr><td style="padding: 6px; font-weight: bold; width: 140px;">Request Ref:</td><td style="padding: 6px;">#${refId}</td></tr>
+            <tr><td style="padding: 6px; font-weight: bold;">Customer:</td><td style="padding: 6px;">${companyName}</td></tr>
+            <tr><td style="padding: 6px; font-weight: bold;">Service:</td><td style="padding: 6px;">${request.service || 'N/A'}</td></tr>
+            <tr><td style="padding: 6px; font-weight: bold;">Date:</td><td style="padding: 6px;">${request.date || 'N/A'}</td></tr>
+            <tr><td style="padding: 6px; font-weight: bold;">Declined Reason:</td><td style="padding: 6px; color: #dc2626;">${rejectReason}</td></tr>
+            <tr><td style="padding: 6px; font-weight: bold;">Notes:</td><td style="padding: 6px;">${rejectNotes.trim()}</td></tr>
+          </table>
+
+          <p style="font-size: 12px; color: #777;">This is an automated notification from LocalMile.Plus.</p>
+        </div>
+      `;
+
+      sendSupportEmailFn({
+        to: 'dispatcher@mailplus.com.au',
+        cc: 'fiona.harrison@mailplus.com.au',
+        subject: `[LocalMile.Plus] Job Request Rejected - ${companyName} (Ref: #${refId})`,
+        html: dispatcherHtml,
+        jobId: request.id,
+        metadata: {
+          companyName,
+          customerId: rejectCustomerId
+        }
+      }).catch(err => console.error("Error sending rejection email to dispatcher:", err));
+
+      // 2. Email to Customer
+      const customerEmail = request.customer?.email || userData?.email;
+      if (customerEmail) {
+        const customerHtml = `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px;">
+            <h2 style="color: #095c7b; margin-top: 0;">Update on Your Job Request</h2>
+            <p>Dear ${request.customer?.firstName || 'Customer'},</p>
+            <p>Your job request for <strong>${request.service || 'Logistics Service'}</strong> on <strong>${request.date}</strong> (Ref: #${refId}) has been declined by the assigned operator.</p>
+            
+            <div style="background: #f9fafb; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <p style="margin: 0; font-weight: bold; color: #333;">Reason for Decline:</p>
+              <p style="margin: 5px 0 0 0; color: #555;">${rejectReason}</p>
+              ${rejectNotes ? `<p style="margin: 8px 0 0 0; font-style: italic; color: #666;">"${rejectNotes.trim()}"</p>` : ''}
+            </div>
+
+            <p>If you need assistance or would like to discuss alternative scheduling options, please reply to this email or contact our support team at <a href="mailto:dispatcher@mailplus.com.au">dispatcher@mailplus.com.au</a>.</p>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 24px 0;" />
+            <p style="font-size: 11px; color: #888;">LocalMile.Plus | Powered by MailPlus Australia</p>
+          </div>
+        `;
+
+        sendSupportEmailFn({
+          to: customerEmail,
+          subject: `[LocalMile.Plus] Update on Your Job Request (Ref: #${refId})`,
+          html: customerHtml,
+          jobId: request.id,
+          metadata: {
+            companyName,
+            customerId: rejectCustomerId
+          }
+        }).catch(err => console.error("Error sending rejection email to customer:", err));
+      }
+
       setIsRejectModalOpen(false);
       setRejectReason('');
       setRejectNotes('');
@@ -751,6 +821,47 @@ const RequestPage: React.FC = () => {
         proposedAt: new Date().toISOString(),
         chat: arrayUnion(sysMessage)
       });
+
+      // Send Email to Customer, CCing Dispatcher
+      const sendSupportEmailFn = httpsCallable(functions, 'sendSupportEmail');
+      const companyName = request.customer?.company || companyData?.companyName || 'Unknown Company';
+      const refId = request.id.substring(0, 8).toUpperCase();
+      const customerEmail = request.customer?.email || userData?.email;
+
+      if (customerEmail) {
+        const proposedTimeHtml = `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px;">
+            <h2 style="color: #095c7b; margin-top: 0;">New Completion Time Proposed</h2>
+            <p>Dear ${request.customer?.firstName || 'Customer'},</p>
+            <p>The operator has suggested a new "Must be completed by" time for your job request (Ref: #${refId}).</p>
+            
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 16px; margin: 20px 0; border-radius: 6px;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr><td style="padding: 4px 0; font-weight: bold; width: 150px;">Service:</td><td>${request.service || 'Logistics Service'}</td></tr>
+                <tr><td style="padding: 4px 0; font-weight: bold;">Date:</td><td>${request.date || 'N/A'}</td></tr>
+                <tr><td style="padding: 4px 0; font-weight: bold; color: #15803d;">Suggested Time:</td><td style="font-weight: bold; color: #15803d;">${proposedTime}</td></tr>
+              </table>
+            </div>
+
+            <p>Please log in to your <a href="https://localmile.plus/request/${request.id}" style="color: #095c7b; font-weight: bold;">LocalMile.Plus Portal</a> to review and confirm the proposed time.</p>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 24px 0;" />
+            <p style="font-size: 11px; color: #888;">LocalMile.Plus | Powered by MailPlus Australia</p>
+          </div>
+        `;
+
+        sendSupportEmailFn({
+          to: customerEmail,
+          cc: 'dispatcher@mailplus.com.au',
+          subject: `[LocalMile.Plus] New Time Proposed for Your Job Request (Ref: #${refId})`,
+          html: proposedTimeHtml,
+          jobId: request.id,
+          metadata: {
+            companyName,
+            customerId: request.customer_id || request.netsuiteCustomerId || ''
+          }
+        }).catch(err => console.error("Error sending proposed time email:", err));
+      }
 
       setIsTimeModalOpen(false);
       setProposedTime('');

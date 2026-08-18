@@ -215,7 +215,7 @@ export const onJobRequestCreated = onDocumentCreated({
       : "SERVICE REQUESTED";
   
     const mailOptions = {
-      from: '"LocalMile.Plus Bookings" <bookings@localmile.plus>',
+      from: '"LocalMile.Plus Bookings" <localmile@mailplus.com.au>',
       to: customerEmail,
       replyTo: "bookings@localmile.plus",
       subject: `Booking Confirmation: ${companyName} (${displayService})`,
@@ -447,6 +447,7 @@ export const onJobCreated = onDocumentCreated({
           if (userData?.role === "customer" && !userData?.firstJobEmailSent) {
             console.log(`[onJobCreated] 1st job created for customer ${uid} (Lead: ${leadId}). Fetching lead details from ProspectPlus...`);
 
+            let franchiseeEmail = "";
             let amEmail = "";
             let amName = "Account Manager";
             let companyName = afterData.customer?.company || userData?.company || "Valued Customer";
@@ -463,26 +464,138 @@ export const onJobCreated = onDocumentCreated({
                 }, "prospectplus").firestore();
               }
 
-              const leadDoc = await prospectDb.collection("leads").doc(leadId).get();
-              if (leadDoc.exists) {
-                const leadData = leadDoc.data() || {};
+              let leadData: any = null;
+              if (leadId) {
+                const leadDoc = await prospectDb.collection("leads").doc(leadId).get();
+                if (leadDoc.exists) {
+                  leadData = leadDoc.data() || {};
+                } else {
+                  const compDoc = await prospectDb.collection("companies").doc(leadId).get();
+                  if (compDoc.exists) {
+                    leadData = compDoc.data() || {};
+                  }
+                }
+              }
+
+              if (leadData) {
                 if (leadData.companyName) companyName = leadData.companyName;
 
-                const assignedAM = leadData.accountManagerAssigned || leadData.accountManager || "";
+                // --- 1. Account Manager Resolution ---
+                const assignedAM = (
+                  leadData.accountManagerAssigned ||
+                  leadData.accountManager ||
+                  leadData.salesRepAssigned ||
+                  leadData.customerSuccessAssigned ||
+                  leadData.amAssigned ||
+                  ""
+                ).toString().trim();
+
                 if (assignedAM) {
+                  console.log(`[onJobCreated] accountManagerAssigned value: "${assignedAM}" for lead ${leadId}`);
                   if (assignedAM.includes("@")) {
                     amEmail = assignedAM;
                   } else {
                     amName = assignedAM;
-                    const usersSnap = await prospectDb.collection("users").get();
-                    usersSnap.forEach((uDoc) => {
-                      const uData = uDoc.data();
-                      const fullName = `${uData.firstName || ''} ${uData.lastName || ''}`.trim();
-                      if (fullName.toLowerCase() === assignedAM.trim().toLowerCase() && uData.email) {
-                        amEmail = uData.email;
-                        if (uData.firstName) {
-                          amName = uData.firstName;
+
+                    // Direct lookup by UID first
+                    try {
+                      const userDocById = await prospectDb.collection("users").doc(assignedAM).get();
+                      if (userDocById.exists && userDocById.data()?.email) {
+                        const uData = userDocById.data()!;
+                        amEmail = (uData.email || "").toString().trim();
+                        const fn = (uData.firstName || "").toString().trim();
+                        const ln = (uData.lastName || "").toString().trim();
+                        amName = fn || (fn && ln ? `${fn} ${ln}` : assignedAM);
+                      }
+                    } catch (e) {
+                      // ignore direct doc read error
+                    }
+
+                    // Search users collection comparing concatenated firstName & lastName, email, or UID
+                    if (!amEmail) {
+                      const usersSnap = await prospectDb.collection("users").get();
+                      const normAssigned = assignedAM.toLowerCase().trim();
+
+                      usersSnap.forEach((uDoc) => {
+                        const uData = uDoc.data() || {};
+                        const firstName = (uData.firstName || "").toString().trim();
+                        const lastName = (uData.lastName || "").toString().trim();
+                        const fullName = `${firstName} ${lastName}`.trim();
+                        const normFullName = fullName.toLowerCase();
+                        const email = (uData.email || "").toString().trim();
+                        const uIdNorm = uDoc.id.toLowerCase();
+
+                        if (
+                          (normFullName && normFullName === normAssigned) ||
+                          (firstName && firstName.toLowerCase() === normAssigned) ||
+                          (lastName && lastName.toLowerCase() === normAssigned) ||
+                          (email && email.toLowerCase() === normAssigned) ||
+                          uIdNorm === normAssigned
+                        ) {
+                          if (email) {
+                            amEmail = email;
+                            amName = firstName || fullName || assignedAM;
+                          }
                         }
+                      });
+                    }
+                  }
+                  console.log(`[onJobCreated] Resolved AM email: "${amEmail}" (name: "${amName}") for assignedAM: "${assignedAM}"`);
+                }
+
+                // --- 2. Franchisee Email Resolution ---
+                if (leadData.franchiseeEmail) {
+                  franchiseeEmail = leadData.franchiseeEmail;
+                } else if (leadData.customerServiceEmail) {
+                  franchiseeEmail = leadData.customerServiceEmail;
+                }
+
+                const franchiseeIdentifier = (
+                  leadData.franchisee ||
+                  leadData.franchiseeName ||
+                  leadData.franchiseeId ||
+                  leadData.franchiseeInternalId ||
+                  ""
+                ).toString().trim();
+
+                if (!franchiseeEmail && franchiseeIdentifier) {
+                  console.log(`[onJobCreated] Looking up franchisee details for identifier: "${franchiseeIdentifier}"`);
+
+                  // Search franchisees collection by name
+                  const fSnapName = await prospectDb.collection("franchisees").where("name", "==", franchiseeIdentifier).limit(1).get();
+                  if (!fSnapName.empty) {
+                    const fData = fSnapName.docs[0].data() || {};
+                    franchiseeEmail = fData.email || fData.customerServiceEmail || fData.contactEmail || "";
+                  }
+
+                  // Search franchisees collection by internalId
+                  if (!franchiseeEmail) {
+                    const fSnapId = await prospectDb.collection("franchisees").where("internalId", "==", franchiseeIdentifier).limit(1).get();
+                    if (!fSnapId.empty) {
+                      const fData = fSnapId.docs[0].data() || {};
+                      franchiseeEmail = fData.email || fData.customerServiceEmail || fData.contactEmail || "";
+                    }
+                  }
+
+                  // Search franchisees collection by doc ID
+                  if (!franchiseeEmail) {
+                    const fDocDirect = await prospectDb.collection("franchisees").doc(franchiseeIdentifier).get();
+                    if (fDocDirect.exists) {
+                      const fData = fDocDirect.data() || {};
+                      franchiseeEmail = fData.email || fData.customerServiceEmail || fData.contactEmail || "";
+                    }
+                  }
+
+                  // Search users collection for franchisee user
+                  if (!franchiseeEmail) {
+                    const usersSnap = await prospectDb.collection("users").get();
+                    const normFran = franchiseeIdentifier.toLowerCase();
+                    usersSnap.forEach((uDoc) => {
+                      const uData = uDoc.data() || {};
+                      const fName = (uData.franchisee || uData.franchiseeName || "").toString().trim().toLowerCase();
+                      const fId = (uData.franchiseeId || uData.franchiseeInternalId || "").toString().trim().toLowerCase();
+                      if ((fName === normFran || fId === normFran) && uData.email) {
+                        franchiseeEmail = uData.email;
                       }
                     });
                   }
@@ -492,12 +605,33 @@ export const onJobCreated = onDocumentCreated({
               console.error("[onJobCreated] Error fetching lead details from ProspectPlus Firestore:", leadErr);
             }
 
+            // Fallbacks from LocalMile Plus customer user profile if still not found
+            if (!franchiseeEmail && userData?.franchiseeEmail) {
+              franchiseeEmail = userData.franchiseeEmail;
+            }
+            if (!amEmail && userData?.accountManagerEmail) {
+              amEmail = userData.accountManagerEmail;
+            }
+
             const targetRecipient = amEmail || "fiona.harrison@mailplus.com.au";
-            const ccRecipients = [
+            const baseCcRecipients = [
               "fiona.harrison@mailplus.com.au",
               "dispatcher@mailplus.com.au",
               "luke.forbes@mailplus.com.au"
             ];
+
+            if (franchiseeEmail) {
+              console.log(`[onJobCreated] Including franchisee email (${franchiseeEmail}) in CC list.`);
+              baseCcRecipients.push(franchiseeEmail);
+            }
+
+            const ccRecipients = Array.from(
+              new Set(
+                baseCcRecipients
+                  .map(e => e.trim().toLowerCase())
+                  .filter(e => e && e !== targetRecipient.trim().toLowerCase())
+              )
+            );
 
             const displayService = typeof afterData.service === "string"
               ? afterData.service.replace(/-/g, " ").toUpperCase()
@@ -940,7 +1074,7 @@ async function handleCustomerCancellation(newData: any, oldData: any, customerId
     const notes = newData.cancellationNotes || "No notes provided";
 
     const mailOptions = {
-      from: '"LocalMile.Plus Notifications" <bookings@localmile.plus>',
+      from: '"LocalMile.Plus Notifications" <localmile@mailplus.com.au>',
       to: "mailplusit@mailplus.com.au",
       subject: `CUSTOMER CANCELLED: ${customerName} (${parentName})`,
       html: `
@@ -1589,12 +1723,12 @@ export const sendSupportEmail = onCall({
 }, async (request) => {
   console.log("[Support Email] Function triggered");
 
-  const { message, subject, jobId, metadata, to, cc } = request.data;
+  const { message, subject, jobId, metadata, to, cc, html } = request.data;
   console.log(`[Support Email] Data: jobId=${jobId}, subject=${subject}, to=${to}, cc=${cc}`);
 
-  if (!message) {
-    console.warn("[Support Email] Missing message");
-    throw new HttpsError("invalid-argument", "Message is required.");
+  if (!message && !html) {
+    console.warn("[Support Email] Missing message or html");
+    throw new HttpsError("invalid-argument", "Message or html is required.");
   }
 
   // If unauthenticated, validate that the message is only sent to predefined support email addresses to prevent spam relaying
@@ -1613,7 +1747,8 @@ export const sendSupportEmail = onCall({
       "kerry.oneill@mailplus.com.au",
       "dispatcher@mailplus.com.au",
       "mailplusit@mailplus.com.au",
-      "popie.popie@mailplus.com.au"
+      "popie.popie@mailplus.com.au",
+      "fiona.harrison@mailplus.com.au"
     ];
 
     const isAllowed = checkRecipients.every(r => allowedRecipients.includes(r.trim().toLowerCase()));
@@ -1653,7 +1788,7 @@ export const sendSupportEmail = onCall({
       `;
     }
 
-    const htmlContent = `
+    const htmlContent = html || `
       <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #1A3D33;">${subject || "New Support Inquiry"}</h2>
         <p><strong>User:</strong> ${metadata?.senderName || "Unknown User"} (${request.auth?.token?.email || metadata?.senderEmail || "Unknown User"})</p>
@@ -1663,7 +1798,7 @@ export const sendSupportEmail = onCall({
 
         <p><strong>User Message:</strong></p>
         <div style="background: #fdfef0; padding: 20px; border-radius: 8px; border-left: 4px solid #EAF044; font-style: italic;">
-          ${message.replace(/\n/g, '<br>')}
+          ${(message || "").replace(/\n/g, '<br>')}
         </div>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
         <p style="font-size: 12px; color: #999;">This email was sent via LocalMile.Plus Support System.</p>
@@ -1853,7 +1988,7 @@ export const cancelJob = onCall({
     const userEmail = request.auth.token.email || "Unknown User";
 
     const mailOptions = {
-      from: '"LocalMile.Plus Bookings" <bookings@localmile.plus>',
+      from: '"LocalMile.Plus Bookings" <localmile@mailplus.com.au>',
       to: recipient,
       replyTo: "bookings@localmile.plus",
       subject: `JOB CANCELLATION: [Ref: ${jobId}] ${metadata?.companyName || 'Job'}`,
@@ -1990,7 +2125,7 @@ export const adminCreateUser = onCall({
 
     const signInLink = "https://localmile.plus/signin";
     const mailOptions = {
-      from: '"LocalMile.Plus" <bookings@localmile.plus>',
+      from: '"LocalMile.Plus" <localmile@mailplus.com.au>',
       to: email,
       subject: "Welcome to LocalMile.Plus - Your Account is Ready",
       html: `
@@ -2433,7 +2568,7 @@ export const respondToCommunication = onCall({
   }
 
   const mailOptions = {
-    from: '"LocalMile.Plus Support" <bookings@localmile.plus>',
+    from: '"LocalMile.Plus Support" <localmile@mailplus.com.au>',
     to,
     subject,
     html: enrichedBody,
@@ -2723,7 +2858,7 @@ export const sendScheduledJobsReport = onSchedule({
   const taggedHtml = injectMetadataTag(html, metadata);
 
   const mailOptions = {
-    from: '"LocalMile.Plus Manifest" <bookings@localmile.plus>',
+    from: '"LocalMile.Plus Manifest" <localmile@mailplus.com.au>',
     to: recipient,
     subject: `[Action Required] Daily Manifest: Scheduled Jobs (${todayStr})`,
     html: taggedHtml,
@@ -2856,7 +2991,7 @@ export const sendInProgressJobsReport = onSchedule({
   const taggedHtml = injectMetadataTag(html, metadata);
 
   const mailOptions = {
-    from: '"LocalMile.Plus Manifest" <bookings@localmile.plus>',
+    from: '"LocalMile.Plus Manifest" <localmile@mailplus.com.au>',
     to: recipient,
     subject: `Daily Manifest Update: Active Jobs (${todayStr})`,
     html: taggedHtml,
@@ -3057,7 +3192,7 @@ export const sendDailyPerformanceReport = onSchedule({
     const taggedHtml = injectMetadataTag(html, metadata);
 
     const mailOptions = {
-      from: '"LocalMile.Plus Reports" <bookings@localmile.plus>',
+      from: '"LocalMile.Plus Reports" <localmile@mailplus.com.au>',
       to: recipientList.join(","),
       cc: headOfficeCC.join(","),
       subject: `Daily Performance Report: ${lpoName} (${yesterdayStr})`,

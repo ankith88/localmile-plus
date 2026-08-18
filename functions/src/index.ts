@@ -2076,8 +2076,8 @@ const validateSuperAdmin = async (auth: any) => {
   const userDoc = await db.collection("users").doc(auth.uid).get();
   const userData = userDoc.data();
 
-  if (userData?.role !== "superadmin") {
-    throw new HttpsError("permission-denied", "Only superadmins can perform this action.");
+  if (userData?.role !== "superadmin" && userData?.role !== "admin") {
+    throw new HttpsError("permission-denied", "Only superadmins and admins can perform this action.");
   }
 
   return true;
@@ -2179,6 +2179,18 @@ export const adminCreateUser = onCall({
     return { success: true, uid: userRecord.uid };
   } catch (error: any) {
     console.error("[Admin Create User Error]:", error);
+    if (error.code === "auth/email-already-in-use") {
+      throw new HttpsError("already-exists", "The email address is already in use by another account.");
+    }
+    if (error.code === "auth/invalid-email") {
+      throw new HttpsError("invalid-argument", "The provided email address is invalid.");
+    }
+    if (error.code === "auth/weak-password") {
+      throw new HttpsError("invalid-argument", "The password must be at least 6 characters long.");
+    }
+    if (error instanceof HttpsError) {
+      throw error;
+    }
     throw new HttpsError("internal", error.message || "Failed to create user.");
   }
 });

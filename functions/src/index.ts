@@ -1925,6 +1925,8 @@ export const notifyMissingPoBox = onCall({
 
 // Logic: cancelJob
 export const cancelJob = onCall({
+  invoker: "public",
+  cors: true,
   secrets: [gmailAppPassword],
 }, async (request) => {
   console.log("[Cancel Job] Function triggered");
@@ -2083,6 +2085,8 @@ const validateSuperAdmin = async (auth: any) => {
 
 // Logic: adminCreateUser
 export const adminCreateUser = onCall({
+  invoker: "public",
+  cors: true,
   secrets: [gmailAppPassword],
 }, async (request) => {
   await validateSuperAdmin(request.auth);
@@ -2179,7 +2183,10 @@ export const adminCreateUser = onCall({
   }
 });
 
-export const adminUpdateUser = onCall(async (request) => {
+export const adminUpdateUser = onCall({
+  invoker: "public",
+  cors: true,
+}, async (request) => {
   await validateSuperAdmin(request.auth);
 
   const { uid, email } = request.data;
@@ -2212,7 +2219,10 @@ export const adminUpdateUser = onCall(async (request) => {
 
 
 // Logic: adminResetPassword
-export const adminResetPassword = onCall(async (request) => {
+export const adminResetPassword = onCall({
+  invoker: "public",
+  cors: true,
+}, async (request) => {
   await validateSuperAdmin(request.auth);
 
   const { uid, newPassword } = request.data;

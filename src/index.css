@@ -499,6 +499,7 @@ h3 {
   width: 100% !important;
 }
 
+
 @media (max-width: 768px) {
   .route-connector-visual {
     flex-direction: column;
@@ -509,3 +510,79 @@ h3 {
     margin: 8px 0;
   }
 }
+
+/* Ready From Toggle & Collapsible Time Container */
+.ready-from-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  outline: none;
+}
+
+.ready-from-toggle .state-word {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  color: var(--slate-400, #9aa19d);
+  min-width: 26px;
+  text-align: right;
+}
+
+.ready-from-toggle.on .state-word {
+  color: var(--teal, #025D7C);
+}
+
+.ready-from-toggle .track {
+  width: 46px;
+  height: 26px;
+  border-radius: 13px;
+  background: #d8dbd7;
+  position: relative;
+  transition: background 0.18s ease;
+}
+
+.ready-from-toggle .knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: left 0.18s ease;
+}
+
+.ready-from-toggle.on .track {
+  background: var(--teal, #025D7C);
+}
+
+.ready-from-toggle.on .knob {
+  left: 23px;
+}
+
+.ready-from-toggle:focus-visible .track {
+  outline: 2px solid var(--teal, #025D7C);
+  outline-offset: 2px;
+}
+
+.time-wrap {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin 0.25s ease;
+  margin-bottom: 0;
+}
+
+.time-wrap.open {
+  max-height: 120px;
+  opacity: 1;
+  margin-bottom: 12px;
+  overflow: visible;
+}
+

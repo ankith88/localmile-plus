@@ -24,7 +24,8 @@ import {
   Mail,
   Phone,
   Repeat,
-  Lock
+  Lock,
+  Building2
 } from 'lucide-react';
 import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
@@ -51,15 +52,75 @@ const Dashboard: React.FC = () => {
   const [serviceFilter, setServiceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set());
-  
+
+  // Communication Modal State
   const [isCommModalOpen, setIsCommModalOpen] = useState(false);
   const [selectedJobForComm, setSelectedJobForComm] = useState<any>(null);
+  const [commMessage, setCommMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
+  // Admin Role View & Linked Customer Company Filter
+  const [adminRoleView, setAdminRoleView] = useState<'customer' | 'parent'>('customer');
+  const [selectedCustomerCompanyId, setSelectedCustomerCompanyId] = useState<string>('all');
+  const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(new Map());
+  const [customerCompanies, setCustomerCompanies] = useState<{ id: string; name: string }[]>([]);
+
+  // Admin Multi-Select Bulk Delete State
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const fetchUsersAndCompanies = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const roleMap = new Map<string, string>();
+        usersSnap.docs.forEach(d => {
+          const data = d.data();
+          if (data.role) {
+            roleMap.set(d.id, data.role);
+          }
+        });
+        setUserRoleMap(roleMap);
+
+        const compSnap = await getDocs(collection(db, 'companies'));
+        const compList: { id: string; name: string }[] = [];
+        const seenNames = new Set<string>();
+
+        compSnap.docs.forEach(d => {
+          const data = d.data();
+          const name = data.name || data.companyName;
+          if (name && !seenNames.has(name.toLowerCase())) {
+            seenNames.add(name.toLowerCase());
+            compList.push({ id: d.id, name });
+          }
+        });
+
+        try {
+          const custSnap = await getDocs(collection(db, 'customers'));
+          custSnap.docs.forEach(d => {
+            const data = d.data();
+            const name = data.name || data.companyName;
+            if (name && !seenNames.has(name.toLowerCase())) {
+              seenNames.add(name.toLowerCase());
+              compList.push({ id: d.id, name });
+            }
+          });
+        } catch (e) {
+          // ignore if customers collection is unavailable
+        }
+
+        setCustomerCompanies(compList);
+      } catch (err) {
+        console.error("Error fetching users & companies for admin:", err);
+      }
+    };
+    fetchUsersAndCompanies();
+  }, [isAdmin]);
 
   const getParentName = (id: string) => {
     return allParents.find(p => p.id === id)?.name || 'Independent';
   };
-  const [commMessage, setCommMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
   
   // Support Email Modal State
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
@@ -232,15 +293,68 @@ const Dashboard: React.FC = () => {
   // Projections are now managed exclusively in the Schedules page calendar
   const projectedJobs: any[] = [];
 
+  const allCustomerCompanyOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    customerCompanies.forEach(c => map.set(c.id, c.name));
+    [...jobs, ...requests].forEach(item => {
+      if (item.customer?.company) {
+        const cid = item.customer_id || item.customer.company;
+        if (!map.has(cid)) {
+          map.set(cid, item.customer.company);
+        }
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [customerCompanies, jobs, requests]);
+
+  const getItemUserRole = (item: any): 'customer' | 'parent' => {
+    if (item.userRole) {
+      if (item.userRole === 'customer') return 'customer';
+      if (item.userRole === 'parent' || item.userRole === 'lpoadmin' || item.userRole === 'operator') return 'parent';
+    }
+    if (item.uid && userRoleMap.has(item.uid)) {
+      const uRole = userRoleMap.get(item.uid);
+      if (uRole === 'customer') return 'customer';
+      if (uRole === 'parent' || uRole === 'lpoadmin' || uRole === 'operator') return 'parent';
+    }
+    if (item.customer_id && (!item.parent_id || item.customer_id !== item.parent_id)) {
+      return 'customer';
+    }
+    if (item.parent_id && !item.customer_id) {
+      return 'parent';
+    }
+    return 'customer';
+  };
+
   // Global Filter Function
   const applyGlobalFilters = (item: any) => {
-    const matchesSearch = item.customer.company.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         item.customer.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = (item.customer?.company || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         (item.customer?.address || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.id.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesService = serviceFilter === 'all' || item.service === serviceFilter;
     const matchesDate = !dateFilter || item.date === dateFilter;
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
-    return matchesSearch && matchesService && matchesDate && matchesStatus;
+
+    let matchesAdminFilters = true;
+    if (isAdmin) {
+      const itemRole = getItemUserRole(item);
+      if (itemRole !== adminRoleView) {
+        return false;
+      }
+      if (adminRoleView === 'customer') {
+        if (selectedCustomerCompanyId !== 'all') {
+          const matchId = item.customer_id === selectedCustomerCompanyId;
+          const matchName = (item.customer?.company || '').toLowerCase() === (allCustomerCompanyOptions.find(c => c.id === selectedCustomerCompanyId)?.name || '').toLowerCase();
+          matchesAdminFilters = matchId || matchName;
+        }
+      } else if (adminRoleView === 'parent') {
+        if (selectedParentId !== 'all') {
+          matchesAdminFilters = item.parent_id === selectedParentId;
+        }
+      }
+    }
+
+    return matchesSearch && matchesService && matchesDate && matchesStatus && matchesAdminFilters;
   };
 
   const globalFilteredJobs = jobs.filter(applyGlobalFilters);
@@ -410,6 +524,74 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const toggleSelectJob = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedJobIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectAllFilteredJobs = () => {
+    const allIds = filteredJobs.map(j => j.id);
+    setSelectedJobIds(new Set(allIds));
+  };
+
+  const clearJobSelection = () => {
+    setSelectedJobIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (!isAdmin) {
+      alert("Only admins and superadmins can perform bulk deletion.");
+      return;
+    }
+    if (selectedJobIds.size === 0) {
+      alert("No jobs selected for deletion.");
+      return;
+    }
+
+    const count = selectedJobIds.size;
+    if (!window.confirm(`Are you sure you want to permanently delete the ${count} selected job(s)/request(s) directly from the database?`)) {
+      return;
+    }
+
+    setIsBulkDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedJobIds);
+      
+      await Promise.all(idsToDelete.map(async (id) => {
+        try {
+          await deleteDoc(doc(db, 'jobs', id));
+        } catch (e) {
+          // Document might be in requests collection
+        }
+        try {
+          await deleteDoc(doc(db, 'requests', id));
+        } catch (e) {
+          // ignore
+        }
+      }));
+
+      const idSet = new Set(idsToDelete);
+      setJobs(prev => prev.filter(j => !idSet.has(j.id)));
+      setRequests(prev => prev.filter(r => !idSet.has(r.id)));
+      setSelectedJobIds(new Set());
+
+      alert(`Successfully deleted ${count} item(s) from the database.`);
+    } catch (err) {
+      console.error("Error bulk deleting items:", err);
+      alert("An error occurred during bulk deletion. Please try again.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const handleUpdateStopStatus = async (jobId: string, stopIndex: number, newStatus: string) => {
     if (userData?.role === 'customer' || userData?.role === 'parent') {
       alert("You do not have permission to modify job status.");
@@ -467,18 +649,22 @@ const Dashboard: React.FC = () => {
   const getTabCount = (tabId: string) => {
     if (tabId === 'pending') return globalFilteredRequests.filter(r => r.status === 'pending' && (r.jobType !== 'one-off' || r.date >= today)).length;
     if (tabId === 'declined') return globalFilteredRequests.filter(r => r.status === 'rejected' || r.status === 'cancelled').length + globalFilteredJobs.filter(j => j.status === 'cancelled').length;
+    if (tabId === 'history') return [...globalFilteredJobs, ...globalFilteredRequests].filter(j => j.date < today).length;
     
     return globalFilteredJobs.filter(j => {
-      if (tabId === 'in-progress') return j.date === today;
-      if (tabId === 'upcoming') return j.date > today;
-      if (tabId === 'history') return j.date < today;
+      if (tabId === 'in-progress') return j.date === today && j.status !== 'cancelled' && j.status !== 'rejected';
+      if (tabId === 'upcoming') return j.date > today && j.status !== 'cancelled' && j.status !== 'rejected';
       return false;
     }).length;
   };
 
   const getRecurringCustomerCount = () => {
-    const activeSchedules = schedules.filter(s => s.recurrenceStatus !== 'stopped');
-    const uniqueCustomers = new Set(activeSchedules.map(s => s.customer.company)).size;
+    const activeSchedules = schedules.filter(s => {
+      const isNotStopped = s.recurrenceStatus !== 'stopped';
+      const matchesFilter = applyGlobalFilters(s);
+      return isNotStopped && matchesFilter;
+    });
+    const uniqueCustomers = new Set(activeSchedules.map(s => s.customer?.company).filter(Boolean)).size;
     return uniqueCustomers;
   };
 
@@ -590,15 +776,38 @@ const Dashboard: React.FC = () => {
               </div>
                 <div className="filter-actions">
                    {isAdmin && (
-                     <CustomSelect 
-                       value={selectedParentId}
-                       onChange={(val) => setSelectedParentId(val)}
-                       options={[
-                         { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
-                         ...allParents.map(p => ({ value: p.id, label: p.name, icon: <MapPin size={14} /> }))
-                       ]}
-                       className="lpo-select-custom"
-                     />
+                     <>
+                       <CustomSelect 
+                         value={adminRoleView}
+                         onChange={(val) => setAdminRoleView(val as any)}
+                         options={[
+                           { value: 'customer', label: 'Role: Customer', icon: <User size={14} /> },
+                           { value: 'parent', label: 'Role: Parent', icon: <Building2 size={14} /> }
+                         ]}
+                         className="role-select-custom"
+                       />
+                       {adminRoleView === 'customer' ? (
+                         <CustomSelect 
+                           value={selectedCustomerCompanyId}
+                           onChange={(val) => setSelectedCustomerCompanyId(val)}
+                           options={[
+                             { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
+                             ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
+                           ]}
+                           className="company-select-custom"
+                         />
+                       ) : (
+                         <CustomSelect 
+                           value={selectedParentId}
+                           onChange={(val) => setSelectedParentId(val)}
+                           options={[
+                             { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
+                             ...allParents.map(p => ({ value: p.id, label: p.name, icon: <MapPin size={14} /> }))
+                           ]}
+                           className="lpo-select-custom"
+                         />
+                       )}
+                     </>
                    )}
                    <div className="custom-filter-date" style={{ position: 'relative', zIndex: 10 }}>
                      <CustomDatePicker 
@@ -641,6 +850,59 @@ const Dashboard: React.FC = () => {
                   </button>
                </div>
             </div>
+
+            {/* Admin Bulk Selection Bar */}
+            {isAdmin && filteredJobs.length > 0 && (
+               <div className="admin-bulk-bar glass-card" style={{
+                 display: 'flex',
+                 alignItems: 'center',
+                 justifyContent: 'space-between',
+                 padding: '12px 20px',
+                 marginTop: '12px',
+                 marginBottom: '16px',
+                 borderRadius: '16px',
+                 background: 'rgba(255, 255, 255, 0.85)',
+                 border: '1px solid rgba(255, 255, 255, 0.4)',
+                 boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)'
+               }}>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                   <button 
+                     className="btn-secondary-glass" 
+                     onClick={selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0 ? clearJobSelection : selectAllFilteredJobs}
+                     style={{ fontSize: '13px', fontWeight: 600, padding: '6px 14px', cursor: 'pointer' }}
+                   >
+                     {selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0 ? 'Deselect All' : `Select All (${filteredJobs.length})`}
+                   </button>
+                   <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink)' }}>
+                     {selectedJobIds.size} selected
+                   </span>
+                 </div>
+                 
+                 {selectedJobIds.size > 0 && (
+                   <button 
+                     onClick={handleBulkDelete}
+                     disabled={isBulkDeleting}
+                     style={{
+                       background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                       color: 'white',
+                       border: 'none',
+                       borderRadius: '10px',
+                       padding: '8px 16px',
+                       fontWeight: 700,
+                       fontSize: '13px',
+                       display: 'flex',
+                       alignItems: 'center',
+                       gap: '8px',
+                       cursor: 'pointer',
+                       boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
+                     }}
+                   >
+                     <Trash2 size={16} />
+                     <span>{isBulkDeleting ? 'Deleting...' : `Delete Selected (${selectedJobIds.size})`}</span>
+                   </button>
+                 )}
+               </div>
+             )}
 
             {/* Logistics Timeline */}
             <div className="dashboard-layout-with-sidebar">
@@ -712,12 +974,22 @@ const Dashboard: React.FC = () => {
                           <div key={job.id} className="timeline-item">
                              <div className="timeline-node">
                                 <div className={`node-inner pill-${job.status}`}>
-                                   {getServiceIcon(job.service)}
+                         {getServiceIcon(job.service)}
                                 </div>
                              </div>
                              <div className="timeline-content-card glass-card">
                                  <div className="card-header" onClick={() => toggleExpand(job.id)} style={{ cursor: 'pointer' }}>
                                     <div className="customer-block">
+                                       {isAdmin && (
+                                         <input 
+                                           type="checkbox" 
+                                           checked={selectedJobIds.has(job.id)}
+                                           onClick={(e) => e.stopPropagation()}
+                                           onChange={(e) => toggleSelectJob(job.id, e as any)}
+                                           style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#dc2626', marginRight: '8px', flexShrink: 0 }}
+                                           title={selectedJobIds.has(job.id) ? "Deselect job" : "Select job for bulk delete"}
+                                         />
+                                       )}
                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                           {userData?.role === 'customer' ? (
                                             <h3 className="company-name" style={{ textTransform: 'capitalize' }}>

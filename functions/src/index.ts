@@ -2124,6 +2124,16 @@ export const adminCreateUser = onCall({
     });
 
     const signInLink = "https://localmile.plus/signin";
+    const isAdminUser = role === 'admin' || role === 'superadmin';
+
+    const credentialsHtml = isAdminUser ? `
+            <div style="background-color: #f4f7f6; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 25px 0;">
+              <h3 style="margin-top: 0; margin-bottom: 12px; color: #1a3d33; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;">Your Account Credentials</h3>
+              <p style="margin: 6px 0; font-size: 14px; color: #333;"><strong>Email:</strong> ${email}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #333;"><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${password}</code></p>
+            </div>
+    ` : '';
+
     const mailOptions = {
       from: '"LocalMile.Plus" <localmile@mailplus.com.au>',
       to: email,
@@ -2137,11 +2147,13 @@ export const adminCreateUser = onCall({
             <h2 style="color: #1a3d33; margin-top: 0;">Welcome aboard!</h2>
             <p>Your account for the LocalMile.Plus portal has been created. You can now sign in to manage your logistics operations.</p>
             
+            ${credentialsHtml}
+
             <div style="margin: 30px 0; text-align: center;">
               <a href="${signInLink}" style="background-color: #1a3d33; color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">SIGN IN TO PORTAL</a>
             </div>
 
-            <p style="font-size: 14px; color: #666;"><strong>Note:</strong> If you would like to set your own secure password, simply click <strong>"Forgot Password"</strong> on the sign-in page and follow the instructions.</p>
+            <p style="font-size: 14px; color: #666;"><strong>Note:</strong> ${isAdminUser ? 'For security reasons, we recommend changing your password after signing in, or you can click' : 'If you would like to set your own secure password, simply click'} <strong>"Forgot Password"</strong> on the sign-in page and follow the instructions.</p>
             
             <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
             <p style="font-size: 12px; color: #999; text-align: center;">

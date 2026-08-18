@@ -264,6 +264,21 @@ const NewJobForm: React.FC = () => {
   const [processingProgress, setProcessingProgress] = useState(0);
   const [processingMessage, setProcessingMessage] = useState('');
 
+  // Ready From (Time Constraint) Toggle State
+  const [isReadyFromActive, setIsReadyFromActive] = useState<boolean>(false);
+
+  const handleToggleReadyFrom = () => {
+    const nextState = !isReadyFromActive;
+    setIsReadyFromActive(nextState);
+    setValidationError(null);
+    if (nextState) {
+      setFormData(prev => ({ ...prev, preferredTime: '09:00' }));
+    } else {
+      setFormData(prev => ({ ...prev, preferredTime: '' }));
+    }
+  };
+
+
   // Independent Customer States
   const [independentServiceType, setIndependentServiceType] = useState<'outbound' | 'inbound'>('outbound');
   const [saveAsDefaultAusPost, setSaveAsDefaultAusPost] = useState(false);
@@ -608,6 +623,9 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
           frequency: jobData.frequency || [],
           preferredTime: jobData.preferredTime || ''
         });
+        if (jobData.preferredTime) {
+          setIsReadyFromActive(true);
+        }
         setIsExistingCustomer(true);
       } catch (e) {
         console.error("Failed to parse edit draft", e);
@@ -851,6 +869,11 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
   const handleNext = async () => {
     if (step === 1) {
       setValidationError(null);
+
+      if (userData?.role === 'customer' && isReadyFromActive && !formData.preferredTime) {
+        setValidationError("Select a time or turn this off");
+        return;
+      }
 
       const targetAddressState = userData?.role === 'customer' 
         ? (recipientData.state || companyData?.state || '')
@@ -1636,6 +1659,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
           parent_id: parent?.id || userData?.parent_id || "",
           customer_id: userData?.role === 'parent' ? (parentSubCustomerId || "") : (customer?.id || userData?.customer_id || ""),
           uid: userData?.uid,
+          userRole: userData?.role || 'parent',
           isExistingCustomer,
           netsuiteCustomerId: userData?.role === 'parent' ? (parentSubCustomerId || nsResult.customerInternalId || formData.customer.netsuiteId || null) : (nsResult.customerInternalId || formData.customer.netsuiteId || null),
           status: isDirectBook ? 'scheduled' : initialRequestStatus,
@@ -2804,14 +2828,53 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                         />
                       </div>
                       <div style={{ flex: 2 }}>
-                        <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>TIME CONSTRAINTS (OPTIONAL)</label>
-                        <CustomTimePicker
-                          value={formData.preferredTime}
-                          onChange={(val) => setFormData({...formData, preferredTime: val})}
-                        />
-                        <p style={{ fontSize: '0.85rem', color: 'var(--slate-500)', marginTop: '8px', lineHeight: 1.4 }}>
-                          Are there any timing restrictions for this job? Leave blank if the operator can attend anytime during business hours.
-                        </p>
+                        {userData?.role === 'customer' ? (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                              <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)' }}>
+                                READY FROM <span style={{ color: 'var(--slate-400)', fontWeight: 400 }}>(OPTIONAL)</span>
+                              </label>
+                              <button
+                                type="button"
+                                className={`ready-from-toggle ${isReadyFromActive ? 'on' : ''}`}
+                                onClick={handleToggleReadyFrom}
+                                role="switch"
+                                aria-checked={isReadyFromActive}
+                                aria-label="Ready from time"
+                              >
+                                <span className="state-word">{isReadyFromActive ? 'On' : 'Off'}</span>
+                                <span className="track"><span className="knob"></span></span>
+                              </button>
+                            </div>
+
+                            <div className={`time-wrap ${isReadyFromActive ? 'open' : ''}`}>
+                              <CustomTimePicker
+                                value={formData.preferredTime}
+                                onChange={(val) => {
+                                  setFormData({ ...formData, preferredTime: val });
+                                  if (val) setValidationError(null);
+                                }}
+                              />
+                            </div>
+
+                            <p style={{ fontSize: '0.85rem', color: 'var(--slate-500)', marginTop: '8px', lineHeight: 1.4 }}>
+                              {isReadyFromActive
+                                ? "Select the earliest time your Aus Post items will be ready i.e. 11am. The earlier the time, the easier it is for the driver to fit you into their run."
+                                : "Leave this off if your pickup time is flexible — the driver will collect while they're already in your area."}
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>TIME CONSTRAINTS (OPTIONAL)</label>
+                            <CustomTimePicker
+                              value={formData.preferredTime}
+                              onChange={(val) => setFormData({...formData, preferredTime: val})}
+                            />
+                            <p style={{ fontSize: '0.85rem', color: 'var(--slate-500)', marginTop: '8px', lineHeight: 1.4 }}>
+                              Are there any timing restrictions for this job? Leave blank if the operator can attend anytime during business hours.
+                            </p>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>

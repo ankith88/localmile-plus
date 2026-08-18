@@ -14,7 +14,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Grid,
-  List
+  List,
+  User,
+  Building2
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, orderBy, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { sortStops } from '../../utils/stops';
@@ -39,6 +41,26 @@ const Schedules: React.FC = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCustomerFilter, setSelectedCustomerFilter] = useState('all');
   const [selectedServiceFilter, setSelectedServiceFilter] = useState('all');
+
+  const [adminRoleView, setAdminRoleView] = useState<'customer' | 'parent'>('customer');
+  const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const fetchUsers = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const roleMap = new Map<string, string>();
+        usersSnap.docs.forEach(d => {
+          if (d.data().role) roleMap.set(d.id, d.data().role);
+        });
+        setUserRoleMap(roleMap);
+      } catch (e) {
+        console.error("Error fetching user roles for schedules:", e);
+      }
+    };
+    fetchUsers();
+  }, [isAdmin]);
 
   const getServiceConfig = (serviceName: string) => {
     const norm = (serviceName || '').toLowerCase();
@@ -207,6 +229,21 @@ const Schedules: React.FC = () => {
     }
   };
 
+  const getItemUserRole = (item: any): 'customer' | 'parent' => {
+    if (item.userRole) {
+      if (item.userRole === 'customer') return 'customer';
+      if (item.userRole === 'parent' || item.userRole === 'lpoadmin' || item.userRole === 'operator') return 'parent';
+    }
+    if (item.uid && userRoleMap.has(item.uid)) {
+      const uRole = userRoleMap.get(item.uid);
+      if (uRole === 'customer') return 'customer';
+      if (uRole === 'parent' || uRole === 'lpoadmin' || uRole === 'operator') return 'parent';
+    }
+    if (item.customer_id && (!item.parent_id || item.customer_id !== item.parent_id)) return 'customer';
+    if (item.parent_id && !item.customer_id) return 'parent';
+    return 'customer';
+  };
+
   const filteredSchedules = schedules.filter(s => {
     const matchesSearch = s.customer.company.toLowerCase().includes(searchTerm.toLowerCase()) || 
                          s.customer.address.toLowerCase().includes(searchTerm.toLowerCase());
@@ -214,7 +251,13 @@ const Schedules: React.FC = () => {
     const matchesCustomer = selectedCustomerFilter === 'all' || s.customer_id === selectedCustomerFilter;
     const serviceConfig = getServiceConfig(s.service);
     const matchesService = selectedServiceFilter === 'all' || serviceConfig.label === selectedServiceFilter;
-    return matchesSearch && isActive && matchesCustomer && matchesService;
+
+    let matchesRole = true;
+    if (isAdmin) {
+      matchesRole = getItemUserRole(s) === adminRoleView;
+    }
+
+    return matchesSearch && isActive && matchesCustomer && matchesService && matchesRole;
   });
 
   // Calendar Logic Helpers
@@ -294,11 +337,22 @@ const Schedules: React.FC = () => {
             <div className="glass-card filter-bar">
                {isAdmin && (
                  <CustomSelect 
+                   value={adminRoleView}
+                   onChange={(val) => setAdminRoleView(val as any)}
+                   options={[
+                     { value: 'customer', label: 'Role: Customer', icon: <User size={14} /> },
+                     { value: 'parent', label: 'Role: Parent', icon: <Building2 size={14} /> }
+                   ]}
+                   className="role-select-custom"
+                 />
+               )}
+               {isAdmin && adminRoleView === 'parent' && (
+                 <CustomSelect 
                    value={selectedParentId}
                    onChange={(val) => setSelectedParentId(val)}
                    options={[
-                    { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
-                    ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
+                     { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
+                     ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
                    ]}
                    className="lpo-select-custom"
                  />

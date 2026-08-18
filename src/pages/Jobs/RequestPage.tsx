@@ -663,6 +663,86 @@ const RequestPage: React.FC = () => {
     setIsRejectModalOpen(true);
   };
 
+  const resolveCustomerEmail = async (req: any): Promise<string> => {
+    if (!req) return "";
+
+    let email = (
+      req.customer?.email || 
+      req.user_email || 
+      req.customer_email || 
+      req.userEmail || 
+      req.createdByEmail || 
+      ""
+    ).trim();
+
+    // If operator/parent is logged in, check if resolved email is operator's email.
+    // If it equals operator's email, clear it so we don't send customer notifications to the operator.
+    if (userData?.email && email.toLowerCase() === userData.email.toLowerCase()) {
+      email = "";
+    }
+
+    if (email) return email;
+
+    const pId = parent?.id || req.parent_id || userData?.parent_id || "";
+
+    // Fetch from company document if customer_id exists
+    if (req.customer_id) {
+      try {
+        const compSnap = await getDoc(doc(db, 'companies', req.customer_id));
+        if (compSnap.exists()) {
+          const cData = compSnap.data();
+          const compEmail = (cData.email || cData.contactEmail || cData.user_email || cData.adminEmail || "").trim();
+          if (compEmail && (!userData?.email || compEmail.toLowerCase() !== userData.email.toLowerCase())) {
+            return compEmail;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch customer email from companies collection:", e);
+      }
+    }
+
+    // Fetch from parent company's customers subcollection
+    if (pId && req.customer?.company) {
+      try {
+        const custQ = query(
+          collection(db, `companies/${pId}/customers`),
+          where('companyName', '==', req.customer.company)
+        );
+        const custSnap = await getDocs(custQ);
+        if (!custSnap.empty) {
+          const cData = custSnap.docs[0].data();
+          const subCompEmail = (cData.email || cData.contactEmail || cData.user_email || "").trim();
+          if (subCompEmail && (!userData?.email || subCompEmail.toLowerCase() !== userData.email.toLowerCase())) {
+            return subCompEmail;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch customer email from parent customer subcollection:", e);
+      }
+    }
+
+    // Fetch from users collection if createdBy exists
+    if (req.createdBy) {
+      try {
+        const userSnap = await getDoc(doc(db, 'users', req.createdBy));
+        if (userSnap.exists()) {
+          const uEmail = (userSnap.data()?.email || "").trim();
+          if (uEmail && (!userData?.email || uEmail.toLowerCase() !== userData.email.toLowerCase())) {
+            return uEmail;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch customer email from users collection:", e);
+      }
+    }
+
+    if (req.customer?.email) {
+      return req.customer.email.trim();
+    }
+
+    return "";
+  };
+
   const submitReject = async () => {
     if (!request) return;
     if (!isParentUser && !isExternalUser) return;
@@ -688,9 +768,6 @@ const RequestPage: React.FC = () => {
         chat: arrayUnion(sysMessage)
       });
 
-      // NetSuite Integration for Rejection Alert
-      const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2532&deploy=1&compid=1048144&ns-at=AAEJ7tMQboW4e_4uOdEOkAJSDSB2d-67rLJ9FX2eFCl6Rfo5vSY";
-      
       let rejectCustomerId = request.netsuiteCustomerId || request.customer?.netsuiteId || "";
       const pId = parent?.id || request.parent_id || userData?.parent_id || "";
       if (userData?.role === 'parent' && pId && request.customer?.company) {
@@ -711,20 +788,6 @@ const RequestPage: React.FC = () => {
         }
       }
 
-      const params = new URLSearchParams({
-        action: 'reject',
-        request_id: request.id,
-        customer_id: rejectCustomerId,
-        parent_id: parent?.id || request.parent_id || "",
-        reason: rejectReason,
-        notes: rejectNotes.trim()
-      });
-
-      fetch(`${NETSUITE_API}&${params.toString()}`)
-        .then(res => res.json())
-        .then(data => console.log("NetSuite Reject Sync:", data))
-        .catch(err => console.error("NetSuite Reject Error:", err));
-
       // Trigger Email Notifications
       const sendSupportEmailFn = httpsCallable(functions, 'sendSupportEmail');
       const companyName = request.customer?.company || companyData?.companyName || 'Unknown Company';
@@ -732,21 +795,81 @@ const RequestPage: React.FC = () => {
 
       // 1. Email to Dispatcher (CCing fiona.harrison@mailplus.com.au)
       const dispatcherHtml = `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px;">
-          <h2 style="color: #dc2626; margin-top: 0;">Job Request Declined Notice</h2>
-          <p>A job request has been declined in the LocalMile.Plus portal.</p>
-          
-          <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #fdf2f2; padding: 15px; border-radius: 6px;">
-            <tr><td style="padding: 6px; font-weight: bold; width: 140px;">Request Ref:</td><td style="padding: 6px;">#${refId}</td></tr>
-            <tr><td style="padding: 6px; font-weight: bold;">Customer:</td><td style="padding: 6px;">${companyName}</td></tr>
-            <tr><td style="padding: 6px; font-weight: bold;">Service:</td><td style="padding: 6px;">${request.service || 'N/A'}</td></tr>
-            <tr><td style="padding: 6px; font-weight: bold;">Date:</td><td style="padding: 6px;">${request.date || 'N/A'}</td></tr>
-            <tr><td style="padding: 6px; font-weight: bold;">Declined Reason:</td><td style="padding: 6px; color: #dc2626;">${rejectReason}</td></tr>
-            <tr><td style="padding: 6px; font-weight: bold;">Notes:</td><td style="padding: 6px;">${rejectNotes.trim()}</td></tr>
-          </table>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>[LocalMile.Plus] Job Request Rejected - ${companyName}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body, html { margin: 0; padding: 0; width: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+    @media screen and (max-width: 600px) {
+      .email-container { width: 100% !important; max-width: 100% !important; border-radius: 8px !important; }
+      .content-cell { padding: 30px 20px !important; }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; width: 100% !important; background-color: #f4f7f8; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f7f8; padding: 20px 0; width: 100%;">
+    <tr>
+      <td align="center">
+        <table class="email-container" align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 24px rgba(9, 92, 123, 0.06);">
+          <tr>
+            <td class="content-cell" style="padding: 45px 35px; color: #2d3748; font-size: 15px; line-height: 1.6; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+              <div class="greeting" style="font-size: 20px; color: #dc2626; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.5px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                Job Request Declined Notice
+              </div>
+              <p style="margin: 0 0 16px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                A job request has been declined in the LocalMile.Plus portal.
+              </p>
+              
+              <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #fdf2f2; border: 1px solid #fecaca; border-radius: 8px; overflow: hidden;">
+                <tr><td style="padding: 10px 14px; font-weight: 600; width: 140px; border-bottom: 1px solid #fee2e2;">Request Ref:</td><td style="padding: 10px 14px; border-bottom: 1px solid #fee2e2;">#${refId}</td></tr>
+                <tr><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #fee2e2;">Customer:</td><td style="padding: 10px 14px; border-bottom: 1px solid #fee2e2;">${companyName}</td></tr>
+                <tr><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #fee2e2;">Service:</td><td style="padding: 10px 14px; border-bottom: 1px solid #fee2e2;">${request.service || 'N/A'}</td></tr>
+                <tr><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #fee2e2;">Date:</td><td style="padding: 10px 14px; border-bottom: 1px solid #fee2e2;">${request.date || 'N/A'}</td></tr>
+                <tr><td style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #fee2e2;">Declined Reason:</td><td style="padding: 10px 14px; color: #dc2626; font-weight: 600; border-bottom: 1px solid #fee2e2;">${rejectReason}</td></tr>
+                <tr><td style="padding: 10px 14px; font-weight: 600;">Notes:</td><td style="padding: 10px 14px;">${rejectNotes.trim()}</td></tr>
+              </table>
 
-          <p style="font-size: 12px; color: #777;">This is an automated notification from LocalMile.Plus.</p>
-        </div>
+              <p style="margin: 20px 0 6px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                Kind regards,
+              </p>
+              <p style="margin: 0; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                <strong style="font-weight: 700; color: #2d3748;">LocalMile.Plus System Notification</strong>
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #095c7b; padding: 25px 20px; text-align: center;">
+              <img src="https://lh3.googleusercontent.com/d/1hhLMkl8NmyhkhDT9jDg9AYIhbIRsjQQD" alt="MailPlus Logo" width="135" style="display: inline-block; vertical-align: middle; border: 0; outline: none; text-decoration: none; max-height: 42px; width: auto;" />
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #f8fafb; padding: 30px 20px; text-align: center; border-top: 1px solid #edf2f7; font-size: 12px; color: #718096; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5;">
+              <p style="margin: 0 0 6px; font-size: 12px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                <strong style="font-weight: 700; color: #4a5568;">MailPlus</strong> | Business logistics, made simple.
+              </p>
+              <p style="margin: 0 0 15px; font-size: 12px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                Powered by MailPlus Australia
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #a0aec0; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5;">
+                &copy; 2026 MailPlus. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
       `;
 
       sendSupportEmailFn({
@@ -762,25 +885,87 @@ const RequestPage: React.FC = () => {
       }).catch(err => console.error("Error sending rejection email to dispatcher:", err));
 
       // 2. Email to Customer
-      const customerEmail = request.customer?.email || userData?.email;
+      const customerEmail = await resolveCustomerEmail(request);
+      console.log(`Rejection Email - Resolved Customer Email for request ${request.id}: "${customerEmail}"`);
       if (customerEmail) {
         const customerHtml = `
-          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px;">
-            <h2 style="color: #095c7b; margin-top: 0;">Update on Your Job Request</h2>
-            <p>Dear ${request.customer?.firstName || 'Customer'},</p>
-            <p>Your job request for <strong>${request.service || 'Logistics Service'}</strong> on <strong>${request.date}</strong> (Ref: #${refId}) has been declined by the assigned operator.</p>
-            
-            <div style="background: #f9fafb; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
-              <p style="margin: 0; font-weight: bold; color: #333;">Reason for Decline:</p>
-              <p style="margin: 5px 0 0 0; color: #555;">${rejectReason}</p>
-              ${rejectNotes ? `<p style="margin: 8px 0 0 0; font-style: italic; color: #666;">"${rejectNotes.trim()}"</p>` : ''}
-            </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Update on Your Job Request</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body, html { margin: 0; padding: 0; width: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+    @media screen and (max-width: 600px) {
+      .email-container { width: 100% !important; max-width: 100% !important; border-radius: 8px !important; }
+      .content-cell { padding: 30px 20px !important; }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 0; width: 100% !important; background-color: #f4f7f8; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f7f8; padding: 20px 0; width: 100%;">
+    <tr>
+      <td align="center">
+        <table class="email-container" align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 24px rgba(9, 92, 123, 0.06);">
+          <tr>
+            <td class="content-cell" style="padding: 45px 35px; color: #2d3748; font-size: 15px; line-height: 1.6; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+              <div class="greeting" style="font-size: 20px; color: #095c7b; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.5px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                Hi ${request.customer?.firstName || 'Customer'},
+              </div>
+              
+              <p style="margin: 0 0 16px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                Your job request for <strong>${request.service || 'Logistics Service'}</strong> on <strong>${request.date}</strong> (Ref: <strong>#${refId}</strong>) has been declined by the assigned operator.
+              </p>
+              
+              <div style="background: #fcf8f2; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 16px 20px; margin: 20px 0;">
+                <p style="margin: 0; font-weight: 700; color: #92400e; font-size: 14px;">Reason for Decline:</p>
+                <p style="margin: 4px 0 0 0; color: #451a03; font-weight: 600;">${rejectReason}</p>
+                ${rejectNotes ? `<p style="margin: 8px 0 0 0; font-style: italic; color: #78350f; font-size: 14px;">"${rejectNotes.trim()}"</p>` : ''}
+              </div>
 
-            <p>If you need assistance or would like to discuss alternative scheduling options, please reply to this email or contact our support team at <a href="mailto:dispatcher@mailplus.com.au">dispatcher@mailplus.com.au</a>.</p>
-            
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 24px 0;" />
-            <p style="font-size: 11px; color: #888;">LocalMile.Plus | Powered by MailPlus Australia</p>
-          </div>
+              <p style="margin: 0 0 20px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                If you need assistance or would like to discuss alternative scheduling options, please reply directly to this email or contact our support team at <a href="mailto:dispatcher@mailplus.com.au" style="color: #095c7b; text-decoration: underline; font-weight: 600;">dispatcher@mailplus.com.au</a>.
+              </p>
+              
+              <p style="margin: 0 0 6px; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                Kind regards,
+              </p>
+              <p style="margin: 0; font-size: 15px; color: #2d3748; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.6;">
+                <strong style="font-weight: 700; color: #2d3748;">MailPlus Customer Service Team</strong>
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #095c7b; padding: 25px 20px; text-align: center;">
+              <img src="https://lh3.googleusercontent.com/d/1hhLMkl8NmyhkhDT9jDg9AYIhbIRsjQQD" alt="MailPlus Logo" width="135" style="display: inline-block; vertical-align: middle; border: 0; outline: none; text-decoration: none; max-height: 42px; width: auto;" />
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #f8fafb; padding: 30px 20px; text-align: center; border-top: 1px solid #edf2f7; font-size: 12px; color: #718096; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5;">
+              <p style="margin: 0 0 6px; font-size: 12px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                <strong style="font-weight: 700; color: #4a5568;">MailPlus</strong> | Business logistics, made simple.
+              </p>
+              <p style="margin: 0 0 15px; font-size: 12px; font-family: 'Inter', system-ui, -apple-system, sans-serif;">
+                Powered by MailPlus Australia
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #a0aec0; font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5;">
+                &copy; 2026 MailPlus. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
         `;
 
         sendSupportEmailFn({
@@ -811,7 +996,7 @@ const RequestPage: React.FC = () => {
       const sysMessage = {
         id: Date.now().toString(),
         sender: 'system',
-        text: `Franchisee proposed a new 'Must be completed by' time: ${proposedTime}`,
+        text: `Franchisee proposed a new 'Ready From' time: ${proposedTime}`,
         timestamp: new Date().toISOString()
       };
 
@@ -826,14 +1011,14 @@ const RequestPage: React.FC = () => {
       const sendSupportEmailFn = httpsCallable(functions, 'sendSupportEmail');
       const companyName = request.customer?.company || companyData?.companyName || 'Unknown Company';
       const refId = request.id.substring(0, 8).toUpperCase();
-      const customerEmail = request.customer?.email || userData?.email;
+      const customerEmail = await resolveCustomerEmail(request);
 
       if (customerEmail) {
         const proposedTimeHtml = `
           <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px;">
             <h2 style="color: #095c7b; margin-top: 0;">New Completion Time Proposed</h2>
             <p>Dear ${request.customer?.firstName || 'Customer'},</p>
-            <p>The operator has suggested a new "Must be completed by" time for your job request (Ref: #${refId}).</p>
+            <p>The operator has suggested a new "Ready From" time for your job request (Ref: #${refId}).</p>
             
             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 16px; margin: 20px 0; border-radius: 6px;">
               <table style="width: 100%; border-collapse: collapse;">
@@ -1083,8 +1268,11 @@ const RequestPage: React.FC = () => {
                            <Clock size={20} className="pulse-clock" />
                         </div>
                         <div className="time-text-area">
-                           <label>MUST BE COMPLETED BY</label>
+                           <label>READY FROM</label>
                            <span className="time-value">{request.preferredTime}</span>
+                           <p className="time-info-copy">
+                              Customer has advised items won't be ready before this time. Contact customer for more info.
+                           </p>
                         </div>
                      </div>
                   )}
@@ -1403,7 +1591,7 @@ const RequestPage: React.FC = () => {
               </div>
               <div className="modal-body">
                  <p style={{ color: 'var(--ink-soft)', fontSize: '0.9rem', marginBottom: '10px' }}>
-                   If you can't make the requested time, please suggest a new "Must be completed by" time for the operator to review.
+                   If you can't make the requested time, please suggest a new "Ready From" time for the operator to review.
                  </p>
                  <div className="input-group">
                     <label>Proposed Completion Time</label>
@@ -1471,7 +1659,7 @@ const RequestPage: React.FC = () => {
            border-radius: 16px; 
            padding: 16px; 
            display: flex; 
-           align-items: center; 
+           align-items: flex-start; 
            gap: 16px; 
            margin-top: 4px;
            box-shadow: 0 4px 12px rgba(168, 118, 58, 0.1);
@@ -1479,6 +1667,7 @@ const RequestPage: React.FC = () => {
          .time-icon-area { 
            width: 40px; 
            height: 40px; 
+           min-width: 40px;
            background: var(--gold); 
            color: white; 
            border-radius: 12px; 
@@ -1492,6 +1681,7 @@ const RequestPage: React.FC = () => {
          .time-text-area { display: flex; flex-direction: column; gap: 2px; }
          .time-text-area label { font-family: var(--font-ui); font-size: 0.6rem; font-weight: 900; color: var(--gold); letter-spacing: 0.5px; }
          .time-value { font-size: 1.3rem; font-weight: 900; color: var(--ink); letter-spacing: -0.5px; }
+         .time-info-copy { font-size: 0.8rem; color: var(--ink-soft); font-weight: 500; margin-top: 6px; line-height: 1.35; }
 
          .btn-accept.disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
          .btn-accept { position: relative; overflow: visible; display: flex; flex-direction: column; align-items: center; padding: 12px 24px; min-width: 160px; background: var(--ink); color: white; border: none; border-radius: 14px; font-weight: 800; cursor: pointer; transition: all 0.2s; }

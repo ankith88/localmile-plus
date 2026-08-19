@@ -68,9 +68,11 @@ const RequestPage: React.FC = () => {
   const [proposedTime, setProposedTime] = useState('');
 
   // Identity: If userData exists, person is the Customer (Logged in user).
-  // Otherwise, they are a Franchisee (Not logged in).
-  const isParentUser = !!userData;
-  const isExternalUser = !userData;
+  // Otherwise, they are a Franchisee Owner (Not logged in).
+  const isCustomerUser = !!userData;
+  const isFranchiseeOwner = !userData;
+  const isParentUser = isCustomerUser;
+  const isExternalUser = isFranchiseeOwner;
 
   const today = formatDateForInput(new Date());
   const isHistory = request?.date < today;
@@ -302,7 +304,7 @@ const RequestPage: React.FC = () => {
         const sysMessage = {
           id: Date.now().toString(),
           sender: 'system',
-          text: `Job cancelled by ${isParentUser ? 'MailPlus' : 'Franchisee'}.`,
+          text: `Job cancelled by ${isCustomerUser ? 'Customer' : 'Franchisee Owner'}.`,
           timestamp: new Date().toISOString()
         };
 
@@ -996,7 +998,7 @@ const RequestPage: React.FC = () => {
       const sysMessage = {
         id: Date.now().toString(),
         sender: 'system',
-        text: `Franchisee proposed a new 'Ready From' time: ${proposedTime}`,
+        text: `Franchisee Owner proposed a new 'Ready From' time: ${proposedTime}`,
         timestamp: new Date().toISOString()
       };
 
@@ -1300,7 +1302,7 @@ const RequestPage: React.FC = () => {
                     </div>
                     <div className="banner-text">
                        <strong>Keep this page open!</strong>
-                       <p>We'll notify you here with a sound when the Parent Account responds.</p>
+                       <p>We'll notify you here with a sound when the Customer responds.</p>
                     </div>
                     {Notification.permission !== 'granted' && (
                        <button className="btn-enable-alerts" onClick={async () => {
@@ -1381,7 +1383,7 @@ const RequestPage: React.FC = () => {
                             }
                             return (
                                <div key={idx} className={`message-bubble ${msg.sender}`}>
-                                  <div className="sender-label">{(msg.sender === 'parent' || msg.sender === 'operator') ? 'Parent' : 'Franchisee'}</div>
+                                  <div className="sender-label">{(msg.sender === 'parent' || msg.sender === 'operator' || msg.sender === 'customer') ? 'Customer' : 'Franchisee Owner'}</div>
                                   <div className="message-content">{msg.text}</div>
                                   <div className="message-time">
                                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1566,7 +1568,7 @@ const RequestPage: React.FC = () => {
                  <div className="input-group">
                     <label>Additional Notes <span style={{color: '#ff4757'}}>*</span></label>
                     <textarea 
-                       placeholder={isParentUser ? "Please provide details for the Franchisee and dispatch team..." : "Please let us know why you are declining this request..."}
+                       placeholder={isCustomerUser ? "Please provide details for the Franchisee Owner and dispatch team..." : "Please let us know why you are declining this request..."}
                        value={rejectNotes}
                        onChange={(e) => setRejectNotes(e.target.value)}
                     />

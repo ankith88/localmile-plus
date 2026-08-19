@@ -483,10 +483,6 @@ export const onJobCreated = onDocumentCreated({
                 // --- 1. Account Manager Resolution ---
                 const assignedAM = (
                   leadData.accountManagerAssigned ||
-                  leadData.accountManager ||
-                  leadData.salesRepAssigned ||
-                  leadData.customerSuccessAssigned ||
-                  leadData.amAssigned ||
                   ""
                 ).toString().trim();
 
@@ -511,7 +507,7 @@ export const onJobCreated = onDocumentCreated({
                       // ignore direct doc read error
                     }
 
-                    // Search users collection comparing concatenated firstName & lastName, email, or UID
+                    // Search users collection matching concatenated firstName & lastName, email, or UID
                     if (!amEmail) {
                       const usersSnap = await prospectDb.collection("users").get();
                       const normAssigned = assignedAM.toLowerCase().trim();
@@ -527,8 +523,6 @@ export const onJobCreated = onDocumentCreated({
 
                         if (
                           (normFullName && normFullName === normAssigned) ||
-                          (firstName && firstName.toLowerCase() === normAssigned) ||
-                          (lastName && lastName.toLowerCase() === normAssigned) ||
                           (email && email.toLowerCase() === normAssigned) ||
                           uIdNorm === normAssigned
                         ) {
@@ -608,9 +602,6 @@ export const onJobCreated = onDocumentCreated({
             // Fallbacks from LocalMile Plus customer user profile if still not found
             if (!franchiseeEmail && userData?.franchiseeEmail) {
               franchiseeEmail = userData.franchiseeEmail;
-            }
-            if (!amEmail && userData?.accountManagerEmail) {
-              amEmail = userData.accountManagerEmail;
             }
 
             const targetRecipient = amEmail || "fiona.harrison@mailplus.com.au";
@@ -837,6 +828,224 @@ export const onJobCreated = onDocumentCreated({
     }
   } else {
     console.warn(`[onJobCreated] No leadId found for job ${jobId}. Skipping ProspectPlus API call.`);
+  }
+});
+
+// Logic: onScheduledJobCreated (Notify Franchisee when a schedule job is created by a customer)
+export const onScheduledJobCreated = onDocumentCreated({
+  document: "scheduled_jobs/{scheduledJobId}",
+  database: "(default)",
+  secrets: [gmailAppPassword],
+}, async (event) => {
+  const snapshot = event.data;
+  const scheduledJobId = event.params.scheduledJobId;
+  console.log(`[onScheduledJobCreated] Triggered for ID: ${scheduledJobId}`);
+
+  if (!snapshot) return;
+  const afterData = snapshot.data();
+  if (!afterData) return;
+
+  const db = getDB();
+  const uid = afterData.uid;
+
+  let isCustomer = afterData.userRole === "customer";
+  let customerId = extractStringId(afterData.customer_id);
+  let userEmail = "";
+  let companyNameFromUser = "";
+
+  if (uid) {
+    try {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists) {
+        const uData = userDoc.data();
+        if (uData?.role === "customer") {
+          isCustomer = true;
+        }
+        customerId = customerId || extractStringId(uData?.customer_id);
+        userEmail = uData?.email || "";
+        companyNameFromUser = uData?.company || uData?.companyName || "";
+      }
+    } catch (err) {
+      console.error("[onScheduledJobCreated] Error fetching user:", err);
+    }
+  }
+
+  // Only send notification if created by a user with role 'customer'
+  if (!isCustomer) {
+    console.log(`[onScheduledJobCreated] Scheduled job ${scheduledJobId} was not created by a customer role user. Skipping franchisee email.`);
+    return;
+  }
+
+  if (!customerId) {
+    console.warn(`[onScheduledJobCreated] No customer_id found for scheduled job ${scheduledJobId}.`);
+    return;
+  }
+
+  // Look up companies document using customer_id to get franchiseeEmail
+  let franchiseeEmail = "";
+  let companyName = afterData.customer?.company || companyNameFromUser || "";
+
+  try {
+    const companyDoc = await db.collection("companies").doc(customerId).get();
+    if (companyDoc.exists) {
+      const companyData = companyDoc.data() || {};
+      franchiseeEmail = companyData.franchiseeEmail || companyData.email || companyData.contactEmail || "";
+      companyName = companyName || companyData.companyName || companyData.name || "Valued Customer";
+    } else {
+      console.warn(`[onScheduledJobCreated] Company document not found for customer_id: ${customerId}`);
+    }
+  } catch (err) {
+    console.error(`[onScheduledJobCreated] Error fetching company doc ${customerId}:`, err);
+  }
+
+  if (!franchiseeEmail) {
+    console.warn(`[onScheduledJobCreated] No franchiseeEmail found in company document ${customerId}. Skipping email.`);
+    return;
+  }
+
+  console.log(`[onScheduledJobCreated] Sending franchisee schedule notification to: ${franchiseeEmail} for company: ${companyName}`);
+
+  // Format Days / Frequency
+  const rawFrequency = afterData.frequency;
+  let daysFormatted = "N/A";
+  if (Array.isArray(rawFrequency)) {
+    const dayMap: Record<string, string> = {
+      'Mon': 'Monday',
+      'Tue': 'Tuesday',
+      'Wed': 'Wednesday',
+      'Thu': 'Thursday',
+      'Fri': 'Friday',
+      'Sat': 'Saturday',
+      'Sun': 'Sunday'
+    };
+    daysFormatted = rawFrequency.map((d: string) => dayMap[d] || d).join(', ');
+  } else if (typeof rawFrequency === 'string') {
+    daysFormatted = rawFrequency;
+  }
+
+  // Format Start Date
+  const rawStartDate = afterData.startDate || afterData.date || "N/A";
+  let startDateFormatted = rawStartDate;
+  if (rawStartDate !== "N/A" && typeof rawStartDate === 'string') {
+    try {
+      const d = new Date(rawStartDate);
+      if (!isNaN(d.getTime())) {
+        startDateFormatted = d.toLocaleDateString('en-AU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      }
+    } catch {
+      // keep original string
+    }
+  }
+
+  // Format Service Name
+  const serviceRaw = afterData.service || "Scheduled Service";
+  const displayService = typeof serviceRaw === 'string'
+    ? serviceRaw.replace(/-/g, ' ').toUpperCase()
+    : "SCHEDULED SERVICE";
+
+  // Pickup & Delivery location details
+  const pickupStop = afterData.stops?.find((s: any) => s.type === "pickup");
+  const deliveryStop = afterData.stops?.find((s: any) => s.type === "delivery");
+  const pickupAddress = pickupStop?.address || pickupStop?.fullAddress || "";
+  const deliveryAddress = deliveryStop?.address || deliveryStop?.fullAddress || "";
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: "bookings@localmile.plus",
+      pass: gmailAppPassword.value(),
+    },
+  });
+
+  const mailOptions = {
+    from: '"LocalMile.Plus Bookings" <localmile@mailplus.com.au>',
+    to: franchiseeEmail,
+    cc: ["dispatcher@mailplus.com.au"],
+    replyTo: "bookings@localmile.plus",
+    subject: `NEW SCHEDULED JOB: ${companyName} - ${displayService}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2d3748; background-color: #f4f7f8; margin: 0; padding: 20px; }
+          .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+          .header { background-color: #095c7b; padding: 25px; text-align: center; color: #ffffff; }
+          .header h2 { margin: 0; font-size: 22px; font-weight: 700; }
+          .content { padding: 30px; }
+          .details-card { background-color: #f8fafb; border-left: 4px solid #095c7b; border-radius: 6px; padding: 18px 20px; margin: 20px 0; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+          .details-table { width: 100%; border-collapse: collapse; }
+          .details-table td { padding: 8px 0; font-size: 14px; }
+          .details-table td.label { font-weight: 600; color: #4a5568; width: 40%; }
+          .details-table td.value { color: #1a202c; font-weight: 500; }
+          .footer { background-color: #f8fafb; padding: 15px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>New Job Schedule Notification</h2>
+          </div>
+          <div class="content">
+            <p>Hello Franchisee,</p>
+            <p>A new recurring job schedule has been created by customer company <strong>${companyName}</strong>.</p>
+            
+            <div class="details-card">
+              <table class="details-table">
+                <tr>
+                  <td class="label">Company Name:</td>
+                  <td class="value"><strong>${companyName}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Service Scheduled:</td>
+                  <td class="value"><strong>${displayService}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Scheduled Days:</td>
+                  <td class="value"><strong>${daysFormatted}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Start Date:</td>
+                  <td class="value"><strong>${startDateFormatted}</strong></td>
+                </tr>
+                ${pickupAddress ? `<tr><td class="label">Pickup Location:</td><td class="value">${pickupAddress}</td></tr>` : ''}
+                ${deliveryAddress ? `<tr><td class="label">Delivery Location:</td><td class="value">${deliveryAddress}</td></tr>` : ''}
+                ${userEmail ? `<tr><td class="label">Customer Email:</td><td class="value">${userEmail}</td></tr>` : ''}
+              </table>
+            </div>
+
+            <p>Please log in to LocalMile.Plus portal to manage or review this schedule.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; LocalMile.Plus &bull; MailPlus System Notification</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`[onScheduledJobCreated] Email sent to ${franchiseeEmail} (CC: dispatcher@mailplus.com.au)`);
+
+    await logCommunication({
+      from: "bookings@localmile.plus",
+      to: [franchiseeEmail, "dispatcher@mailplus.com.au"],
+      subject: mailOptions.subject,
+      body: mailOptions.html,
+      type: "sent",
+      metadata: {
+        customerId,
+        companyName,
+        scheduledJobId,
+        service: displayService,
+        franchiseeEmail
+      }
+    });
+  } catch (emailErr) {
+    console.error(`[onScheduledJobCreated] Failed to send email for schedule ${scheduledJobId}:`, emailErr);
   }
 });
 

@@ -34,7 +34,7 @@ import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy }
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
-import { formatDateForInput, parseLocalDate } from '../../utils/scheduling';
+import { formatDateForInput, parseLocalDate, isWithinWorkHours } from '../../utils/scheduling';
 import { sortStops } from '../../utils/stops';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomSelect from '../../components/CustomSelect';
@@ -243,7 +243,9 @@ const Dashboard: React.FC = () => {
 
     const isJobActiveToday = activeTab === 'in-progress';
     const contactEmail = (isJobActiveToday && job.operatorEmail ? job.operatorEmail : (companyData?.franchiseeEmail || '')).trim();
-    const contactPhone = (isJobActiveToday && job.operatorPhone ? job.operatorPhone : (companyData?.franchiseeMobile || '')).trim();
+    const contactPhone = isWithinWorkHours() 
+      ? (isJobActiveToday && job.operatorPhone ? job.operatorPhone : (companyData?.franchiseeMobile || '')).trim()
+      : '';
 
     const userFullName = userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || userData.email : 'Unknown User';
     const companyName = job.customer?.company || companyData?.companyName || 'Unknown Company';
@@ -1038,7 +1040,8 @@ const Dashboard: React.FC = () => {
                                           const isJobActiveToday = activeTab === 'in-progress';
                                           const contactName = isJobActiveToday && job.operatorName ? job.operatorName : companyData.franchiseeContact;
                                           const contactEmail = isJobActiveToday && job.operatorEmail ? job.operatorEmail : companyData.franchiseeEmail;
-                                          const contactPhone = isJobActiveToday && job.operatorPhone ? job.operatorPhone : companyData.franchiseeMobile;
+                                          const rawPhone = isJobActiveToday && job.operatorPhone ? job.operatorPhone : companyData.franchiseeMobile;
+                                          const contactPhone = isWithinWorkHours() ? rawPhone : null;
                                           const cardTitle = isJobActiveToday ? "Operator Performing Job" : "Your Franchisee Partner";
                                           
                                           return (

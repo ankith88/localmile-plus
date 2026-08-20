@@ -36,7 +36,7 @@ import AcceptingProgress from '../../components/AcceptingProgress';
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
-import { formatDateForInput, parseLocalDate, getDayName } from '../../utils/scheduling';
+import { formatDateForInput, parseLocalDate, getDayName, isWithinWorkHours } from '../../utils/scheduling';
 import { isPublicHoliday } from '../../utils/holidays';
 import { requestNotificationPermission, saveTokenToFirestore, onForegroundMessage } from '../../utils/notifications';
 
@@ -185,7 +185,9 @@ const RequestPage: React.FC = () => {
     setIsSending(true);
     
     const contactEmail = (request.operatorEmail || companyData?.franchiseeEmail || '').trim();
-    const contactPhone = (request.operatorPhone || companyData?.franchiseeMobile || '').trim();
+    const contactPhone = isWithinWorkHours() 
+      ? (request.operatorPhone || companyData?.franchiseeMobile || '').trim() 
+      : '';
 
     const userFullName = userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() || userData.email : 'Unknown User';
     const companyName = request.customer?.company || companyData?.companyName || 'Unknown Company';
@@ -219,7 +221,7 @@ const RequestPage: React.FC = () => {
         author: userFullName,
         jobId: request.id
       });
-      alert("Message sent to operator successfully via Email/SMS.");
+      alert(`Message sent to operator successfully via ${contactPhone ? 'Email/SMS' : 'Email'}.`);
       setMessage('');
     } catch (err) {
       console.error("ProspectPlus Communication Error:", err);
@@ -1228,6 +1230,50 @@ const RequestPage: React.FC = () => {
                  </div>
               </div>
 
+              {userData?.role === 'customer' && (companyData || request.operatorName) && (() => {
+                  const contactName = request.operatorName || companyData?.franchiseeContact;
+                  const contactEmail = (request.operatorEmail || companyData?.franchiseeEmail || '').trim();
+                  const rawPhone = (request.operatorPhone || companyData?.franchiseeMobile || '').trim();
+                  const contactPhone = isWithinWorkHours() ? rawPhone : null;
+                  const partnerTitle = request.operatorName ? "Assigned Operator" : "Franchisee Partner";
+
+                  return (
+                     <div className="detail-section">
+                        <div className="section-title">
+                           <UserIcon size={18} />
+                           <h3>{partnerTitle}</h3>
+                        </div>
+                        <div className="info-box">
+                           <div className="info-row">
+                              <strong>{companyData?.franchiseeName || 'MailPlus Franchisee'}</strong>
+                           </div>
+                           {contactName && (
+                              <div className="info-row">
+                                 <UserIcon size={14} />
+                                 <span>{contactName}</span>
+                              </div>
+                           )}
+                           {contactEmail && (
+                              <div className="info-row">
+                                 <Mail size={14} />
+                                 <a href={`mailto:${contactEmail}`} style={{ color: 'var(--primary)', textDecoration: 'none' }}>
+                                    {contactEmail}
+                                 </a>
+                              </div>
+                           )}
+                           {contactPhone && (
+                              <div className="info-row">
+                                 <Phone size={14} />
+                                 <a href={`tel:${contactPhone}`} style={{ color: 'var(--primary)', textDecoration: 'none' }}>
+                                    {contactPhone}
+                                 </a>
+                              </div>
+                           )}
+                        </div>
+                     </div>
+                  );
+               })()}
+
               <div className="detail-section">
                  <div className="section-title">
                     <MapPin size={18} />
@@ -1427,7 +1473,7 @@ const RequestPage: React.FC = () => {
                             {request?.customer?.company}
                          </div>
                          <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--ink-soft)' }}>
-                            This message will be sent to the operator via Email and SMS.
+                            This message will be sent to the operator via {isWithinWorkHours() ? 'Email and SMS' : 'Email'}.
                          </p>
                       </div>
                       <form onSubmit={handleSubmitCommunication} style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>

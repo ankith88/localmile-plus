@@ -84,3 +84,16 @@ export const getNextOccurrences = (startDateStr: string, frequency: string[], co
   
   return occurrences;
 };
+
+/**
+ * Checks if the given date/time (or current time) is within work hours (Monday - Friday, 9:00 AM - 5:00 PM).
+ */
+export const isWithinWorkHours = (now: Date = new Date()): boolean => {
+  const day = now.getDay(); // 0 is Sun, 1 is Mon, ..., 5 is Fri, 6 is Sat
+  if (day === 0 || day === 6) return false;
+  
+  const hour = now.getHours();
+  // 9:00 AM to 5:00 PM (09:00 to 17:00)
+  return hour >= 9 && hour < 17;
+};
+

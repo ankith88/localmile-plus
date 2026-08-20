@@ -286,7 +286,12 @@ const AwaitingTCPage: React.FC = () => {
                                           </div>
                                         );
                                       })}
-                                 </div>
+                                     {(job.customer?.instructions || job.pickupInstructions || job.itemInformation || job.instructions) && (
+                                       <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--cream-warm, #f8f6f0)', borderRadius: '10px', fontSize: '0.82rem', color: 'var(--ink-soft, #4a5568)', borderLeft: '3px solid var(--gold, #d4af37)' }}>
+                                         <strong>Pickup Instructions / Item Info:</strong> {job.customer?.instructions || job.pickupInstructions || job.itemInformation || job.instructions}
+                                       </div>
+                                     )}
+                                  </div>
                                )}
 
                               <div className="card-meta">

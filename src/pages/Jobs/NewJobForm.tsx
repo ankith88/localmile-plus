@@ -1608,6 +1608,9 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
         const cleanUpdate = JSON.parse(JSON.stringify({
           ...formData,
           customer: finalCustomerData,
+          instructions: formData.customer.instructions || "",
+          pickupInstructions: formData.customer.instructions || "",
+          itemInformation: formData.customer.instructions || "",
           service: finalService,
           stops,
           recipient: (userData?.role === 'customer' || userData?.role === 'parent') ? recipientData : null,
@@ -1653,6 +1656,9 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
         const cleanData = JSON.parse(JSON.stringify({
           ...formData,
           customer: finalCustomerData,
+          instructions: formData.customer.instructions || "",
+          pickupInstructions: formData.customer.instructions || "",
+          itemInformation: formData.customer.instructions || "",
           service: finalService,
           stops,
           recipient: (userData?.role === 'customer' || userData?.role === 'parent') ? recipientData : null,
@@ -2748,16 +2754,23 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                         />
                         <Lock size={14} className="lock-icon" />
                       </div>
-                      <div className="input-pill full">
-                        <ClipboardList size={18} />
-                        <textarea 
-                          placeholder="Special Pickup/Delivery Instructions (Optional)"
-                          value={formData.customer.instructions}
-                          onChange={(e) => setFormData({...formData, customer: {...formData.customer, instructions: e.target.value}})}
-                        />
-                      </div>
                     </div>
                   )}
+
+                  <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--cream-warm)' }}>
+                    <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <ClipboardList size={14} /> PICKUP INSTRUCTIONS & ITEM INFORMATION <span style={{ color: 'var(--slate-400)', fontWeight: 400 }}>(OPTIONAL)</span>
+                    </label>
+                    <div className="input-pill full area glass" style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.7)', borderRadius: '14px', border: '1px solid rgba(0, 0, 0, 0.1)' }}>
+                      <textarea 
+                        placeholder="e.g. Gate code, parcel count, item description, key location, reception contact, special pickup notes..."
+                        rows={3}
+                        style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', resize: 'vertical', fontSize: '0.88rem', color: 'var(--ink)', fontWeight: 500 }}
+                        value={formData.customer.instructions}
+                        onChange={(e) => setFormData({...formData, customer: {...formData.customer, instructions: e.target.value}})}
+                      />
+                    </div>
+                  </div>
 
                   <div className="scheduling-section" style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--cream-warm)', marginBottom: '32px' }}>
                     {(userData?.role === 'parent' || userData?.role === 'customer') && (
@@ -2958,6 +2971,12 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                             <div className="v-row">
                               <span className="v-label">BY TIME</span>
                               <span className="v-val">{formData.preferredTime}</span>
+                            </div>
+                          )}
+                          {formData.customer.instructions && (
+                            <div className="v-row">
+                              <span className="v-label">INSTRUCTIONS / ITEMS</span>
+                              <span className="v-val">{formData.customer.instructions}</span>
                             </div>
                           )}
                           <div className="v-row total">

@@ -523,6 +523,11 @@ const Schedules: React.FC = () => {
                                   </div>
                                 );
                               })}
+                              {(schedule.customer?.instructions || schedule.pickupInstructions || schedule.itemInformation || schedule.instructions) && (
+                                <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--cream-warm, #f8f6f0)', borderRadius: '10px', fontSize: '0.82rem', color: 'var(--ink-soft, #4a5568)', borderLeft: '3px solid var(--gold, #d4af37)' }}>
+                                  <strong>Pickup Instructions / Item Info:</strong> {schedule.customer?.instructions || schedule.pickupInstructions || schedule.itemInformation || schedule.instructions}
+                                </div>
+                              )}
                            </div>
                          )}
 

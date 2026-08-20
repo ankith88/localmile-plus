@@ -157,65 +157,66 @@ const Dashboard: React.FC = () => {
       try {
         let jobsBaseQ = collection(db, 'jobs');
         let reqBaseQ = collection(db, 'requests');
+        let schedBaseQ = collection(db, 'scheduled_jobs');
 
         let jobsConstraints: any[] = [orderBy('createdAt', 'desc')];
         let reqConstraints: any[] = [orderBy('createdAt', 'desc')];
+        let schedConstraints: any[] = [orderBy('createdAt', 'desc')];
 
-        if (userData?.role === 'customer' && userData?.customer_id) {
-          jobsConstraints.unshift(where('customer_id', '==', userData.customer_id));
-          reqConstraints.unshift(where('customer_id', '==', userData.customer_id));
-        } else if (selectedParentId !== 'all') {
-          jobsConstraints.unshift(where('parent_id', '==', selectedParentId));
-          reqConstraints.unshift(where('parent_id', '==', selectedParentId));
+        const targetCustId = userData?.customer_id || customer?.id || companyData?.id;
+        const targetParentId = userData?.parent_id || parent?.id || (selectedParentId !== 'all' ? selectedParentId : null);
+
+        if ((userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId) {
+          jobsConstraints.unshift(where('customer_id', '==', targetCustId));
+          reqConstraints.unshift(where('customer_id', '==', targetCustId));
+          schedConstraints.unshift(where('customer_id', '==', targetCustId));
+        } else if (targetParentId) {
+          jobsConstraints.unshift(where('parent_id', '==', targetParentId));
+          reqConstraints.unshift(where('parent_id', '==', targetParentId));
+          schedConstraints.unshift(where('parent_id', '==', targetParentId));
         }
 
         // Fetch Jobs
-        const jobsQ = query(jobsBaseQ, ...jobsConstraints);
-        const jobsSnapshot = await getDocs(jobsQ);
-        setJobs(jobsSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        try {
+          const jobsQ = query(jobsBaseQ, ...jobsConstraints);
+          const jobsSnapshot = await getDocs(jobsQ);
+          setJobs(jobsSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        } catch (e) {
+          const fbQ = (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
+            ? query(jobsBaseQ, where('customer_id', '==', targetCustId))
+            : (targetParentId ? query(jobsBaseQ, where('parent_id', '==', targetParentId)) : jobsBaseQ);
+          const jobsSnapshot = await getDocs(fbQ as any);
+          setJobs(jobsSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        }
 
         // Fetch Requests
-        const reqQ = query(reqBaseQ, ...reqConstraints);
-        const reqSnapshot = await getDocs(reqQ);
-        setRequests(reqSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        try {
+          const reqQ = query(reqBaseQ, ...reqConstraints);
+          const reqSnapshot = await getDocs(reqQ);
+          setRequests(reqSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        } catch (e) {
+          const fbQ = (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
+            ? query(reqBaseQ, where('customer_id', '==', targetCustId))
+            : (targetParentId ? query(reqBaseQ, where('parent_id', '==', targetParentId)) : reqBaseQ);
+          const reqSnapshot = await getDocs(fbQ as any);
+          setRequests(reqSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        }
 
         // Fetch Schedules
-        let schedBaseQ = collection(db, 'scheduled_jobs');
-        const schedQ = selectedParentId !== 'all' ? query(schedBaseQ, where('parent_id', '==', selectedParentId)) : schedBaseQ;
-        const schedSnapshot = await getDocs(schedQ);
-        setSchedules(schedSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        try {
+          const schedQ = query(schedBaseQ, ...schedConstraints);
+          const schedSnapshot = await getDocs(schedQ);
+          setSchedules(schedSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        } catch (e) {
+          const fbQ = (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
+            ? query(schedBaseQ, where('customer_id', '==', targetCustId))
+            : (targetParentId ? query(schedBaseQ, where('parent_id', '==', targetParentId)) : schedBaseQ);
+          const schedSnapshot = await getDocs(fbQ as any);
+          setSchedules(schedSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
+        }
 
       } catch (error) {
         console.error("Error fetching data:", error);
-        // Fallback for missing indexes
-        let jobsBaseQ = collection(db, 'jobs');
-        let reqBaseQ = collection(db, 'requests');
-        let schedBaseQ = collection(db, 'scheduled_jobs');
-        
-        let fbJobsQ, fbReqQ, fbSchedQ;
-        
-        if (userData?.role === 'customer' && userData?.customer_id) {
-          fbJobsQ = query(jobsBaseQ, where('customer_id', '==', userData.customer_id));
-          fbReqQ = query(reqBaseQ, where('customer_id', '==', userData.customer_id));
-          fbSchedQ = query(schedBaseQ, where('customer_id', '==', userData.customer_id));
-        } else if (selectedParentId !== 'all') {
-          fbJobsQ = query(jobsBaseQ, where('parent_id', '==', selectedParentId));
-          fbReqQ = query(reqBaseQ, where('parent_id', '==', selectedParentId));
-          fbSchedQ = query(schedBaseQ, where('parent_id', '==', selectedParentId));
-        } else {
-          fbJobsQ = jobsBaseQ;
-          fbReqQ = reqBaseQ;
-          fbSchedQ = schedBaseQ;
-        }
-
-        const jobsSnapshot = await getDocs(fbJobsQ as any);
-        setJobs(jobsSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
-        
-        const reqSnapshot = await getDocs(fbReqQ as any);
-        setRequests(reqSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
-
-        const schedSnapshot = await getDocs(fbSchedQ as any);
-        setSchedules(schedSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
       } finally {
         setLoading(false);
       }
@@ -224,7 +225,7 @@ const Dashboard: React.FC = () => {
     if (parent || isAdmin || customer || userData?.role === 'customer' || userData?.role === 'parent') {
       fetchData();
     }
-  }, [parent, customer, isAdmin, selectedParentId, userData]);
+  }, [parent, customer, isAdmin, selectedParentId, userData, companyData]);
 
   const handleCommunication = (job: any) => {
     setSelectedJobForComm(job);
@@ -345,13 +346,30 @@ const Dashboard: React.FC = () => {
       }
       if (adminRoleView === 'customer') {
         if (selectedCustomerCompanyId !== 'all') {
-          const matchId = item.customer_id === selectedCustomerCompanyId;
+          const matchId = item.customer_id === selectedCustomerCompanyId || item.customer?.id === selectedCustomerCompanyId;
           const matchName = (item.customer?.company || '').toLowerCase() === (allCustomerCompanyOptions.find(c => c.id === selectedCustomerCompanyId)?.name || '').toLowerCase();
           matchesAdminFilters = matchId || matchName;
         }
       } else if (adminRoleView === 'parent') {
         if (selectedParentId !== 'all') {
           matchesAdminFilters = item.parent_id === selectedParentId;
+        }
+      }
+    } else if (userData?.role === 'customer' || (!userData?.parent_id && (userData?.customer_id || customer?.id || companyData?.id))) {
+      const targetCustId = userData?.customer_id || customer?.id || companyData?.id;
+      if (targetCustId) {
+        const matchId = item.customer_id === targetCustId || item.customer?.id === targetCustId;
+        const matchName = companyData?.companyName && (item.customer?.company || '').toLowerCase() === companyData.companyName.toLowerCase();
+        const matchUid = item.uid && item.uid === userData?.uid;
+        if (!matchId && !matchName && !matchUid) {
+          return false;
+        }
+      }
+    } else if (userData?.role === 'parent' || userData?.parent_id || parent?.id) {
+      const targetParentId = userData?.parent_id || parent?.id || (selectedParentId !== 'all' ? selectedParentId : null);
+      if (targetParentId) {
+        if (item.parent_id && item.parent_id !== targetParentId) {
+          return false;
         }
       }
     }

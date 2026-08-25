@@ -427,28 +427,31 @@ const Dashboard: React.FC = () => {
   });
 
   const exportJobsCSV = () => {
-    const headers = ['Job ID', 'Customer', 'Address', 'Suburb', 'Service', 'Date', 'Billing', 'Status'];
+    const headers = ['Job ID', 'Customer', 'Address', 'Suburb', 'Service', 'Date', 'Preferred Time', 'Billing', 'Status'];
     const rows = filteredJobs.map(j => [
-      j.id,
-      j.customer.company,
-      j.customer.address,
-      j.customer.suburb,
-      j.service,
-      j.date,
-      j.billing,
-      j.status
+      `"${(j.id || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.customer?.company || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.customer?.address || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.customer?.suburb || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.service || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.date || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.preferredTime || j.preferred_time || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.billing || '').toString().replace(/"/g, '""')}"`,
+      `"${(j.status || '').toString().replace(/"/g, '""')}"`
     ]);
     
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + headers.join(",") + "\n"
+    const csvContent = headers.join(",") + "\n" 
       + rows.map(e => e.join(",")).join("\n");
       
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `jobs_export_${formatDateForInput(new Date())}.csv`);
     document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleRebook = (job: any) => {

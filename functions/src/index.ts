@@ -4539,7 +4539,29 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       operatorPhone: null
     };
 
-    const docRef = await db.collection("scheduled_jobs").add(newScheduledJob);
+    // Check if an existing scheduled_jobs document already exists for this company and service
+    const existingSchedQuery = await db.collection("scheduled_jobs")
+      .where("customer_id", "==", companyId)
+      .where("service", "==", service)
+      .limit(1)
+      .get();
+
+    let docRef: admin.firestore.DocumentReference;
+    let isExisting = false;
+
+    if (!existingSchedQuery.empty) {
+      const existingDoc = existingSchedQuery.docs[0];
+      docRef = existingDoc.ref;
+      isExisting = true;
+      const updatedData = {
+        ...newScheduledJob,
+        createdAt: existingDoc.data()?.createdAt || admin.firestore.Timestamp.now(),
+        updatedAt: admin.firestore.Timestamp.now()
+      };
+      await docRef.set(updatedData, { merge: true });
+    } else {
+      docRef = await db.collection("scheduled_jobs").add(newScheduledJob);
+    }
 
     // If starting today or in the past, and today matches the frequency schedule, create immediate job instance for today
     const sydneyTimeFormatter = new Intl.DateTimeFormat('en-AU', {
@@ -4575,11 +4597,12 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       immediateInstanceId = jobInstanceRef.id;
     }
 
-    res.status(201).send({
+    res.status(isExisting ? 200 : 201).send({
       success: true,
-      message: "Scheduled job created successfully.",
+      message: isExisting ? "Scheduled job updated successfully." : "Scheduled job created successfully.",
       data: {
         id: docRef.id,
+        isUpdated: isExisting,
         ...(immediateInstanceId ? { immediateInstanceId } : {})
       }
     });

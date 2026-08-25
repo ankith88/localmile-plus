@@ -38,6 +38,7 @@ import { formatDateForInput, parseLocalDate, isWithinWorkHours } from '../../uti
 import { sortStops } from '../../utils/stops';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomSelect from '../../components/CustomSelect';
+import { acceptJobRequest } from '../../utils/requestHelpers';
 
 
 const Dashboard: React.FC = () => {
@@ -65,9 +66,12 @@ const Dashboard: React.FC = () => {
   const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(new Map());
   const [customerCompanies, setCustomerCompanies] = useState<{ id: string; name: string }[]>([]);
 
-  // Admin Multi-Select Bulk Delete State
+  // Admin Multi-Select Bulk Action State
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkAccepting, setIsBulkAccepting] = useState(false);
+  const [bulkAcceptProgress, setBulkAcceptProgress] = useState(0);
+  const [bulkAcceptStatus, setBulkAcceptStatus] = useState('');
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -612,6 +616,95 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleBulkAccept = async () => {
+    if (!isAdmin && userData?.role !== 'parent' && userData?.role !== 'lpoadmin') {
+      alert("Only admins and franchisee owners can perform bulk acceptance.");
+      return;
+    }
+    if (selectedJobIds.size === 0) {
+      alert("No requests selected.");
+      return;
+    }
+
+    const selectedRequests = requests.filter(r => selectedJobIds.has(r.id) && r.status === 'pending');
+
+    if (selectedRequests.length === 0) {
+      alert("None of the selected items are pending requests that can be accepted.");
+      return;
+    }
+
+    const count = selectedRequests.length;
+    if (!window.confirm(`Are you sure you want to accept the ${count} selected pending request(s)?`)) {
+      return;
+    }
+
+    setIsBulkAccepting(true);
+    setBulkAcceptProgress(0);
+    setBulkAcceptStatus(`Starting bulk accept for ${count} request(s)...`);
+
+    let successCount = 0;
+    let failCount = 0;
+    const parentId = parent?.id || userData?.parent_id || "";
+
+    for (let i = 0; i < selectedRequests.length; i++) {
+      const req = selectedRequests[i];
+      const currentProgress = Math.round(((i) / count) * 100);
+      setBulkAcceptProgress(currentProgress);
+      setBulkAcceptStatus(`Accepting request ${i + 1} of ${count}: ${req.customer?.company || req.id}...`);
+
+      try {
+        await acceptJobRequest({
+          request: req,
+          parentId: parentId || req.parent_id || "",
+          userData,
+          companyData
+        });
+        successCount++;
+      } catch (err) {
+        console.error(`Failed to accept request ${req.id}:`, err);
+        failCount++;
+      }
+    }
+
+    setBulkAcceptProgress(100);
+    setBulkAcceptStatus(`Bulk accept completed! (${successCount} succeeded, ${failCount} failed)`);
+
+    const acceptedIds = new Set(selectedRequests.map(r => r.id));
+    setRequests(prev => prev.map(r => acceptedIds.has(r.id) ? { ...r, status: 'scheduled' } : r));
+    setSelectedJobIds(new Set());
+
+    setTimeout(() => {
+      setIsBulkAccepting(false);
+      setBulkAcceptProgress(0);
+      setBulkAcceptStatus('');
+      alert(`Bulk accept finished: ${successCount} request(s) accepted successfully.${failCount > 0 ? ` (${failCount} failed)` : ''}`);
+    }, 1000);
+  };
+
+  const handleSingleAccept = async (request: any) => {
+    if (request.status === 'awaiting-activation') {
+      alert("This customer is still awaiting T&C activation. You cannot accept the job until they are Active.");
+      return;
+    }
+
+    if (window.confirm(`Accept job request for ${request.customer?.company || 'customer'}?`)) {
+      try {
+        const parentId = parent?.id || userData?.parent_id || request.parent_id || "";
+        await acceptJobRequest({
+          request,
+          parentId,
+          userData,
+          companyData
+        });
+        setRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: 'scheduled' } : r));
+        alert("Job request accepted successfully!");
+      } catch (err: any) {
+        console.error("Error accepting job request:", err);
+        alert(err?.message || "Failed to accept job request.");
+      }
+    }
+  };
+
   const handleUpdateStopStatus = async (jobId: string, stopIndex: number, newStatus: string) => {
     if (userData?.role === 'customer' || userData?.role === 'parent') {
       alert("You do not have permission to modify job status.");
@@ -872,7 +965,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Admin Bulk Selection Bar */}
-            {isAdmin && filteredJobs.length > 0 && (
+            {(isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin') && filteredJobs.length > 0 && (
                <div className="admin-bulk-bar glass-card" style={{
                  display: 'flex',
                  alignItems: 'center',
@@ -894,32 +987,59 @@ const Dashboard: React.FC = () => {
                      {selectedJobIds.size === filteredJobs.length && filteredJobs.length > 0 ? 'Deselect All' : `Select All (${filteredJobs.length})`}
                    </button>
                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink)' }}>
-                     {selectedJobIds.size} selected
+                     {isBulkAccepting && bulkAcceptStatus ? bulkAcceptStatus : `${selectedJobIds.size} selected`}
                    </span>
                  </div>
                  
                  {selectedJobIds.size > 0 && (
-                   <button 
-                     onClick={handleBulkDelete}
-                     disabled={isBulkDeleting}
-                     style={{
-                       background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                       color: 'white',
-                       border: 'none',
-                       borderRadius: '10px',
-                       padding: '8px 16px',
-                       fontWeight: 700,
-                       fontSize: '13px',
-                       display: 'flex',
-                       alignItems: 'center',
-                       gap: '8px',
-                       cursor: 'pointer',
-                       boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
-                     }}
-                   >
-                     <Trash2 size={16} />
-                     <span>{isBulkDeleting ? 'Deleting...' : `Delete Selected (${selectedJobIds.size})`}</span>
-                   </button>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                     {activeTab === 'pending' && (
+                       <button 
+                         onClick={handleBulkAccept}
+                         disabled={isBulkAccepting || isBulkDeleting}
+                         style={{
+                           background: 'linear-gradient(135deg, #10b981, #059669)',
+                           color: 'white',
+                           border: 'none',
+                           borderRadius: '10px',
+                           padding: '8px 16px',
+                           fontWeight: 700,
+                           fontSize: '13px',
+                           display: 'flex',
+                           alignItems: 'center',
+                           gap: '8px',
+                           cursor: isBulkAccepting ? 'wait' : 'pointer',
+                           boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                           opacity: isBulkAccepting ? 0.8 : 1
+                         }}
+                       >
+                         <CheckCircle2 size={16} />
+                         <span>{isBulkAccepting ? `Accepting (${bulkAcceptProgress}%)...` : `Accept Selected (${selectedJobIds.size})`}</span>
+                       </button>
+                     )}
+                     <button 
+                       onClick={handleBulkDelete}
+                       disabled={isBulkDeleting || isBulkAccepting}
+                       style={{
+                         background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                         color: 'white',
+                         border: 'none',
+                         borderRadius: '10px',
+                         padding: '8px 16px',
+                         fontWeight: 700,
+                         fontSize: '13px',
+                         display: 'flex',
+                         alignItems: 'center',
+                         gap: '8px',
+                         cursor: isBulkDeleting ? 'wait' : 'pointer',
+                         boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
+                         opacity: isBulkDeleting ? 0.8 : 1
+                       }}
+                     >
+                       <Trash2 size={16} />
+                       <span>{isBulkDeleting ? 'Deleting...' : `Delete Selected (${selectedJobIds.size})`}</span>
+                     </button>
+                   </div>
                  )}
                </div>
              )}
@@ -1000,14 +1120,14 @@ const Dashboard: React.FC = () => {
                              <div className="timeline-content-card glass-card">
                                  <div className="card-header" onClick={() => toggleExpand(job.id)} style={{ cursor: 'pointer' }}>
                                     <div className="customer-block">
-                                       {isAdmin && (
+                                       {(isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin') && (
                                          <input 
                                            type="checkbox" 
                                            checked={selectedJobIds.has(job.id)}
                                            onClick={(e) => e.stopPropagation()}
                                            onChange={(e) => toggleSelectJob(job.id, e as any)}
-                                           style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#dc2626', marginRight: '8px', flexShrink: 0 }}
-                                           title={selectedJobIds.has(job.id) ? "Deselect job" : "Select job for bulk delete"}
+                                           style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: activeTab === 'pending' ? '#10b981' : '#dc2626', marginRight: '8px', flexShrink: 0 }}
+                                           title={selectedJobIds.has(job.id) ? "Deselect item" : "Select item for bulk actions"}
                                          />
                                        )}
                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1275,13 +1395,18 @@ const Dashboard: React.FC = () => {
                                           </button>
                                        </div>
                                      )}
-                                    
+                                     
                                     <div className="overflow-menu">
                                        <div className="menu-trigger">
                                           <MoreHorizontal size={18} />
                                           <div className="menu-dropdown glass">
                                              {activeTab === 'pending' || activeTab === 'declined' ? (
                                                <>
+                                                 {activeTab === 'pending' && (isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin') && (
+                                                   <button onClick={() => handleSingleAccept(job)} style={{ color: '#10b981' }}>
+                                                     <CheckCircle2 size={14} /> Accept Request
+                                                   </button>
+                                                 )}
                                                  <button onClick={() => handleEditRequest(job)}><RotateCcw size={14} /> Edit Request</button>
                                                  <button className="cancel" onClick={() => handleDeleteRequest(job.id)}><Trash2 size={14} /> Delete Request</button>
                                                </>

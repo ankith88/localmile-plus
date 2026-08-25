@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { 
   doc, 
   updateDoc, 
-  addDoc, 
   deleteDoc,
   collection, 
   onSnapshot,
@@ -11,8 +10,7 @@ import {
   query,
   where,
   getDocs,
-  getDoc,
-  increment
+  getDoc
 } from 'firebase/firestore';
 import { 
   Building2, 
@@ -36,9 +34,10 @@ import AcceptingProgress from '../../components/AcceptingProgress';
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
-import { formatDateForInput, parseLocalDate, getDayName, isWithinWorkHours } from '../../utils/scheduling';
+import { formatDateForInput, parseLocalDate, isWithinWorkHours } from '../../utils/scheduling';
 import { isPublicHoliday } from '../../utils/holidays';
 import { requestNotificationPermission, saveTokenToFirestore, onForegroundMessage } from '../../utils/notifications';
+import { acceptJobRequest } from '../../utils/requestHelpers';
 
 const RequestPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -340,323 +339,24 @@ const RequestPage: React.FC = () => {
 
     if (window.confirm("Accept this job request?")) {
       setIsAccepting(true);
-      setAcceptProgress(5);
-      setAcceptStatus("Initializing acceptance flow...");
-
       try {
-        // Fetch trial balance early to pass to APIs
-        let isFreeJob = false;
-        let companyDataFromDb: any = null;
-        if (request.customer_id) {
-          try {
-            const compDoc = await getDoc(doc(db, 'companies', request.customer_id));
-            if (compDoc.exists()) {
-              companyDataFromDb = compDoc.data();
-              if (typeof companyDataFromDb.trial_credits_balance === 'number' && companyDataFromDb.trial_credits_balance > 0) {
-                isFreeJob = true;
-              }
-            }
-          } catch (e) {
-            console.error("Failed to check trial balance:", e);
+        await acceptJobRequest({
+          request,
+          parentId,
+          userData,
+          companyData,
+          onProgress: (progress, status) => {
+            setAcceptProgress(progress);
+            setAcceptStatus(status);
           }
-        }
-
-        // 1. Create Job or Scheduled Template
-        let jobDocRef;
-        const today = formatDateForInput(new Date());
-        let finalJobId = "";
-        let netsuiteCustomerId = request.netsuiteCustomerId || request.customer?.netsuiteId || "";
-        
-        setAcceptProgress(15);
-        setAcceptStatus("Analyzing service requirements...");
-
-        let serviceInternalId = '';
-        let serviceRate = '';
-
-        if (request.jobType === 'scheduled') {
-          // 1.1 Fetch Service Metadata from Customer Record
-          setAcceptStatus("Fetching customer service metadata...");
-          
-          try {
-            if (parentId) {
-              const custQ = query(
-                collection(db, `companies/${parentId}/customers`),
-                where('companyName', '==', request.customer.company)
-              );
-              const custSnap = await getDocs(custQ);
-              if (!custSnap.empty) {
-                const c = custSnap.docs[0].data();
-                if (userData?.role === 'parent') {
-                  if (c.companyId || c.customerInternalId) {
-                    netsuiteCustomerId = c.companyId || c.customerInternalId;
-                  }
-                  if (Array.isArray(c.serviceList)) {
-                    const matched = c.serviceList.find((s: any) => s.name === request.service);
-                    if (matched) {
-                      serviceInternalId = matched.id || '';
-                      serviceRate = matched.rate || '';
-                    }
-                  }
-                } else {
-                  if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
-                    serviceInternalId = c.lpoServiceAMPOInternalID || '';
-                    serviceRate = c.lpoServiceAMPORate || '';
-                  } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                    serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
-                      ? companyDataFromDb.serviceTrialInternalID
-                      : (c.lpoServicePMPOInternalID || '');
-                    serviceRate = c.lpoServicePMPORate || '';
-                  } else if (request.service === 'round-trip') {
-                    serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
-                    serviceRate = c.lpoServiceAMPOPMPORate || '';
-                  }
-                }
-              }
-            }
-          } catch (err) {
-            console.error("Error fetching customer service metadata:", err);
-          }
-
-          setAcceptProgress(35);
-          setAcceptStatus("Generating recurring schedule template...");
-
-          // Save template
-          const { id: _, ...requestData } = request;
-          const templateRef = await addDoc(collection(db, 'scheduled_jobs'), {
-            ...requestData,
-            parent_id: parentId,
-            status: 'scheduled',
-            serviceInternalId,
-            serviceRate,
-            createdAt: new Date(),
-            originalRequestId: request.id,
-            operatorNetSuiteId: null,
-            operatorName: null,
-            operatorEmail: null,
-            operatorPhone: null
-          });
-          
-          console.log("Created scheduled_jobs template:", templateRef.id);
-          finalJobId = templateRef.id;
-          
-          // Check if today matches frequency to immediately generate first instance
-          const todayDayName = getDayName(new Date());
-          if (request.date <= today && request.frequency?.includes(todayDayName)) {
-            setAcceptProgress(50);
-            setAcceptStatus("Creating first job instance...");
-            jobDocRef = await addDoc(collection(db, 'jobs'), {
-              ...requestData,
-              parent_id: parentId,
-              status: 'scheduled',
-              serviceInternalId,
-              serviceRate,
-              createdAt: new Date(),
-              jobType: 'scheduled_instance',
-              scheduledJobId: templateRef.id,
-              date: today,
-              originalRequestId: request.id,
-              operatorNetSuiteId: null,
-              operatorName: null,
-              operatorEmail: null,
-              operatorPhone: null
-            });
-            console.log("Created immediate job instance:", jobDocRef.id);
-            finalJobId = jobDocRef.id;
-          }
-        } else {
-          // Normal one-off job
-          // 1.2 Fetch Service Metadata for one-off job
-          setAcceptStatus("Fetching customer service metadata...");
-          
-          try {
-            const custQ = query(
-              collection(db, `companies/${parentId}/customers`),
-              where('companyName', '==', request.customer.company)
-            );
-            const custSnap = await getDocs(custQ);
-            if (!custSnap.empty) {
-              const c = custSnap.docs[0].data();
-              if (userData?.role === 'parent') {
-                if (c.companyId || c.customerInternalId) {
-                  netsuiteCustomerId = c.companyId || c.customerInternalId;
-                }
-                if (Array.isArray(c.serviceList)) {
-                  const matched = c.serviceList.find((s: any) => s.name === request.service);
-                  if (matched) {
-                    serviceInternalId = matched.id || '';
-                    serviceRate = matched.rate || '';
-                  }
-                }
-              } else {
-                if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
-                  serviceInternalId = c.lpoServiceAMPOInternalID || '';
-                  serviceRate = c.lpoServiceAMPORate || '';
-                } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
-                  serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
-                    ? companyDataFromDb.serviceTrialInternalID
-                    : (c.lpoServicePMPOInternalID || '');
-                  serviceRate = c.lpoServicePMPORate || '';
-                } else if (request.service === 'round-trip') {
-                  serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
-                  serviceRate = c.lpoServiceAMPOPMPORate || '';
-                }
-              }
-            }
-          } catch (err) {
-            console.error("Error fetching one-off service metadata:", err);
-          }
-
-          setAcceptProgress(45);
-          setAcceptStatus("Creating job record...");
-
-          const { id: _, ...requestData } = request;
-          jobDocRef = await addDoc(collection(db, 'jobs'), {
-            ...requestData,
-            parent_id: parentId,
-            status: 'scheduled',
-            serviceInternalId,
-            serviceRate,
-            createdAt: new Date(),
-            originalRequestId: request.id,
-            operatorNetSuiteId: null,
-            operatorName: null,
-            operatorEmail: null,
-            operatorPhone: null
-          });
-          console.log("Created one-off job:", jobDocRef.id);
-          finalJobId = jobDocRef.id;
-        }
-
-        // 1.5 Sync with NetSuite if same-day job instance was created
-        if (request.date === today && jobDocRef) {
-          setAcceptProgress(65);
-          setAcceptStatus("Syncing instance...");
-          const NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2650&deploy=1&compid=1048144&ns-at=AAEJ7tMQwOy-VLSQwqUcq11USKGh9PAqMVQtMt6Mu_VXgYTiUyM";
-          
-          const params = new URLSearchParams({
-            job_id: jobDocRef.id,
-            billing: request.billing || "",
-            customer_id: request.netsuiteCustomerId || request.customer?.netsuiteId || "",
-            instructions: request.customer?.instructions || "",
-            job_type: request.jobType || "",
-            parent_id: parentId,
-            request_id: request.id,
-            preferred_time: request.preferredTime || "",
-            service_name: request.service || "null",
-            service_internal_id: serviceInternalId || "null",
-            date: request.date || "null",
-            service_pmpo_internal_id: request.servicePMPOInternalID || "null",
-            service_pmpo_rate: request.servicePMPORate || "null",
-            service_ampo_internal_id: request.serviceAMPOInternalID || "null",
-            service_ampo_rate: request.serviceAMPORate || "null",
-            service_h2h_internal_id: request.serviceH2HInternalID || "null",
-            service_h2h_rate: request.serviceH2HRate || "null",
-            auspost_first_name: request.auspostContact?.firstName || "null",
-            auspost_last_name: request.auspostContact?.lastName || "null",
-            auspost_phone: request.auspostContact?.phone || "null",
-            auspost_email: request.auspostContact?.email || "null",
-            auspost_company: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.company : request.recipient?.company) || "null",
-            auspost_address: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.address : request.recipient?.address) || "null",
-            auspost_state: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.state : request.recipient?.state) || "null",
-            auspost_suburb: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.suburb : request.recipient?.suburb) || "null",
-            auspost_postcode: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.postcode : request.recipient?.postcode) || "null",
-            auspost_lat: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lat : request.recipient?.coordinates?.lat)?.toString() || "null",
-            auspost_lng: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lng : request.recipient?.coordinates?.lng)?.toString() || "null",
-            is_free_job: isFreeJob.toString()
-          });
-
-          try {
-            const res = await fetch(`${NETSUITE_API}&${params.toString()}`);
-            const data = await res.json();
-            console.log("NetSuite Script 2650 Response:", data);
-          } catch (err) {
-            console.error("NetSuite Script 2650 Error:", err);
-          }
-        }
-
-        // 1.6 Secondary NetSuite Sync (Confirmation)
-        const SECOND_NETSUITE_API = "https://1048144.extforms.netsuite.com/app/site/hosting/scriptlet.nl?script=2649&deploy=1&compid=1048144&ns-at=AAEJ7tMQX4gDftlZvyZi8scPrWJRKTOWGovx9I5Cz06qXdzpiRU";
-        if (finalJobId) {
-          setAcceptProgress(85);
-          setAcceptStatus("Sending confirmation...");
-          const params2649 = new URLSearchParams({
-            job_id: finalJobId,
-            parent_id: parentId,
-            customer_id: netsuiteCustomerId,
-            email: request.customer?.email || "",
-            firstName: request.customer?.firstName || "",
-            phone: request.customer?.phone || "",
-            service: request.service || "",
-            date: request.date || "null",
-            frequency: request.jobType === 'scheduled' ? (request.frequency?.join(',') || "null") : "null",
-            service_pmpo_internal_id: request.servicePMPOInternalID || "null",
-            service_pmpo_rate: request.servicePMPORate || "null",
-            service_ampo_internal_id: request.serviceAMPOInternalID || "null",
-            service_ampo_rate: request.serviceAMPORate || "null",
-            service_h2h_internal_id: request.serviceH2HInternalID || "null",
-            service_h2h_rate: request.serviceH2HRate || "null",
-            auspost_first_name: request.auspostContact?.firstName || "null",
-            auspost_last_name: request.auspostContact?.lastName || "null",
-            auspost_phone: request.auspostContact?.phone || "null",
-            auspost_email: request.auspostContact?.email || "null",
-            auspost_company: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.company : request.recipient?.company) || "null",
-            is_free_job: isFreeJob.toString(),
-            user_first_name: request.customer?.firstName || "null",
-            user_last_name: request.customer?.lastName || "null",
-            user_email: request.customer?.email || "null",
-            user_phone: request.customer?.phone || "null"
-          });
-
-          console.log("Triggering NetSuite 2649 with:", Object.fromEntries(params2649));
-
-          try {
-            const res = await fetch(`${SECOND_NETSUITE_API}&${params2649.toString()}`);
-            const data = await res.json();
-            console.log("NetSuite Script 2649 Response:", data);
-          } catch (err) {
-            console.error("NetSuite Script 2649 Error:", err);
-          }
-        } else {
-          console.warn("NetSuite 2649 not triggered: finalJobId is empty");
-        }
-
-        // 2. Update Request Status
-        setAcceptProgress(95);
-        setAcceptStatus("Finalizing request status...");
-        await updateDoc(doc(db, 'requests', request.id), {
-          status: 'scheduled'
         });
-
-        // Decrement trial balance for customer job requests
-        if (isFreeJob && request.customer_id) {
-          try {
-            await updateDoc(doc(db, 'companies', request.customer_id), {
-              trial_credits_balance: increment(-1)
-            });
-            // Fetch updated balance and sync to ProspectPlus
-            const compSnap = await getDoc(doc(db, 'companies', request.customer_id));
-            if (compSnap.exists()) {
-              const newBalance = compSnap.data().trial_credits_balance;
-              if (typeof newBalance === 'number') {
-                const syncFn = httpsCallable(functions, 'syncProspectPlusTrialCredits');
-                await syncFn({ customer_id: request.customer_id, trial_credits_balance: newBalance });
-              }
-            }
-          } catch (e) {
-            console.error("Failed to decrement and sync trial balance:", e);
-          }
-        }
-
-        setAcceptProgress(100);
-        setAcceptStatus("Job accepted successfully!");
-        
         setTimeout(() => {
           setIsAccepting(false);
           setAcceptProgress(0);
         }, 2000);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error accepting job:", err);
-        alert("Failed to accept job.");
+        alert(err?.message || "Failed to accept job.");
         setIsAccepting(false);
       }
     }

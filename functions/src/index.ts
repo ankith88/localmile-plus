@@ -1911,10 +1911,58 @@ export const generateDailyScheduledJobs = onSchedule({
         .get();
 
       if (existingInstances.empty) {
+        let instanceIsFree = template.is_free_job;
+        const customerId = template.customer_id;
+
+        // Check if creator role is customer
+        let isCustomerRole = template.userRole === 'customer';
+        if (!isCustomerRole && template.uid) {
+          try {
+            const userSnap = await db.collection('users').doc(template.uid).get();
+            if (userSnap.exists && userSnap.data()?.role === 'customer') {
+              isCustomerRole = true;
+            }
+          } catch (err) {
+            console.error(`Error checking user ${template.uid} role:`, err);
+          }
+        }
+
+        if (isCustomerRole && customerId) {
+          try {
+            const compDoc = await db.collection('companies').doc(customerId).get();
+            if (compDoc.exists) {
+              const compData = compDoc.data();
+              const trialBalance = typeof compData?.trial_credits_balance === 'number' ? compData.trial_credits_balance : 0;
+
+              if (trialBalance > 0 && (template.is_free_job === true || template.is_free_job === 'true')) {
+                instanceIsFree = true;
+                // Decrement trial balance by 1 for customer free job generation
+                await db.collection('companies').doc(customerId).update({
+                  trial_credits_balance: admin.firestore.FieldValue.increment(-1)
+                });
+              } else {
+                instanceIsFree = false;
+                // If template was marked free previously, update template doc to false
+                if (template.is_free_job === true || template.is_free_job === 'true') {
+                  const tUpdate: any = { is_free_job: false };
+                  if (compData?.servicePMPOInternalID && template.serviceInternalId === compData.serviceTrialInternalID) {
+                    tUpdate.serviceInternalId = compData.servicePMPOInternalID;
+                    if (compData.servicePMPORate) tUpdate.serviceRate = compData.servicePMPORate;
+                  }
+                  await scheduledJobsRef.doc(doc.id).update(tUpdate);
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`Error processing customer trial credits for scheduled job ${doc.id}:`, err);
+          }
+        }
+
         // Create new instance
         const newJobRef = jobsRef.doc();
         batch.set(newJobRef, {
           ...template, // Copies all fields including stops
+          is_free_job: instanceIsFree,
           jobType: 'scheduled_instance',
           scheduledJobId: doc.id,
           date: todayStr,
@@ -4465,6 +4513,7 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       date: startDate,
       jobType: 'scheduled',
       service,
+      is_free_job: isTrial,
       customer: {
         company: customer.company,
         address: customer.address,

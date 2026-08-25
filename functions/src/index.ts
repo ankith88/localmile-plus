@@ -4539,18 +4539,30 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       operatorPhone: null
     };
 
-    // Check if an existing scheduled_jobs document already exists for this company and service
-    const existingSchedQuery = await db.collection("scheduled_jobs")
-      .where("customer_id", "==", companyId)
-      .where("service", "==", service)
-      .limit(1)
+    // Check if an existing scheduled_jobs document already exists for this company and service type
+    const custIdOptions = [String(companyId)];
+    if (!isNaN(Number(companyId))) custIdOptions.push(Number(companyId) as any);
+
+    const existingSchedSnap = await db.collection("scheduled_jobs")
+      .where("customer_id", "in", custIdOptions)
       .get();
 
     let docRef: admin.firestore.DocumentReference;
     let isExisting = false;
 
-    if (!existingSchedQuery.empty) {
-      const existingDoc = existingSchedQuery.docs[0];
+    let existingDoc: admin.firestore.QueryDocumentSnapshot | null = null;
+    if (!existingSchedSnap.empty) {
+      existingDoc = existingSchedSnap.docs.find(d => {
+        const docService = (d.data().service || '').toLowerCase();
+        const docIsPMPO = docService === 'pmpo' || docService === 'site-to-lpo' || docService === 'site-to-australia post';
+        const docIsAMPO = docService === 'ampo' || docService === 'lpo-to-site' || docService === 'australia post-to-site';
+        if (isPMPO && docIsPMPO) return true;
+        if (isAMPO && docIsAMPO) return true;
+        return docService === normService;
+      }) || null;
+    }
+
+    if (existingDoc) {
       docRef = existingDoc.ref;
       isExisting = true;
       const updatedData = {

@@ -4489,16 +4489,16 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
 
     let serviceInternalId = '';
     let serviceRate = '';
+    const trialBalance = companyData ? companyData.trial_credits_balance : 0;
+    const isTrial = typeof trialBalance === 'number' && trialBalance > 0;
     if (service === 'lpo-to-site' || service === 'australia post-to-site') {
-      serviceInternalId = companyData.serviceAMPOInternalID || '';
-      serviceRate = companyData.serviceAMPORate || '';
+      serviceInternalId = companyData?.serviceAMPOInternalID || '';
+      serviceRate = companyData?.serviceAMPORate || '';
     } else if (service === 'site-to-lpo' || service === 'site-to-australia post') {
-      const trialBalance = companyData.trial_credits_balance;
-      const isTrial = typeof trialBalance === 'number' && trialBalance > 0;
-      serviceInternalId = (isTrial && companyData.serviceTrialInternalID)
+      serviceInternalId = (isTrial && companyData?.serviceTrialInternalID)
         ? companyData.serviceTrialInternalID
-        : (companyData.servicePMPOInternalID || '');
-      serviceRate = companyData.servicePMPORate || '';
+        : (companyData?.servicePMPOInternalID || '');
+      serviceRate = companyData?.servicePMPORate || '';
     }
 
     const newScheduledJob = {

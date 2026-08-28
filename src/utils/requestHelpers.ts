@@ -19,6 +19,7 @@ export interface AcceptRequestParams {
   userData?: any;
   companyData?: any;
   onProgress?: (progress: number, status: string) => void;
+  sendEmail?: boolean;
 }
 
 export const acceptJobRequest = async ({
@@ -26,7 +27,8 @@ export const acceptJobRequest = async ({
   parentId = "",
   userData = null,
   companyData: _companyData = null,
-  onProgress
+  onProgress,
+  sendEmail
 }: AcceptRequestParams) => {
   if (!request) throw new Error("No request provided.");
 
@@ -249,7 +251,11 @@ export const acceptJobRequest = async ({
       auspost_postcode: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.postcode : request.recipient?.postcode) || "null",
       auspost_lat: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lat : request.recipient?.coordinates?.lat)?.toString() || "null",
       auspost_lng: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lng : request.recipient?.coordinates?.lng)?.toString() || "null",
-      is_free_job: isFreeJob.toString()
+      is_free_job: isFreeJob.toString(),
+      admin_accepted: (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3') ? "true" : "false",
+      send_email: sendEmail !== undefined ? (sendEmail ? "true" : "false") : "false",
+      no_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false",
+      suppress_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false"
     });
 
     try {
@@ -290,7 +296,11 @@ export const acceptJobRequest = async ({
       user_first_name: request.customer?.firstName || "null",
       user_last_name: request.customer?.lastName || "null",
       user_email: request.customer?.email || "null",
-      user_phone: request.customer?.phone || "null"
+      user_phone: request.customer?.phone || "null",
+      admin_accepted: (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3') ? "true" : "false",
+      send_email: sendEmail !== undefined ? (sendEmail ? "true" : "false") : "false",
+      no_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false",
+      suppress_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false"
     });
 
     try {

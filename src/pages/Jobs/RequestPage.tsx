@@ -41,7 +41,7 @@ import { acceptJobRequest } from '../../utils/requestHelpers';
 
 const RequestPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { parent, userData, loading: parentLoading, companyData } = useLpo();
+  const { parent, userData, loading: parentLoading, companyData, isAdmin } = useLpo();
   const [request, setRequest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
@@ -328,6 +328,10 @@ const RequestPage: React.FC = () => {
 
   const handleAccept = async () => {
     if (!request) return;
+    if (!isAdmin) {
+      alert("Only admin and super admin users can accept job requests.");
+      return;
+    }
     if (isParentUser && !parent) return;
 
     const parentId = parent?.id || request.parent_id || "";
@@ -883,19 +887,21 @@ const RequestPage: React.FC = () => {
                    <button className="btn-propose" onClick={() => setIsTimeModalOpen(true)}>
                      <Clock size={18} /> PROPOSE NEW TIME
                    </button>
-                   <button 
-                     className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
-                     onClick={handleAccept}
-                     title={request.status === 'awaiting-activation' ? "Awaiting Customer T&C Activation" : ""}
-                   >
-                     <div className="accept-content">
-                       <CheckCircle2 size={18} /> 
-                       <span>ACCEPT JOB</span>
-                     </div>
-                     {request.preferredTime && (
-                       <div className="btn-badge">Time Priority</div>
-                     )}
-                   </button>
+                   {isAdmin && (
+                      <button 
+                        className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
+                        onClick={handleAccept}
+                        title={request.status === 'awaiting-activation' ? "Awaiting Customer T&C Activation" : ""}
+                      >
+                        <div className="accept-content">
+                          <CheckCircle2 size={18} /> 
+                          <span>ACCEPT JOB</span>
+                        </div>
+                        {request.preferredTime && (
+                          <div className="btn-badge">Time Priority</div>
+                        )}
+                      </button>
+                    )}
                  </>
                )}
              </div>
@@ -1275,13 +1281,15 @@ const RequestPage: React.FC = () => {
                 <button className="btn-propose-mobile" onClick={() => setIsTimeModalOpen(true)}>
                   <Clock size={18} /> PROPOSE TIME
                 </button>
-                <button 
-                  className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
-                  onClick={handleAccept}
-                >
-                  <CheckCircle2 size={18} /> 
-                  <span>ACCEPT</span>
-                </button>
+                {isAdmin && (
+                  <button 
+                    className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
+                    onClick={handleAccept}
+                  >
+                    <CheckCircle2 size={18} /> 
+                    <span>ACCEPT</span>
+                  </button>
+                )}
               </>
             )}
           </div>

@@ -620,8 +620,8 @@ const Dashboard: React.FC = () => {
   };
 
   const handleBulkAccept = async () => {
-    if (!isAdmin && userData?.role !== 'parent' && userData?.role !== 'lpoadmin') {
-      alert("Only admins and franchisee owners can perform bulk acceptance.");
+    if (!isAdmin) {
+      alert("Only admin and super admin users can perform bulk acceptance.");
       return;
     }
     if (selectedJobIds.size === 0) {
@@ -685,6 +685,11 @@ const Dashboard: React.FC = () => {
   };
 
   const handleSingleAccept = async (request: any) => {
+    if (!isAdmin) {
+      alert("Only admin and super admin users can accept job requests.");
+      return;
+    }
+
     if (request.status === 'awaiting-activation') {
       alert("This customer is still awaiting T&C activation. You cannot accept the job until they are Active.");
       return;
@@ -968,7 +973,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Admin Bulk Selection Bar */}
-            {(isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin') && filteredJobs.length > 0 && (
+            {(activeTab === 'pending' ? isAdmin : (isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin')) && filteredJobs.length > 0 && (
                <div className="admin-bulk-bar glass-card" style={{
                  display: 'flex',
                  alignItems: 'center',
@@ -1123,7 +1128,7 @@ const Dashboard: React.FC = () => {
                              <div className="timeline-content-card glass-card">
                                  <div className="card-header" onClick={() => toggleExpand(job.id)} style={{ cursor: 'pointer' }}>
                                     <div className="customer-block">
-                                       {(isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin') && (
+                                       {(activeTab === 'pending' ? isAdmin : (isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin')) && (
                                          <input 
                                            type="checkbox" 
                                            checked={selectedJobIds.has(job.id)}
@@ -1405,7 +1410,7 @@ const Dashboard: React.FC = () => {
                                           <div className="menu-dropdown glass">
                                              {activeTab === 'pending' || activeTab === 'declined' ? (
                                                <>
-                                                 {activeTab === 'pending' && (isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin') && (
+                                                 {activeTab === 'pending' && isAdmin && (
                                                    <button onClick={() => handleSingleAccept(job)} style={{ color: '#10b981' }}>
                                                      <CheckCircle2 size={14} /> Accept Request
                                                    </button>

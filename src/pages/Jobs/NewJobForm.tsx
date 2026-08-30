@@ -248,10 +248,11 @@ const JobMap: React.FC<{ stops: any[], onDistanceCalculated?: (distance: string)
 const NewJobForm: React.FC = () => {
   const { parent, customer, userData, companyData } = useLpo();
 
-  const isCompanySignedOrWon = (company: CompanyData | null | undefined): boolean => {
-    if (!company) return false;
+  const isCompanyEligibleForScheduled = (company: CompanyData | null | undefined): boolean => {
+    if (!company) return true;
     const status = (company.status || company.customerStatus || '').toString().toLowerCase().trim();
-    return status === 'signed' || status === 'won' || status === 'active';
+    if (!status) return true;
+    return status !== 'cancelled' && status !== 'inactive' && status !== 'lost' && status !== 'declined';
   };
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -1010,8 +1011,8 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
       setValidationError(null);
       
       if (formData.jobType === 'scheduled') {
-        if (userData?.role === 'customer' && !isCompanySignedOrWon(companyData)) {
-          setValidationError("Customers can only schedule jobs if their company status is Signed or Won.");
+        if (userData?.role === 'customer' && !isCompanyEligibleForScheduled(companyData)) {
+          setValidationError("Scheduled jobs are not available for inactive or cancelled accounts.");
           return;
         }
         if (formData.frequency.length === 0) {
@@ -2787,7 +2788,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                   </div>
 
                   <div className="scheduling-section" style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--cream-warm)', marginBottom: '32px' }}>
-                    {(userData?.role === 'parent' || (userData?.role === 'customer' && isCompanySignedOrWon(companyData))) && (
+                    {(userData?.role !== 'customer' || isCompanyEligibleForScheduled(companyData)) && (
                       <div style={{ marginBottom: '24px' }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>JOB TYPE</label>
                         <div className="job-type-tabs">
@@ -2809,7 +2810,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                       </div>
                     )}
 
-                    {(userData?.role === 'parent' || (userData?.role === 'customer' && isCompanySignedOrWon(companyData))) && formData.jobType === 'scheduled' && (
+                    {(userData?.role !== 'customer' || isCompanyEligibleForScheduled(companyData)) && formData.jobType === 'scheduled' && (
                       <div style={{ marginBottom: '24px' }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>FREQUENCY</label>
                         <div className="frequency-grid">

@@ -22,7 +22,7 @@ import {
 import { useJsApiLoader, GoogleMap, Marker, Polyline } from '@react-google-maps/api';
 import { formatDateForInput, getDefaultBookingDate, parseLocalDate, getDayName } from '../../utils/scheduling';
 import { isPublicHoliday } from '../../utils/holidays';
-import { useLpo } from '../../context/LpoContext';
+import { useLpo, type CompanyData } from '../../context/LpoContext';
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDoc, increment } from 'firebase/firestore';
 import { db, googleMapsApiKey, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
@@ -247,6 +247,12 @@ const JobMap: React.FC<{ stops: any[], onDistanceCalculated?: (distance: string)
 
 const NewJobForm: React.FC = () => {
   const { parent, customer, userData, companyData } = useLpo();
+
+  const isCompanySignedOrWon = (company: CompanyData | null | undefined): boolean => {
+    if (!company) return false;
+    const status = (company.status || company.customerStatus || '').toString().toLowerCase().trim();
+    return status === 'signed' || status === 'won' || status === 'active';
+  };
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -1004,8 +1010,8 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
       setValidationError(null);
       
       if (formData.jobType === 'scheduled') {
-        if (userData?.role === 'customer' && companyData?.status?.toLowerCase() !== 'signed') {
-          setValidationError("Customers can only schedule jobs if their company status is Signed.");
+        if (userData?.role === 'customer' && !isCompanySignedOrWon(companyData)) {
+          setValidationError("Customers can only schedule jobs if their company status is Signed or Won.");
           return;
         }
         if (formData.frequency.length === 0) {
@@ -2781,7 +2787,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                   </div>
 
                   <div className="scheduling-section" style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--cream-warm)', marginBottom: '32px' }}>
-                    {(userData?.role === 'parent' || (userData?.role === 'customer' && companyData?.status?.toLowerCase() === 'signed')) && (
+                    {(userData?.role === 'parent' || (userData?.role === 'customer' && isCompanySignedOrWon(companyData))) && (
                       <div style={{ marginBottom: '24px' }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>JOB TYPE</label>
                         <div className="job-type-tabs">
@@ -2803,7 +2809,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                       </div>
                     )}
 
-                    {(userData?.role === 'parent' || (userData?.role === 'customer' && companyData?.status?.toLowerCase() === 'signed')) && formData.jobType === 'scheduled' && (
+                    {(userData?.role === 'parent' || (userData?.role === 'customer' && isCompanySignedOrWon(companyData))) && formData.jobType === 'scheduled' && (
                       <div style={{ marginBottom: '24px' }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>FREQUENCY</label>
                         <div className="frequency-grid">

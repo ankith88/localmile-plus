@@ -1003,9 +1003,15 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
     if (step === 2) {
       setValidationError(null);
       
-      if (formData.jobType === 'scheduled' && formData.frequency.length === 0) {
-        setValidationError("Please select at least one day for the scheduled service.");
-        return;
+      if (formData.jobType === 'scheduled') {
+        if (userData?.role === 'customer' && companyData?.status?.toLowerCase() !== 'signed') {
+          setValidationError("Customers can only schedule jobs if their company status is Signed.");
+          return;
+        }
+        if (formData.frequency.length === 0) {
+          setValidationError("Please select at least one day for the scheduled service.");
+          return;
+        }
       }
 
       const targetAddressState = userData?.role === 'customer' 
@@ -2775,7 +2781,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                   </div>
 
                   <div className="scheduling-section" style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--cream-warm)', marginBottom: '32px' }}>
-                    {(userData?.role === 'parent' || userData?.role === 'customer') && (
+                    {(userData?.role === 'parent' || (userData?.role === 'customer' && companyData?.status?.toLowerCase() === 'signed')) && (
                       <div style={{ marginBottom: '24px' }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>JOB TYPE</label>
                         <div className="job-type-tabs">
@@ -2797,7 +2803,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                       </div>
                     )}
 
-                    {(userData?.role === 'parent' || userData?.role === 'customer') && formData.jobType === 'scheduled' && (
+                    {(userData?.role === 'parent' || (userData?.role === 'customer' && companyData?.status?.toLowerCase() === 'signed')) && formData.jobType === 'scheduled' && (
                       <div style={{ marginBottom: '24px' }}>
                         <label className="route-label" style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', color: 'var(--slate-600)', marginBottom: '8px', display: 'block' }}>FREQUENCY</label>
                         <div className="frequency-grid">

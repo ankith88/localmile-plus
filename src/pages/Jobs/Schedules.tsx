@@ -26,6 +26,7 @@ import SupportEmailModal from '../../components/SupportEmailModal';
 import { useLpo } from '../../context/LpoContext';
 import { getNextOccurrences, parseLocalDate } from '../../utils/scheduling';
 import CustomSelect from '../../components/CustomSelect';
+import { getDisplayServiceName } from '../../utils/serviceHelpers';
 
 const Schedules: React.FC = () => {
   const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
@@ -62,9 +63,32 @@ const Schedules: React.FC = () => {
     fetchUsers();
   }, [isAdmin]);
 
-  const getServiceConfig = (serviceName: string) => {
+  const isParentView = userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent');
+
+  const getServiceConfig = (serviceName: string, itemUserRole?: string) => {
     const norm = (serviceName || '').toLowerCase();
-    if (norm.includes('h2h') || norm === 'h2h' || norm === 'h2h 2') {
+    const isParent = isParentView || itemUserRole === 'parent';
+    
+    if (isParent) {
+      if (norm === 'h2h 2' || norm === 'h2h2' || norm === 'site-to-im') {
+        return { label: 'Site-to-IM', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', border: '#8b5cf6', text: '#6d28d9' };
+      }
+      if (norm === 'h2h' || norm.includes('h2h') || norm === 'im-to-site') {
+        return { label: 'IM-to-Site', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)', border: '#3b82f6', text: '#1d4ed8' };
+      }
+      if (norm.includes('ampo') || norm === 'lpo-to-site' || norm === 'australia post-to-site' || norm === 'round-trip' || norm === 'post office-to-im') {
+        return { label: 'Post Office-to-IM', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)', border: '#f59e0b', text: '#b45309' };
+      }
+      if (norm.includes('pmpo') || norm === 'site-to-lpo' || norm === 'site-to-australia post') {
+        return { label: 'Outgoing Mail Lodgement', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.1)', border: '#ec4899', text: '#be185d' };
+      }
+      return { label: getDisplayServiceName(serviceName, true) || 'Other', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', border: '#10b981', text: '#047857' };
+    }
+
+    if (norm === 'h2h 2' || norm === 'h2h2') {
+      return { label: 'H2H 2', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', border: '#8b5cf6', text: '#6d28d9' };
+    }
+    if (norm.includes('h2h') || norm === 'h2h') {
       return { label: 'H2H', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)', border: '#3b82f6', text: '#1d4ed8' };
     }
     if (norm.includes('ampo') || norm === 'lpo-to-site' || norm === 'australia post-to-site' || norm === 'round-trip') {

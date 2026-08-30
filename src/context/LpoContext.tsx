@@ -12,6 +12,7 @@ export interface ParentEntity {
   latitude?: number;
   longitude?: number;
   franchiseeTerritoryJSON?: string | string[];
+  [key: string]: any;
 }
 
 export interface CustomerMetadata {

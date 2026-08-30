@@ -28,6 +28,7 @@ import { db, googleMapsApiKey, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomTimePicker from '../../components/CustomTimePicker';
+import { getDisplayServiceName } from '../../utils/serviceHelpers';
 
 type ServiceType = 'site-to-lpo' | 'lpo-to-site' | 'round-trip' | 'site-to-australia post' | 'australia post-to-site' | string;
 type BillingOption = 'customer' | 'lpo';
@@ -1407,9 +1408,9 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
         ? (recipientData?.company?.toLowerCase().includes('australia post') || isAusPostPrefilled)
         : (parent?.name?.toLowerCase().includes('australia post') || !!formData.auspostContact);
 
-      if (formData.service === 'site-to-lpo' && checkAusPost) {
+      if (formData.service === 'site-to-lpo' && (userData?.role === 'customer' || checkAusPost)) {
           finalService = 'site-to-australia post';
-      } else if (formData.service === 'lpo-to-site' && checkAusPost) {
+      } else if (formData.service === 'lpo-to-site' && (userData?.role === 'customer' || checkAusPost)) {
           finalService = 'australia post-to-site';
       }
 
@@ -2532,7 +2533,8 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                             >
                               {availableServices.map(s => {
                                 const billingAddr = (s as any).billingAddress;
-                                let addressLabel = s.id;
+                                const displaySvcName = getDisplayServiceName(s.id, userData?.role === 'parent');
+                                let addressLabel = displaySvcName;
                                 if (billingAddr) {
                                   const partnerLoc = billingAddr.partnerLocation;
                                   const street = billingAddr.address1 || billingAddr.street || billingAddr.address || '';
@@ -2542,11 +2544,11 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                                   const addrParts = [street, city, state, zip].filter(p => p && String(p).trim()).join(', ');
 
                                   if (partnerLoc && addrParts) {
-                                    addressLabel = `${s.id} - ${partnerLoc} (${addrParts})`;
+                                    addressLabel = `${displaySvcName} - ${partnerLoc} (${addrParts})`;
                                   } else if (partnerLoc) {
-                                    addressLabel = `${s.id} - ${partnerLoc}`;
+                                    addressLabel = `${displaySvcName} - ${partnerLoc}`;
                                   } else if (addrParts) {
-                                    addressLabel = `${s.id} - ${addrParts}`;
+                                    addressLabel = `${displaySvcName} - ${addrParts}`;
                                   }
                                 }
                                 return (

@@ -19,15 +19,17 @@ import {
 } from 'lucide-react';
 import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
+import FranchiseeContactModal from '../../components/FranchiseeContactModal';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { sortStops } from '../../utils/stops';
 
 import { db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
+import { getDisplayServiceName } from '../../utils/serviceHelpers';
 
 const AwaitingTCPage: React.FC = () => {
-  const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
+  const { parent, companyData, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,6 +38,15 @@ const AwaitingTCPage: React.FC = () => {
   const [supportJobId, setSupportJobId] = useState('');
   const [supportMetadata, setSupportMetadata] = useState<any>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
+
+  // Franchisee Contact Modal State (Parent Role)
+  const [isFranchiseeModalOpen, setIsFranchiseeModalOpen] = useState(false);
+  const [selectedJobForFranchiseeModal, setSelectedJobForFranchiseeModal] = useState<any>(null);
+
+  const handleFranchiseeContact = (job: any) => {
+    setSelectedJobForFranchiseeModal(job);
+    setIsFranchiseeModalOpen(true);
+  };
 
   const toggleExpand = (jobId: string) => {
     const newExpanded = new Set(expandedJobIds);
@@ -297,7 +308,7 @@ const AwaitingTCPage: React.FC = () => {
                               <div className="card-meta">
                                  <div className="meta-pill">
                                     <Clock size={12} />
-                                    <span>{job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service.replace(/-/g, ' ')}</span>
+                                     <span>{userData?.role === 'parent' ? getDisplayServiceName(job.service, true) : (job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service.replace(/-/g, ' '))}</span>
                                  </div>
                                  <div className="meta-pill">
                                     <RotateCcw size={12} />
@@ -334,35 +345,42 @@ const AwaitingTCPage: React.FC = () => {
                               </div>
 
                                <div className="card-actions">
-                                   <div className="messaging-group">
+                                 <div className="messaging-group">
+                                   {userData?.role === 'parent' ? (
+                                     <button className="btn-primary-glass mini-chat" onClick={() => handleFranchiseeContact(job)}>
+                                        <Mail size={16} />
+                                        <span>EMAIL / SMS FRANCHISEE</span>
+                                     </button>
+                                   ) : (
                                      <button className="btn-primary-glass mini-chat" onClick={() => window.open(`/request/${job.id}`, '_blank')}>
                                         <MessageSquare size={16} />
                                         <span>CHAT & MANAGE</span>
                                      </button>
-                                     <button className="btn-secondary-glass mini-chat" onClick={() => handleVerifyStatus(job)}>
-                                        <RefreshCw size={16} />
-                                        <span>VERIFY STATUS</span>
-                                     </button>
-                                     <button 
-                                        className="btn-secondary-glass mini-chat" 
-                                        onClick={() => handleResendSCF(job)}
-                                        disabled={resendingId === job.id}
-                                      >
-                                         <Mail size={16} className={resendingId === job.id ? 'spin' : ''} />
-                                         <span>{resendingId === job.id ? 'RESENDING...' : 'RESEND SCF'}</span>
-                                      </button>
+                                   )}
+                                   <button className="btn-secondary-glass mini-chat" onClick={() => handleVerifyStatus(job)}>
+                                      <RefreshCw size={16} />
+                                      <span>VERIFY STATUS</span>
+                                   </button>
+                                   <button 
+                                      className="btn-secondary-glass mini-chat" 
+                                      onClick={() => handleResendSCF(job)}
+                                      disabled={resendingId === job.id}
+                                    >
+                                       <Mail size={16} className={resendingId === job.id ? 'spin' : ''} />
+                                       <span>{resendingId === job.id ? 'RESENDING...' : 'RESEND SCF'}</span>
+                                    </button>
+                                 </div>
+                                
+                                <div className="overflow-menu">
+                                   <div className="menu-trigger">
+                                      <MoreHorizontal size={18} />
+                                      <div className="menu-dropdown glass">
+                                         <button onClick={() => handleEditRequest(job)}><RotateCcw size={14} /> Edit Request</button>
+                                         <button className="cancel" onClick={() => handleDeleteRequest(job.id)}><Trash2 size={14} /> Delete Request</button>
+                                      </div>
                                    </div>
-                                  
-                                  <div className="overflow-menu">
-                                     <div className="menu-trigger">
-                                        <MoreHorizontal size={18} />
-                                        <div className="menu-dropdown glass">
-                                           <button onClick={() => handleEditRequest(job)}><RotateCcw size={14} /> Edit Request</button>
-                                           <button className="cancel" onClick={() => handleDeleteRequest(job.id)}><Trash2 size={14} /> Delete Request</button>
-                                        </div>
-                                     </div>
-                                  </div>
-                               </div>
+                                </div>
+                             </div>
                            </div>
                         </div>
                       ))}
@@ -379,6 +397,17 @@ const AwaitingTCPage: React.FC = () => {
         jobId={supportJobId}
         contextTitle={supportJobId ? `Job Reference: ${supportJobId}` : undefined}
         metadata={supportMetadata}
+      />
+
+      <FranchiseeContactModal 
+        isOpen={isFranchiseeModalOpen}
+        onClose={() => setIsFranchiseeModalOpen(false)}
+        job={selectedJobForFranchiseeModal}
+        contactName={selectedJobForFranchiseeModal?.operatorName || companyData?.franchiseeContact || parent?.name}
+        contactEmail={selectedJobForFranchiseeModal?.operatorEmail || companyData?.franchiseeEmail || parent?.franchiseeEmail || companyData?.email || parent?.email}
+        contactPhone={selectedJobForFranchiseeModal?.operatorPhone || companyData?.franchiseeMobile || parent?.franchiseeMobile || companyData?.mobile || parent?.mobile}
+        userFullName={userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() : undefined}
+        companyName={companyData?.companyName || parent?.name}
       />
 
       <style>{`

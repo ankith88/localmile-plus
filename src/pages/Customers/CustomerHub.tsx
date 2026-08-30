@@ -21,6 +21,7 @@ import { collection, query, getDocs, orderBy, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
+import { getDisplayServiceName } from '../../utils/serviceHelpers';
 
 const CustomerHub: React.FC = () => {
   const { parent, isAdmin, allParents, selectedParentId, setSelectedParentId, userData, companyData } = useLpo();
@@ -515,11 +516,7 @@ const CustomerHub: React.FC = () => {
                                                      .filter((s: any) => s && s.name !== 'PMPO');
                                                    return Array.isArray(serviceList) && serviceList.length > 0 ? (
                                                      serviceList.map((s: any, idx: number) => {
-                                                       let displayName = s.name || '';
-                                                       if (s.name === 'H2H') displayName = "Hand to Hand Deliveries";
-                                                       else if (s.name === 'H2H 2') displayName = "Hand to Hand Deliveries 2";
-                                                       else if (s.name === 'AMPO') displayName = "Pick up and Delivery from PO";
-                                                       else if (s.name === 'PMPO') displayName = "Outgoing Mail Lodgement";
+                                                       const displayName = getDisplayServiceName(s.name || '', true);
                                                        return (
                                                          <span key={idx} className="service-tag-pill enabled">
                                                            {displayName}

@@ -4501,6 +4501,16 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       serviceRate = companyData?.servicePMPORate || '';
     }
 
+    let finalScheduledService = service;
+    const isCustomerRole = req.body.userRole === 'customer' || req.body.role === 'customer' || req.body.user_role === 'customer';
+    if (isCustomerRole) {
+      if (finalScheduledService === 'site-to-lpo') {
+        finalScheduledService = 'site-to-australia post';
+      } else if (finalScheduledService === 'lpo-to-site') {
+        finalScheduledService = 'australia post-to-site';
+      }
+    }
+
     const newScheduledJob = {
       customer_id: companyId,
       parent_id: parentId || "",
@@ -4512,7 +4522,7 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       billing: billing || 'credit',
       date: startDate,
       jobType: 'scheduled',
-      service,
+      service: finalScheduledService,
       is_free_job: isTrial,
       customer: {
         company: customer.company,

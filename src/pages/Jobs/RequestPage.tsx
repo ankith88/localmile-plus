@@ -34,6 +34,7 @@ import AcceptingProgress from '../../components/AcceptingProgress';
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
+import { getDisplayServiceName } from '../../utils/serviceHelpers';
 import { formatDateForInput, parseLocalDate, isWithinWorkHours } from '../../utils/scheduling';
 import { isPublicHoliday } from '../../utils/holidays';
 import { requestNotificationPermission, saveTokenToFirestore, onForegroundMessage } from '../../utils/notifications';
@@ -999,7 +1000,7 @@ const RequestPage: React.FC = () => {
                  <div className="logistics-grid">
                     <div className="log-item">
                        <label>Service</label>
-                       <span>{request.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : request.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : request.service.replace(/-/g, ' ')}</span>
+                        <span>{userData?.role === 'parent' ? getDisplayServiceName(request.service, true) : (request.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : request.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : request.service.replace(/-/g, ' '))}</span>
                     </div>
                     <div className="log-item">
                        <label>Billing</label>

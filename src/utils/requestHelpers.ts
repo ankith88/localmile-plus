@@ -64,8 +64,18 @@ export const acceptJobRequest = async ({
   
   onProgress?.(15, "Analyzing service requirements...");
 
-  let serviceInternalId = '';
-  let serviceRate = '';
+  let serviceInternalId = request.serviceInternalId || 
+    request.imServiceH2H2InternalID || 
+    request.imServiceH2HInternalID || 
+    request.imServiceAMPOInternalID || 
+    request.servicePMPOInternalID || 
+    '';
+  let serviceRate = request.serviceRate || 
+    request.imServiceH2H2Rate || 
+    request.imServiceH2HIRate || 
+    request.imServiceAMPORate || 
+    request.servicePMPORate || 
+    '';
 
   if (request.jobType === 'scheduled') {
     onProgress?.(25, "Fetching customer service metadata...");
@@ -86,22 +96,22 @@ export const acceptJobRequest = async ({
             if (Array.isArray(c.serviceList)) {
               const matched = c.serviceList.find((s: any) => s.name === request.service);
               if (matched) {
-                serviceInternalId = matched.id || '';
-                serviceRate = matched.rate || '';
+                serviceInternalId = matched.id || serviceInternalId;
+                serviceRate = matched.rate || serviceRate;
               }
             }
           } else {
             if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
-              serviceInternalId = c.lpoServiceAMPOInternalID || '';
-              serviceRate = c.lpoServiceAMPORate || '';
+              serviceInternalId = c.lpoServiceAMPOInternalID || serviceInternalId;
+              serviceRate = c.lpoServiceAMPORate || serviceRate;
             } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
               serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
                 ? companyDataFromDb.serviceTrialInternalID
-                : (c.lpoServicePMPOInternalID || '');
-              serviceRate = c.lpoServicePMPORate || '';
+                : (c.lpoServicePMPOInternalID || serviceInternalId);
+              serviceRate = c.lpoServicePMPORate || serviceRate;
             } else if (request.service === 'round-trip') {
-              serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
-              serviceRate = c.lpoServiceAMPOPMPORate || '';
+              serviceInternalId = c.lpoServiceAMPOPMPOInternalID || serviceInternalId;
+              serviceRate = c.lpoServiceAMPOPMPORate || serviceRate;
             }
           }
         }
@@ -113,8 +123,20 @@ export const acceptJobRequest = async ({
     onProgress?.(35, "Generating recurring schedule template...");
 
     const { id: _, ...requestData } = request;
+
+    let scheduledService = requestData.service;
+    const isCustomerRequest = requestData.userRole === 'customer' || requestData.user_role === 'customer' || request.userRole === 'customer' || request.user_role === 'customer';
+    if (isCustomerRequest) {
+      if (scheduledService === 'site-to-lpo') {
+        scheduledService = 'site-to-australia post';
+      } else if (scheduledService === 'lpo-to-site') {
+        scheduledService = 'australia post-to-site';
+      }
+    }
+
     const templateRef = await addDoc(collection(db, 'scheduled_jobs'), {
       ...requestData,
+      service: scheduledService,
       parent_id: effectiveParentId,
       status: 'scheduled',
       serviceInternalId,
@@ -136,6 +158,7 @@ export const acceptJobRequest = async ({
       onProgress?.(50, "Creating first job instance...");
       jobDocRef = await addDoc(collection(db, 'jobs'), {
         ...requestData,
+        service: scheduledService,
         parent_id: effectiveParentId,
         status: 'scheduled',
         serviceInternalId,
@@ -173,22 +196,22 @@ export const acceptJobRequest = async ({
             if (Array.isArray(c.serviceList)) {
               const matched = c.serviceList.find((s: any) => s.name === request.service);
               if (matched) {
-                serviceInternalId = matched.id || '';
-                serviceRate = matched.rate || '';
+                serviceInternalId = matched.id || serviceInternalId;
+                serviceRate = matched.rate || serviceRate;
               }
             }
           } else {
             if (request.service === 'lpo-to-site' || request.service === 'australia post-to-site') {
-              serviceInternalId = c.lpoServiceAMPOInternalID || '';
-              serviceRate = c.lpoServiceAMPORate || '';
+              serviceInternalId = c.lpoServiceAMPOInternalID || serviceInternalId;
+              serviceRate = c.lpoServiceAMPORate || serviceRate;
             } else if (request.service === 'site-to-lpo' || request.service === 'site-to-australia post') {
               serviceInternalId = (isFreeJob && companyDataFromDb?.serviceTrialInternalID)
                 ? companyDataFromDb.serviceTrialInternalID
-                : (c.lpoServicePMPOInternalID || '');
-              serviceRate = c.lpoServicePMPORate || '';
+                : (c.lpoServicePMPOInternalID || serviceInternalId);
+              serviceRate = c.lpoServicePMPORate || serviceRate;
             } else if (request.service === 'round-trip') {
-              serviceInternalId = c.lpoServiceAMPOPMPOInternalID || '';
-              serviceRate = c.lpoServiceAMPOPMPORate || '';
+              serviceInternalId = c.lpoServiceAMPOPMPOInternalID || serviceInternalId;
+              serviceRate = c.lpoServiceAMPOPMPORate || serviceRate;
             }
           }
         }

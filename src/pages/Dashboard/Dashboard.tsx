@@ -30,6 +30,7 @@ import {
 import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
 import CancelJobModal from '../../components/CancelJobModal';
+import FranchiseeContactModal from '../../components/FranchiseeContactModal';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy } from 'firebase/firestore';
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
@@ -38,6 +39,7 @@ import { formatDateForInput, parseLocalDate, isWithinWorkHours } from '../../uti
 import { sortStops } from '../../utils/stops';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomSelect from '../../components/CustomSelect';
+import { getDisplayServiceName } from '../../utils/serviceHelpers';
 import { acceptJobRequest } from '../../utils/requestHelpers';
 
 
@@ -65,6 +67,15 @@ const Dashboard: React.FC = () => {
   const [selectedCustomerCompanyId, setSelectedCustomerCompanyId] = useState<string>('all');
   const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(new Map());
   const [customerCompanies, setCustomerCompanies] = useState<{ id: string; name: string }[]>([]);
+
+  // Franchisee Contact Modal State (Parent Role)
+  const [isFranchiseeModalOpen, setIsFranchiseeModalOpen] = useState(false);
+  const [selectedJobForFranchiseeModal, setSelectedJobForFranchiseeModal] = useState<any>(null);
+
+  const handleFranchiseeContact = (job: any) => {
+    setSelectedJobForFranchiseeModal(job);
+    setIsFranchiseeModalOpen(true);
+  };
 
   // Admin Multi-Select Bulk Action State
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
@@ -338,7 +349,7 @@ const Dashboard: React.FC = () => {
     const matchesSearch = (item.customer?.company || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                          (item.customer?.address || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesService = serviceFilter === 'all' || item.service === serviceFilter;
+    const matchesService = serviceFilter === 'all' || item.service === serviceFilter || getDisplayServiceName(item.service, userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent')) === serviceFilter;
     const matchesDate = !dateFilter || item.date === dateFilter;
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
 
@@ -938,18 +949,23 @@ const Dashboard: React.FC = () => {
                      />
                    </div>
                     <CustomSelect 
-                      value={serviceFilter}
-                      onChange={(val) => setServiceFilter(val)}
-                      options={[
-                        { value: 'all', label: 'All Services' },
-                        { value: 'site-to-lpo', label: userData?.role === 'customer' ? 'Outbound' : 'Site ➔ Parent' },
-                        { value: 'site-to-australia post', label: userData?.role === 'customer' ? 'Outbound (AusPost)' : 'Site ➔ Australia Post' },
-                        { value: 'lpo-to-site', label: userData?.role === 'customer' ? 'Inbound' : 'Parent ➔ Site' },
-                        { value: 'australia post-to-site', label: userData?.role === 'customer' ? 'Inbound (AusPost)' : 'Australia Post ➔ Site' },
-                        { value: 'round-trip', label: 'Round Trip' }
-                      ]}
-                      className="service-select-custom"
-                    />
+                       value={serviceFilter}
+                       onChange={(val) => setServiceFilter(val)}
+                       options={userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent') ? [
+                         { value: 'all', label: 'All Services' },
+                         { value: 'Post Office-to-IM', label: 'Post Office-to-IM' },
+                         { value: 'IM-to-Site', label: 'IM-to-Site' },
+                         { value: 'Site-to-IM', label: 'Site-to-IM' }
+                       ] : [
+                         { value: 'all', label: 'All Services' },
+                         { value: 'site-to-lpo', label: userData?.role === 'customer' ? 'Outbound' : 'Site ➔ Parent' },
+                         { value: 'site-to-australia post', label: userData?.role === 'customer' ? 'Outbound (AusPost)' : 'Site ➔ Australia Post' },
+                         { value: 'lpo-to-site', label: userData?.role === 'customer' ? 'Inbound' : 'Parent ➔ Site' },
+                         { value: 'australia post-to-site', label: userData?.role === 'customer' ? 'Inbound (AusPost)' : 'Australia Post ➔ Site' },
+                         { value: 'round-trip', label: 'Round Trip' }
+                       ]}
+                       className="service-select-custom"
+                     />
                     <CustomSelect 
                       value={statusFilter}
                       onChange={(val) => setStatusFilter(val)}
@@ -1357,7 +1373,7 @@ const Dashboard: React.FC = () => {
                                    {userData?.role !== 'customer' && (
                                    <div className="meta-pill">
                                       <Clock size={12} />
-                                      <span>{job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service.replace(/-/g, ' ')}</span>
+                                      <span>{userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent') ? getDisplayServiceName(job.service, true) : (job.service === 'site-to-australia post' ? 'Site ➔ Australia Post' : job.service === 'australia post-to-site' ? 'Australia Post ➔ Site' : job.service.replace(/-/g, ' '))}</span>
                                    </div>
                                    )}
                                    {userData?.role !== 'customer' && (
@@ -1388,21 +1404,28 @@ const Dashboard: React.FC = () => {
                                 </div>
 
                                  <div className="card-actions">
-                                     {(activeTab === 'pending' || activeTab === 'declined') && job.preferredTime ? (
-                                       <div className="messaging-group">
-                                         <button className="btn-primary-glass mini-chat" onClick={() => window.open(`/request/${job.id}`, '_blank')}>
-                                            <MessageSquare size={16} />
-                                            <span>CHAT & MANAGE</span>
-                                         </button>
-                                       </div>
-                                     ) : (
-                                       <div className="messaging-group">
-                                          <button className="btn-primary-glass mini-chat" onClick={() => handleCommunication(job)}>
-                                             <MessageSquare size={16} />
-                                             <span>CONTACT OPERATOR</span>
+                                      {userData?.role === 'parent' ? (
+                                        <div className="messaging-group">
+                                          <button className="btn-primary-glass mini-chat" onClick={() => handleFranchiseeContact(job)}>
+                                             <Mail size={16} />
+                                             <span>EMAIL / SMS FRANCHISEE</span>
                                           </button>
-                                       </div>
-                                     )}
+                                        </div>
+                                      ) : (activeTab === 'pending' || activeTab === 'declined') && job.preferredTime ? (
+                                        <div className="messaging-group">
+                                          <button className="btn-primary-glass mini-chat" onClick={() => window.open(`/request/${job.id}`, '_blank')}>
+                                             <MessageSquare size={16} />
+                                             <span>CHAT & MANAGE</span>
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="messaging-group">
+                                           <button className="btn-primary-glass mini-chat" onClick={() => handleCommunication(job)}>
+                                              <MessageSquare size={16} />
+                                              <span>CONTACT OPERATOR</span>
+                                           </button>
+                                        </div>
+                                      )}
                                      
                                     <div className="overflow-menu">
                                        <div className="menu-trigger">
@@ -1517,6 +1540,17 @@ const Dashboard: React.FC = () => {
           }
           alert("Job cancelled and dispatch notified.");
         }}
+      />
+
+      <FranchiseeContactModal 
+        isOpen={isFranchiseeModalOpen}
+        onClose={() => setIsFranchiseeModalOpen(false)}
+        job={selectedJobForFranchiseeModal}
+        contactName={selectedJobForFranchiseeModal?.operatorName || companyData?.franchiseeContact || parent?.name}
+        contactEmail={selectedJobForFranchiseeModal?.operatorEmail || companyData?.franchiseeEmail || parent?.franchiseeEmail || companyData?.email || parent?.email}
+        contactPhone={selectedJobForFranchiseeModal?.operatorPhone || companyData?.franchiseeMobile || parent?.franchiseeMobile || companyData?.mobile || parent?.mobile}
+        userFullName={userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() : undefined}
+        companyName={companyData?.companyName || parent?.name}
       />
 
       <style>{`

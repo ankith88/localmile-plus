@@ -20,6 +20,7 @@ import { collection, query, getDocs, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
+import { getDisplayServiceName } from '../../utils/serviceHelpers';
 
 const Reports: React.FC = () => {
   const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
@@ -59,13 +60,7 @@ const Reports: React.FC = () => {
     },
     topCustomers: [] as { name: string, revenue: number }[],
     geographicData: [] as { suburb: string, count: number }[],
-    serviceSplit: {
-      'lpo-to-site': 0,
-      'site-to-lpo': 0,
-      'round-trip': 0,
-      'site-to-australia post': 0,
-      'australia post-to-site': 0
-    }
+    serviceSplit: {} as Record<string, number>
   });
 
   // Fetch Admin reference mapping: user roles & customer companies
@@ -202,7 +197,10 @@ const Reports: React.FC = () => {
         const statusCount = { scheduled: 0, completed: 0, cancelled: 0 };
         const customerRevenue: Record<string, number> = {};
         const suburbs: Record<string, number> = {};
-        const split = { 'lpo-to-site': 0, 'site-to-lpo': 0, 'round-trip': 0, 'site-to-australia post': 0, 'australia post-to-site': 0 };
+        const isParentView = userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent');
+        const split: Record<string, number> = isParentView
+          ? { 'Post Office-to-IM': 0, 'IM-to-Site': 0, 'Site-to-IM': 0 }
+          : { 'lpo-to-site': 0, 'site-to-lpo': 0, 'round-trip': 0, 'site-to-australia post': 0, 'australia post-to-site': 0 };
         
         const today = new Date();
         const nextWeek = new Date();
@@ -236,8 +234,12 @@ const Reports: React.FC = () => {
           suburbs[suburb] = (suburbs[suburb] || 0) + 1;
           
           // Service split
-          const type = data.service as keyof typeof split;
-          if (split[type] !== undefined) split[type]++;
+          const sDisplay = getDisplayServiceName(data.service, isParentView);
+          if (split[sDisplay] !== undefined) {
+            split[sDisplay]++;
+          } else if (sDisplay) {
+            split[sDisplay] = (split[sDisplay] || 0) + 1;
+          }
         });
 
         // Process top customers
@@ -339,7 +341,10 @@ const Reports: React.FC = () => {
     'site-to-lpo': 'Site ➔ Parent',
     'round-trip': 'Round Trip',
     'site-to-australia post': 'Site ➔ Australia Post',
-    'australia post-to-site': 'Australia Post ➔ Site'
+    'australia post-to-site': 'Australia Post ➔ Site',
+    'Post Office-to-IM': 'Post Office-to-IM',
+    'IM-to-Site': 'IM-to-Site',
+    'Site-to-IM': 'Site-to-IM'
   };
 
   return (
@@ -696,7 +701,7 @@ const Reports: React.FC = () => {
                     {Object.entries(stats.serviceSplit).map(([key, value]) => (
                       <div key={key} className="legend-item">
                         <span className={`dot ${key}`}></span>
-                        <span className="label">{serviceLabels[key]}</span>
+                        <span className="label">{serviceLabels[key] || key}</span>
                         <span className="value">{value}</span>
                       </div>
                     ))}
@@ -845,7 +850,7 @@ const Reports: React.FC = () => {
                           <div style={{ fontSize: '0.8rem', color: 'var(--ink-soft)', marginTop: '4px', display: 'flex', gap: '16px' }}>
                             <span>📍 {item.customer?.address || 'N/A'} {item.customer?.suburb || ''}</span>
                             <span>📅 {item.date || 'N/A'}</span>
-                            <span>🚚 {item.service || 'Standard'}</span>
+                            <span>🚚 {getDisplayServiceName(item.service, userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent')) || 'Standard'}</span>
                           </div>
                         </div>
                         <div>

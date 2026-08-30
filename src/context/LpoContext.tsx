@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, createUserWithEmailAndPassword, type User } from 'firebase/auth';
 import { doc, getDoc, updateDoc, setDoc, collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
-import { auth, db } from '../firebase/config';
+import { auth, db, functions } from '../firebase/config';
+import { httpsCallable } from 'firebase/functions';
 import { requestNotificationPermission, saveTokenToFirestore } from '../utils/notifications';
 
 export interface ParentEntity {
@@ -260,13 +261,28 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (userData.customer_id && userData.customer_id !== 'test_standalone_customer') {
         const companyDoc = await getDoc(doc(db, 'companies', userData.customer_id));
-        if (active && companyDoc.exists()) {
-          const data = companyDoc.data() as CompanyData;
+        let data: CompanyData = {};
+        if (companyDoc.exists()) {
+          data = companyDoc.data() as CompanyData;
+        }
+
+        try {
+          const getCompanyStatusFn = httpsCallable<any, any>(functions, 'getCompanyStatus');
+          const statusRes = await getCompanyStatusFn({ companyId: userData.customer_id });
+          if (statusRes.data?.success && (statusRes.data?.status || statusRes.data?.customerStatus)) {
+            data = {
+              ...data,
+              status: statusRes.data.status || statusRes.data.customerStatus || data.status,
+              customerStatus: statusRes.data.customerStatus || statusRes.data.status || data.customerStatus,
+            };
+          }
+        } catch (err) {
+          console.error('Failed to sync company status from ProspectPlus DB:', err);
+        }
+
+        if (active) {
           setCompanyName(data.companyName || null);
           setCompanyData(data);
-        } else if (active) {
-          setCompanyName(null);
-          setCompanyData(null);
         }
       } else if (active) {
         setCompanyName(null);

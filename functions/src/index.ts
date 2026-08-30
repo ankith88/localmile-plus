@@ -5110,3 +5110,72 @@ export const deactivateExternalUserAccount = onRequest({
     res.status(500).json({ success: false, message: error.message || "Internal Server Error" });
   }
 });
+
+export const getCompanyStatus = onCall({ invoker: "public" }, async (request) => {
+  const companyId = request.data?.companyId || request.data?.customerId;
+  if (!companyId) {
+    throw new HttpsError("invalid-argument", "Missing required field: companyId");
+  }
+
+  const db = getDB();
+
+  let prospectDb: admin.firestore.Firestore;
+  try {
+    prospectDb = admin.app("prospectplus").firestore();
+  } catch {
+    prospectDb = admin.initializeApp({
+      projectId: "mailplus-outbound-leads-crm"
+    }, "prospectplus").firestore();
+  }
+
+  let status: string | null = null;
+  let customerStatus: string | null = null;
+  let foundInCollection: string | null = null;
+
+  try {
+    // 1. Check leads collection in ProspectPlus DB (mailplus-outbound-leads-crm)
+    const leadDoc = await prospectDb.collection("leads").doc(String(companyId)).get();
+    if (leadDoc.exists) {
+      const data = leadDoc.data();
+      customerStatus = data?.customerStatus || data?.status || null;
+      status = data?.status || data?.customerStatus || null;
+      foundInCollection = "leads";
+    }
+
+    // 2. Check companies collection in ProspectPlus DB
+    const compDoc = await prospectDb.collection("companies").doc(String(companyId)).get();
+    if (compDoc.exists) {
+      const data = compDoc.data();
+      if (!status) status = data?.status || data?.customerStatus || null;
+      if (!customerStatus) customerStatus = data?.customerStatus || data?.status || null;
+      foundInCollection = foundInCollection ? `${foundInCollection},companies` : "companies";
+    }
+
+    const fetchedStatus = customerStatus || status || null;
+
+    // 3. Sync to LocalMile Firestore companies collection
+    if (fetchedStatus) {
+      await db.collection("companies").doc(String(companyId)).set({
+        status: fetchedStatus,
+        customerStatus: fetchedStatus,
+        prospectStatusSyncedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+
+    const effectiveStatus = (fetchedStatus || "").toString().toLowerCase().trim();
+    const isWonOrSigned = effectiveStatus === "won" || effectiveStatus === "signed" || effectiveStatus === "active";
+
+    return {
+      success: true,
+      companyId,
+      status: fetchedStatus,
+      customerStatus: fetchedStatus,
+      isWonOrSigned,
+      foundInCollection
+    };
+  } catch (error: any) {
+    console.error("[getCompanyStatus] Error querying ProspectPlus DB:", error);
+    throw new HttpsError("internal", error.message || "Failed to fetch status from ProspectPlus DB.");
+  }
+});
+

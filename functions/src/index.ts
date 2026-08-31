@@ -3716,6 +3716,10 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
 
     try {
       authUser = await admin.auth().getUserByEmail(userEmail);
+      if (authUser.disabled) {
+        await admin.auth().updateUser(authUser.uid, { disabled: false });
+        console.log(`[Provisioning API] Re-enabled disabled Auth user for ${userEmail} (${authUser.uid})`);
+      }
     } catch (error: any) {
       if (error.code === "auth/user-not-found") {
         authUser = await admin.auth().createUser({
@@ -3741,6 +3745,8 @@ apiApp.post("/api/v1/accounts/provision", async (req: express.Request, res: expr
     // companies Collection
     const companyRef = db.collection("companies").doc(companyId);
     batch.set(companyRef, {
+      status: "active",
+      deactivatedAt: admin.firestore.FieldValue.delete(),
       address1: payload.address1 || "",
       city: payload.city || "",
       companyId: companyId,
@@ -4728,16 +4734,33 @@ export const activateAccount = onCall({ invoker: "public" }, async (request) => 
   }
 
   try {
-    // 1. Update password
-    await admin.auth().updateUser(uid, { password: newPassword });
+    // 1. Update password AND re-enable Firebase Auth user if disabled
+    await admin.auth().updateUser(uid, { password: newPassword, disabled: false });
 
     // 2. Mark user active
     await db.collection("users").doc(uid).update({ status: "Active" });
 
-    // 3. Delete token
+    // 3. Update company status in Firestore from 'cancelled' to 'active'
+    const userDoc = await db.collection("users").doc(uid).get();
+    if (userDoc.exists) {
+      const companyId = userDoc.data()?.companyId || userDoc.data()?.customer_id;
+      if (companyId) {
+        const companyRef = db.collection("companies").doc(String(companyId));
+        const companyDoc = await companyRef.get();
+        if (companyDoc.exists) {
+          await companyRef.update({
+            status: "active",
+            deactivatedAt: admin.firestore.FieldValue.delete()
+          });
+          console.log(`[activateAccount] Re-enabled company ${companyId} status to 'active'`);
+        }
+      }
+    }
+
+    // 4. Delete token
     await tokenRef.delete();
 
-    // 4. Generate custom token for auto-login
+    // 5. Generate custom token for auto-login
     const customToken = await admin.auth().createCustomToken(uid);
 
     return { success: true, customToken };

@@ -31,7 +31,8 @@ import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
 import CancelJobModal from '../../components/CancelJobModal';
 import FranchiseeContactModal from '../../components/FranchiseeContactModal';
-import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy } from 'firebase/firestore';
+import BulkUpdateDateModal from '../../components/BulkUpdateDateModal';
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy, arrayUnion } from 'firebase/firestore';
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
@@ -83,6 +84,8 @@ const Dashboard: React.FC = () => {
   const [isBulkAccepting, setIsBulkAccepting] = useState(false);
   const [bulkAcceptProgress, setBulkAcceptProgress] = useState(0);
   const [bulkAcceptStatus, setBulkAcceptStatus] = useState('');
+  const [isBulkUpdateDateModalOpen, setIsBulkUpdateDateModalOpen] = useState(false);
+  const [isBulkUpdatingDate, setIsBulkUpdatingDate] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -564,6 +567,7 @@ const Dashboard: React.FC = () => {
 
   const toggleSelectJob = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!isAdmin) return;
     setSelectedJobIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -576,6 +580,7 @@ const Dashboard: React.FC = () => {
   };
 
   const selectAllFilteredJobs = () => {
+    if (!isAdmin) return;
     const allIds = filteredJobs.map(j => j.id);
     setSelectedJobIds(new Set(allIds));
   };
@@ -693,6 +698,65 @@ const Dashboard: React.FC = () => {
       setBulkAcceptStatus('');
       alert(`Bulk accept finished: ${successCount} request(s) accepted successfully.${failCount > 0 ? ` (${failCount} failed)` : ''}`);
     }, 1000);
+  };
+
+  const handleBulkUpdateStartDate = async (newStartDate: string) => {
+    if (!isAdmin) {
+      alert("Only admin and super admin users can update request start dates in bulk.");
+      return;
+    }
+    if (selectedJobIds.size === 0) {
+      alert("No pending requests selected.");
+      return;
+    }
+
+    const selectedRequests = requests.filter(r => selectedJobIds.has(r.id) && r.status === 'pending');
+
+    if (selectedRequests.length === 0) {
+      alert("None of the selected items are pending requests.");
+      return;
+    }
+
+    setIsBulkUpdatingDate(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      await Promise.all(selectedRequests.map(async (req) => {
+        try {
+          const sysMessage = {
+            id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 4),
+            sender: 'system',
+            text: `Start date updated in bulk to ${newStartDate} by Admin.`,
+            timestamp: new Date().toISOString()
+          };
+
+          await updateDoc(doc(db, 'requests', req.id), {
+            date: newStartDate,
+            startDate: newStartDate,
+            reprocessedAt: new Date().toISOString(),
+            updatedAt: new Date(),
+            chat: arrayUnion(sysMessage)
+          });
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to update start date for request ${req.id}:`, err);
+          failCount++;
+        }
+      }));
+
+      const updatedIds = new Set(selectedRequests.map(r => r.id));
+      setRequests(prev => prev.map(r => updatedIds.has(r.id) ? { ...r, date: newStartDate, startDate: newStartDate } : r));
+      setSelectedJobIds(new Set());
+      setIsBulkUpdateDateModalOpen(false);
+
+      alert(`Successfully updated start date to ${newStartDate} for ${successCount} pending request(s).${failCount > 0 ? ` (${failCount} failed)` : ''}`);
+    } catch (err) {
+      console.error("Error bulk updating start dates:", err);
+      alert("An error occurred while updating start dates.");
+    } finally {
+      setIsBulkUpdatingDate(false);
+    }
   };
 
   const handleSingleAccept = async (request: any) => {
@@ -989,7 +1053,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Admin Bulk Selection Bar */}
-            {(activeTab === 'pending' ? isAdmin : (isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin')) && filteredJobs.length > 0 && (
+            {isAdmin && filteredJobs.length > 0 && (
                <div className="admin-bulk-bar glass-card" style={{
                  display: 'flex',
                  alignItems: 'center',
@@ -1016,31 +1080,55 @@ const Dashboard: React.FC = () => {
                  </div>
                  
                  {selectedJobIds.size > 0 && (
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                     {activeTab === 'pending' && (
-                       <button 
-                         onClick={handleBulkAccept}
-                         disabled={isBulkAccepting || isBulkDeleting}
-                         style={{
-                           background: 'linear-gradient(135deg, #10b981, #059669)',
-                           color: 'white',
-                           border: 'none',
-                           borderRadius: '10px',
-                           padding: '8px 16px',
-                           fontWeight: 700,
-                           fontSize: '13px',
-                           display: 'flex',
-                           alignItems: 'center',
-                           gap: '8px',
-                           cursor: isBulkAccepting ? 'wait' : 'pointer',
-                           boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
-                           opacity: isBulkAccepting ? 0.8 : 1
-                         }}
-                       >
-                         <CheckCircle2 size={16} />
-                         <span>{isBulkAccepting ? `Accepting (${bulkAcceptProgress}%)...` : `Accept Selected (${selectedJobIds.size})`}</span>
-                       </button>
-                     )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {activeTab === 'pending' && (
+                        <>
+                          <button 
+                            onClick={handleBulkAccept}
+                            disabled={isBulkAccepting || isBulkDeleting || isBulkUpdatingDate}
+                            style={{
+                              background: 'linear-gradient(135deg, #10b981, #059669)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '10px',
+                              padding: '8px 16px',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              cursor: isBulkAccepting ? 'wait' : 'pointer',
+                              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                              opacity: isBulkAccepting ? 0.8 : 1
+                            }}
+                          >
+                            <CheckCircle2 size={16} />
+                            <span>{isBulkAccepting ? `Accepting (${bulkAcceptProgress}%)...` : `Accept Selected (${selectedJobIds.size})`}</span>
+                          </button>
+                          <button 
+                            onClick={() => setIsBulkUpdateDateModalOpen(true)}
+                            disabled={isBulkAccepting || isBulkDeleting || isBulkUpdatingDate}
+                            style={{
+                              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '10px',
+                              padding: '8px 16px',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              cursor: isBulkUpdatingDate ? 'wait' : 'pointer',
+                              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                              opacity: isBulkUpdatingDate ? 0.8 : 1
+                            }}
+                          >
+                            <Calendar size={16} />
+                            <span>Update Start Date ({selectedJobIds.size})</span>
+                          </button>
+                        </>
+                      )}
                      <button 
                        onClick={handleBulkDelete}
                        disabled={isBulkDeleting || isBulkAccepting}
@@ -1144,7 +1232,7 @@ const Dashboard: React.FC = () => {
                              <div className="timeline-content-card glass-card">
                                  <div className="card-header" onClick={() => toggleExpand(job.id)} style={{ cursor: 'pointer' }}>
                                     <div className="customer-block">
-                                       {(activeTab === 'pending' ? isAdmin : (isAdmin || userData?.role === 'parent' || userData?.role === 'lpoadmin')) && (
+                                       {isAdmin && (
                                          <input 
                                            type="checkbox" 
                                            checked={selectedJobIds.has(job.id)}
@@ -1551,6 +1639,14 @@ const Dashboard: React.FC = () => {
         contactPhone={selectedJobForFranchiseeModal?.operatorPhone || companyData?.franchiseeMobile || parent?.franchiseeMobile || companyData?.mobile || parent?.mobile}
         userFullName={userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() : undefined}
         companyName={companyData?.companyName || parent?.name}
+      />
+
+      <BulkUpdateDateModal 
+        isOpen={isBulkUpdateDateModalOpen}
+        onClose={() => setIsBulkUpdateDateModalOpen(false)}
+        selectedCount={selectedJobIds.size}
+        onConfirm={handleBulkUpdateStartDate}
+        isUpdating={isBulkUpdatingDate}
       />
 
       <style>{`

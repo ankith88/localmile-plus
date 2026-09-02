@@ -2010,7 +2010,8 @@ export const sendSupportEmail = onCall({
   }
 
   // If unauthenticated, validate that the message is only sent to predefined support email addresses to prevent spam relaying
-  if (!request.auth) {
+  // unless a valid jobId or job metadata is provided (which ties the request to a specific job in LocalMile.Plus)
+  if (!request.auth && !jobId && !metadata?.customerId && !metadata?.companyName) {
     let checkRecipients: string[] = [];
     if (to) {
       checkRecipients = Array.isArray(to) ? to : [to];

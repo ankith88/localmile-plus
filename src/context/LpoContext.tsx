@@ -93,7 +93,8 @@ export const matchesParentFilter = (itemParentId: string | undefined | null, fil
   return filter === itemParentId;
 };
 
-const SUPER_ADMIN_ID = 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3';
+const SUPER_ADMIN_IDS = ['lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3', 'sZMaBb6EQJPPh1r1b1gHme0C8gX2'];
+export const isSuperAdminUid = (uid?: string | null) => uid ? SUPER_ADMIN_IDS.includes(uid) : false;
 
 const LpoContext = createContext<LpoContextType>({
   user: null,
@@ -146,7 +147,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [impersonation]);
 
-  const isRealSuperAdmin = baseUserData?.role === 'superadmin' || user?.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au' || user?.uid === SUPER_ADMIN_ID;
+  const isRealSuperAdmin = baseUserData?.role === 'superadmin' || user?.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au' || isSuperAdminUid(user?.uid);
 
   const userData = React.useMemo(() => {
     if (isRealSuperAdmin && impersonation && baseUserData) {
@@ -161,7 +162,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return baseUserData;
   }, [baseUserData, impersonation, isRealSuperAdmin]);
 
-  const isAdmin = userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === SUPER_ADMIN_ID;
+  const isAdmin = userData?.role === 'admin' || userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -182,7 +183,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const parentId = data.parent_id;
             setHasCompletedTour(data.hasCompletedTour || false);
             
-            const isUserAdmin = data.role === 'admin' || data.role === 'superadmin' || user.uid === SUPER_ADMIN_ID;
+            const isUserAdmin = data.role === 'admin' || data.role === 'superadmin' || isSuperAdminUid(user.uid);
 
             if (!isUserAdmin && parentId) {
               setSelectedParentId(parentId);
@@ -201,7 +202,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 }
               });
             }
-          } else if (user.uid === SUPER_ADMIN_ID || user.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au') {
+          } else if (isSuperAdminUid(user.uid) || user.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au') {
             const adminData: UserMetadata = { 
               uid: user.uid, 
               email: user.email || '', 
@@ -222,7 +223,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }, 3000);
           }
 
-          if (user.uid === SUPER_ADMIN_ID || user.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au' || userDoc.data()?.role === 'admin' || userDoc.data()?.role === 'superadmin') {
+          if (isSuperAdminUid(user.uid) || user.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au' || userDoc.data()?.role === 'admin' || userDoc.data()?.role === 'superadmin') {
             const parentsSnapshot = await getDocs(collection(db, 'companies'));
             setAllParents(parentsSnapshot.docs.map(doc => {
               const data = doc.data();

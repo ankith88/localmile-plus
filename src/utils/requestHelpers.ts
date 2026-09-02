@@ -12,6 +12,7 @@ import {
 import { db, functions } from '../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { formatDateForInput, getDayName } from './scheduling';
+import { isSuperAdminUid } from '../context/LpoContext';
 
 export interface AcceptRequestParams {
   request: any;
@@ -275,10 +276,10 @@ export const acceptJobRequest = async ({
       auspost_lat: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lat : request.recipient?.coordinates?.lat)?.toString() || "null",
       auspost_lng: (request.service === 'lpo-to-site' || request.service === 'australia post-to-site' ? request.customer?.coordinates?.lng : request.recipient?.coordinates?.lng)?.toString() || "null",
       is_free_job: isFreeJob.toString(),
-      admin_accepted: (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3') ? "true" : "false",
+      admin_accepted: (userData?.role === 'admin' || userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid)) ? "true" : "false",
       send_email: sendEmail !== undefined ? (sendEmail ? "true" : "false") : "false",
-      no_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false",
-      suppress_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false"
+      no_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid)))) ? "true" : "false",
+      suppress_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid)))) ? "true" : "false"
     });
 
     try {
@@ -320,10 +321,10 @@ export const acceptJobRequest = async ({
       user_last_name: request.customer?.lastName || "null",
       user_email: request.customer?.email || "null",
       user_phone: request.customer?.phone || "null",
-      admin_accepted: (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3') ? "true" : "false",
+      admin_accepted: (userData?.role === 'admin' || userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid)) ? "true" : "false",
       send_email: sendEmail !== undefined ? (sendEmail ? "true" : "false") : "false",
-      no_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false",
-      suppress_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3'))) ? "true" : "false"
+      no_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid)))) ? "true" : "false",
+      suppress_email: (sendEmail === false || (sendEmail === undefined && (userData?.role === 'admin' || userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid)))) ? "true" : "false"
     });
 
     try {

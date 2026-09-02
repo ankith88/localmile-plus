@@ -17,7 +17,7 @@ import {
 import { collection, query, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../firebase/config';
-import { useLpo } from '../../context/LpoContext';
+import { useLpo, isSuperAdminUid } from '../../context/LpoContext';
 import LoadingScreen from '../../components/LoadingScreen';
 
 interface UserRecord {
@@ -40,7 +40,7 @@ const UserManagement: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const isSuperAdmin = userData?.role === 'superadmin' || userData?.uid === 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3';
+  const isSuperAdmin = userData?.role === 'superadmin' || isSuperAdminUid(userData?.uid);
 
   // New User Form State
   const [newUser, setNewUser] = useState({
@@ -225,8 +225,10 @@ const UserManagement: React.FC = () => {
   };
 
   const filteredUsers = users.filter(u => 
-    u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.lpoName?.toLowerCase().includes(searchTerm.toLowerCase())
+    (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (u.lpoName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (u.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (u.role || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -286,19 +288,19 @@ const UserManagement: React.FC = () => {
                   <tr key={u.uid}>
                     <td>
                       <div className="user-cell">
-                        <div className={`user-avatar ${u.role}`}>
-                          {u.email[0].toUpperCase()}
+                        <div className={`user-avatar ${u.role || ''}`}>
+                          {u.email ? u.email[0].toUpperCase() : 'U'}
                         </div>
                         <div className="user-info">
-                          <span className="user-email">{u.email}</span>
-                          <span className="user-id">UID: {u.uid.substring(0, 8)}...</span>
+                          <span className="user-email">{u.email || 'No email'}</span>
+                          <span className="user-id">UID: {(u.uid || '').substring(0, 8)}...</span>
                         </div>
                       </div>
                     </td>
                     <td>
-                      <div className={`role-tag ${u.role}`}>
+                      <div className={`role-tag ${u.role || ''}`}>
                         {(u.role === 'admin' || u.role === 'superadmin') ? <Shield size={12} /> : <Users size={12} />}
-                        <span>{u.role === 'superadmin' ? 'SUPER ADMIN' : u.role.toUpperCase()}</span>
+                        <span>{u.role === 'superadmin' ? 'SUPER ADMIN' : (u.role || 'USER').toUpperCase()}</span>
                       </div>
                     </td>
                     <td>

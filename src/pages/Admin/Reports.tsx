@@ -14,7 +14,8 @@ import {
   FileText,
   X,
   Search,
-  Building2
+  Building2,
+  Layers
 } from 'lucide-react';
 import { collection, query, getDocs, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';

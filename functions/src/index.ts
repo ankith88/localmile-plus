@@ -2338,7 +2338,7 @@ export const cancelJob = onCall({
 });
 
 // Admin User Management Logic
-const SUPER_ADMIN_ID = "lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3";
+const SUPER_ADMIN_IDS = ["lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3", "sZMaBb6EQJPPh1r1b1gHme0C8gX2"];
 
 /**
  * Validates if the calling user is a superadmin.
@@ -2348,7 +2348,7 @@ const validateSuperAdmin = async (auth: any) => {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
 
-  if (auth.uid === SUPER_ADMIN_ID) return true;
+  if (SUPER_ADMIN_IDS.includes(auth.uid)) return true;
 
   const db = getDB();
   const userDoc = await db.collection("users").doc(auth.uid).get();

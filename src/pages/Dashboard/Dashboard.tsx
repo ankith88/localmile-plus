@@ -53,8 +53,8 @@ const Dashboard: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [activeTab, setActiveTab] = useState<'pending' | 'upcoming' | 'in-progress' | 'history' | 'declined'>('in-progress');
-  const [serviceFilter, setServiceFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [serviceFilter, setServiceFilter] = useState<string | string[]>('all');
+  const [statusFilter, setStatusFilter] = useState<string | string[]>('all');
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set());
 
   // Communication Modal State
@@ -64,8 +64,8 @@ const Dashboard: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
 
   // Admin Role View & Linked Customer Company Filter
-  const [adminRoleView, setAdminRoleView] = useState<'customer' | 'parent'>('customer');
-  const [selectedCustomerCompanyId, setSelectedCustomerCompanyId] = useState<string>('all');
+  const [adminRoleView, setAdminRoleView] = useState<string | string[]>('all');
+  const [selectedCustomerCompanyId, setSelectedCustomerCompanyId] = useState<string | string[]>('all');
   const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(new Map());
   const [customerCompanies, setCustomerCompanies] = useState<{ id: string; name: string }[]>([]);
 
@@ -182,16 +182,18 @@ const Dashboard: React.FC = () => {
         let schedConstraints: any[] = [orderBy('createdAt', 'desc')];
 
         const targetCustId = userData?.customer_id || customer?.id || companyData?.id;
-        const targetParentId = userData?.parent_id || parent?.id || (selectedParentId !== 'all' ? selectedParentId : null);
+        const targetParentId = userData?.parent_id || parent?.id || (selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && selectedParentId.includes('all')) ? (Array.isArray(selectedParentId) ? selectedParentId[0] : selectedParentId) : null);
 
-        if ((userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId) {
-          jobsConstraints.unshift(where('customer_id', '==', targetCustId));
-          reqConstraints.unshift(where('customer_id', '==', targetCustId));
-          schedConstraints.unshift(where('customer_id', '==', targetCustId));
-        } else if (targetParentId) {
-          jobsConstraints.unshift(where('parent_id', '==', targetParentId));
-          reqConstraints.unshift(where('parent_id', '==', targetParentId));
-          schedConstraints.unshift(where('parent_id', '==', targetParentId));
+        if (!isAdmin) {
+          if ((userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId) {
+            jobsConstraints.unshift(where('customer_id', '==', targetCustId));
+            reqConstraints.unshift(where('customer_id', '==', targetCustId));
+            schedConstraints.unshift(where('customer_id', '==', targetCustId));
+          } else if (targetParentId) {
+            jobsConstraints.unshift(where('parent_id', '==', targetParentId));
+            reqConstraints.unshift(where('parent_id', '==', targetParentId));
+            schedConstraints.unshift(where('parent_id', '==', targetParentId));
+          }
         }
 
         // Fetch Jobs
@@ -200,9 +202,9 @@ const Dashboard: React.FC = () => {
           const jobsSnapshot = await getDocs(jobsQ);
           setJobs(jobsSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
         } catch (e) {
-          const fbQ = (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
+          const fbQ = !isAdmin && (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
             ? query(jobsBaseQ, where('customer_id', '==', targetCustId))
-            : (targetParentId ? query(jobsBaseQ, where('parent_id', '==', targetParentId)) : jobsBaseQ);
+            : (!isAdmin && targetParentId ? query(jobsBaseQ, where('parent_id', '==', targetParentId)) : jobsBaseQ);
           const jobsSnapshot = await getDocs(fbQ as any);
           setJobs(jobsSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
         }
@@ -213,9 +215,9 @@ const Dashboard: React.FC = () => {
           const reqSnapshot = await getDocs(reqQ);
           setRequests(reqSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
         } catch (e) {
-          const fbQ = (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
+          const fbQ = !isAdmin && (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
             ? query(reqBaseQ, where('customer_id', '==', targetCustId))
-            : (targetParentId ? query(reqBaseQ, where('parent_id', '==', targetParentId)) : reqBaseQ);
+            : (!isAdmin && targetParentId ? query(reqBaseQ, where('parent_id', '==', targetParentId)) : reqBaseQ);
           const reqSnapshot = await getDocs(fbQ as any);
           setRequests(reqSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
         }
@@ -226,9 +228,9 @@ const Dashboard: React.FC = () => {
           const schedSnapshot = await getDocs(schedQ);
           setSchedules(schedSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
         } catch (e) {
-          const fbQ = (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
+          const fbQ = !isAdmin && (userData?.role === 'customer' || (!userData?.parent_id && targetCustId)) && targetCustId
             ? query(schedBaseQ, where('customer_id', '==', targetCustId))
-            : (targetParentId ? query(schedBaseQ, where('parent_id', '==', targetParentId)) : schedBaseQ);
+            : (!isAdmin && targetParentId ? query(schedBaseQ, where('parent_id', '==', targetParentId)) : schedBaseQ);
           const schedSnapshot = await getDocs(fbQ as any);
           setSchedules(schedSnapshot.docs.map(doc => ({ ...doc.data() as any, id: doc.id })));
         }
@@ -352,25 +354,48 @@ const Dashboard: React.FC = () => {
     const matchesSearch = (item.customer?.company || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                          (item.customer?.address || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesService = serviceFilter === 'all' || item.service === serviceFilter || getDisplayServiceName(item.service, userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent')) === serviceFilter;
+
+    const matchesService = (() => {
+      if (!serviceFilter || serviceFilter === 'all' || (Array.isArray(serviceFilter) && (serviceFilter.length === 0 || serviceFilter.includes('all')))) return true;
+      const isParentView = userData?.role === 'parent' || (isAdmin && (adminRoleView === 'parent' || (Array.isArray(adminRoleView) && adminRoleView.includes('parent'))));
+      const itemDisplayService = getDisplayServiceName(item.service, isParentView);
+      const filterList = Array.isArray(serviceFilter) ? serviceFilter : [serviceFilter];
+      return filterList.some(f => f === item.service || f === itemDisplayService);
+    })();
+
     const matchesDate = !dateFilter || item.date === dateFilter;
-    const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+
+    const matchesStatus = (() => {
+      if (!statusFilter || statusFilter === 'all' || (Array.isArray(statusFilter) && (statusFilter.length === 0 || statusFilter.includes('all')))) return true;
+      const filterList = Array.isArray(statusFilter) ? statusFilter : [statusFilter];
+      return filterList.includes(item.status);
+    })();
 
     let matchesAdminFilters = true;
     if (isAdmin) {
       const itemRole = getItemUserRole(item);
-      if (itemRole !== adminRoleView) {
-        return false;
-      }
-      if (adminRoleView === 'customer') {
-        if (selectedCustomerCompanyId !== 'all') {
-          const matchId = item.customer_id === selectedCustomerCompanyId || item.customer?.id === selectedCustomerCompanyId;
-          const matchName = (item.customer?.company || '').toLowerCase() === (allCustomerCompanyOptions.find(c => c.id === selectedCustomerCompanyId)?.name || '').toLowerCase();
-          matchesAdminFilters = matchId || matchName;
+      if (adminRoleView !== 'all' && !(Array.isArray(adminRoleView) && (adminRoleView.length === 0 || adminRoleView.includes('all')))) {
+        const roleList = Array.isArray(adminRoleView) ? adminRoleView : [adminRoleView];
+        if (!roleList.includes(itemRole)) {
+          return false;
         }
-      } else if (adminRoleView === 'parent') {
-        if (selectedParentId !== 'all') {
-          matchesAdminFilters = item.parent_id === selectedParentId;
+      }
+
+      if (selectedCustomerCompanyId !== 'all' && !(Array.isArray(selectedCustomerCompanyId) && (selectedCustomerCompanyId.length === 0 || selectedCustomerCompanyId.includes('all')))) {
+        const companyList = Array.isArray(selectedCustomerCompanyId) ? selectedCustomerCompanyId : [selectedCustomerCompanyId];
+        const match = companyList.some(cid => {
+          const matchId = item.customer_id === cid || item.customer?.id === cid;
+          const compName = allCustomerCompanyOptions.find(c => c.id === cid)?.name;
+          const matchName = compName && (item.customer?.company || '').toLowerCase() === compName.toLowerCase();
+          return matchId || matchName;
+        });
+        if (!match) matchesAdminFilters = false;
+      }
+
+      if (selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && (selectedParentId.length === 0 || selectedParentId.includes('all')))) {
+        const parentList = Array.isArray(selectedParentId) ? selectedParentId : [selectedParentId];
+        if (!item.parent_id || !parentList.includes(item.parent_id)) {
+          matchesAdminFilters = false;
         }
       }
     } else if (userData?.role === 'customer' || (!userData?.parent_id && (userData?.customer_id || customer?.id || companyData?.id))) {
@@ -384,7 +409,7 @@ const Dashboard: React.FC = () => {
         }
       }
     } else if (userData?.role === 'parent' || userData?.parent_id || parent?.id) {
-      const targetParentId = userData?.parent_id || parent?.id || (selectedParentId !== 'all' ? selectedParentId : null);
+      const targetParentId = userData?.parent_id || parent?.id || (selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && selectedParentId.includes('all')) ? (Array.isArray(selectedParentId) ? selectedParentId[0] : selectedParentId) : null);
       if (targetParentId) {
         if (item.parent_id && item.parent_id !== targetParentId) {
           return false;
@@ -405,12 +430,10 @@ const Dashboard: React.FC = () => {
 
   const filteredJobs = source.filter(j => {
     // Tab Filtering
-    const isOneOff = j.jobType === 'one-off';
-
     const checkTab = (tab: string) => {
       switch (tab) {
         case 'pending':
-          return j.status === 'pending' && (!isOneOff || j.date >= today); 
+          return (j.status === 'pending' || j.status === 'new-time-proposed' || j.status === 'awaiting-activation'); 
         case 'in-progress':
           return j.date === today && j.status !== 'cancelled' && j.status !== 'rejected';
         case 'upcoming':
@@ -645,7 +668,7 @@ const Dashboard: React.FC = () => {
       return;
     }
 
-    const selectedRequests = requests.filter(r => selectedJobIds.has(r.id) && r.status === 'pending');
+    const selectedRequests = requests.filter(r => selectedJobIds.has(r.id) && (r.status === 'pending' || r.status === 'new-time-proposed' || r.status === 'awaiting-activation'));
 
     if (selectedRequests.length === 0) {
       alert("None of the selected items are pending requests that can be accepted.");
@@ -710,7 +733,7 @@ const Dashboard: React.FC = () => {
       return;
     }
 
-    const selectedRequests = requests.filter(r => selectedJobIds.has(r.id) && r.status === 'pending');
+    const selectedRequests = requests.filter(r => selectedJobIds.has(r.id) && (r.status === 'pending' || r.status === 'new-time-proposed' || r.status === 'awaiting-activation'));
 
     if (selectedRequests.length === 0) {
       alert("None of the selected items are pending requests.");
@@ -843,7 +866,7 @@ const Dashboard: React.FC = () => {
   };
 
   const getTabCount = (tabId: string) => {
-    if (tabId === 'pending') return globalFilteredRequests.filter(r => r.status === 'pending' && (r.jobType !== 'one-off' || r.date >= today)).length;
+    if (tabId === 'pending') return globalFilteredRequests.filter(r => (r.status === 'pending' || r.status === 'new-time-proposed' || r.status === 'awaiting-activation')).length;
     if (tabId === 'declined') return globalFilteredRequests.filter(r => r.status === 'rejected' || r.status === 'cancelled').length + globalFilteredJobs.filter(j => j.status === 'cancelled').length;
     if (tabId === 'history') return [...globalFilteredJobs, ...globalFilteredRequests].filter(j => j.date < today).length;
     
@@ -910,7 +933,7 @@ const Dashboard: React.FC = () => {
            <div className="stats-row">
                {[
                   { label: 'Active Jobs', value: globalFilteredJobs.filter(j => j.date === today && j.status !== 'completed').length, icon: Calendar, color: 'var(--ink)' },
-                  { label: 'Pending Requests', value: globalFilteredRequests.filter(r => r.status === 'pending' && (r.jobType !== 'one-off' || r.date >= today)).length, icon: MessageSquare, color: 'var(--gold)' },
+                  { label: 'Pending Requests', value: globalFilteredRequests.filter(r => (r.status === 'pending' || r.status === 'new-time-proposed' || r.status === 'awaiting-activation')).length, icon: MessageSquare, color: 'var(--gold)' },
                   { label: 'Completed Jobs', value: globalFilteredJobs.filter(j => j.status === 'completed').length, icon: CheckCircle2, color: 'var(--ink)' }
                ].map((stat, i) => (
                 <div key={i} className="stat-card glass">
@@ -977,32 +1000,38 @@ const Dashboard: React.FC = () => {
                          value={adminRoleView}
                          onChange={(val) => setAdminRoleView(val as any)}
                          options={[
+                           { value: 'all', label: 'All Roles', icon: <Layers size={14} /> },
                            { value: 'customer', label: 'Role: Customer', icon: <User size={14} /> },
                            { value: 'parent', label: 'Role: Parent', icon: <Building2 size={14} /> }
                          ]}
+                         isMulti={true}
+                         placeholder="Filter Roles"
                          className="role-select-custom"
                        />
-                       {adminRoleView === 'customer' ? (
-                         <CustomSelect 
-                           value={selectedCustomerCompanyId}
-                           onChange={(val) => setSelectedCustomerCompanyId(val)}
-                           options={[
-                             { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
-                             ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
-                           ]}
-                           className="company-select-custom"
-                         />
-                       ) : (
-                         <CustomSelect 
-                           value={selectedParentId}
-                           onChange={(val) => setSelectedParentId(val)}
-                           options={[
-                             { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
-                             ...allParents.map(p => ({ value: p.id, label: p.name, icon: <MapPin size={14} /> }))
-                           ]}
-                           className="lpo-select-custom"
-                         />
-                       )}
+                       <CustomSelect 
+                         value={selectedCustomerCompanyId}
+                         onChange={(val) => setSelectedCustomerCompanyId(val)}
+                         options={[
+                           { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
+                           ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
+                         ]}
+                         isMulti={true}
+                         searchable={true}
+                         placeholder="All Customer Companies"
+                         className="company-select-custom"
+                       />
+                       <CustomSelect 
+                         value={selectedParentId}
+                         onChange={(val) => setSelectedParentId(val)}
+                         options={[
+                           { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
+                           ...allParents.map(p => ({ value: p.id, label: p.name, icon: <MapPin size={14} /> }))
+                         ]}
+                         isMulti={true}
+                         searchable={true}
+                         placeholder="All Regions / Parents"
+                         className="lpo-select-custom"
+                       />
                      </>
                    )}
                    <div className="custom-filter-date" style={{ position: 'relative', zIndex: 10 }}>
@@ -1015,7 +1044,7 @@ const Dashboard: React.FC = () => {
                     <CustomSelect 
                        value={serviceFilter}
                        onChange={(val) => setServiceFilter(val)}
-                       options={userData?.role === 'parent' || (isAdmin && adminRoleView === 'parent') ? [
+                       options={userData?.role === 'parent' || (isAdmin && (adminRoleView === 'parent' || (Array.isArray(adminRoleView) && adminRoleView.includes('parent')))) ? [
                          { value: 'all', label: 'All Services' },
                          { value: 'Post Office-to-IM', label: 'Post Office-to-IM' },
                          { value: 'IM-to-Site', label: 'IM-to-Site' },
@@ -1028,6 +1057,9 @@ const Dashboard: React.FC = () => {
                          { value: 'australia post-to-site', label: userData?.role === 'customer' ? 'Inbound (AusPost)' : 'Australia Post ➔ Site' },
                          { value: 'round-trip', label: 'Round Trip' }
                        ]}
+                       isMulti={isAdmin}
+                       searchable={true}
+                       placeholder="All Services"
                        className="service-select-custom"
                      />
                     <CustomSelect 
@@ -1043,6 +1075,9 @@ const Dashboard: React.FC = () => {
                         { value: 'rejected', label: 'Rejected' },
                         { value: 'cancelled', label: 'Cancelled' }
                       ]}
+                      isMulti={isAdmin}
+                      searchable={true}
+                      placeholder="All Statuses"
                       className="status-select-custom"
                     />
                   <button className="btn-secondary-glass" onClick={() => window.location.reload()}><RefreshCw size={18} /></button>

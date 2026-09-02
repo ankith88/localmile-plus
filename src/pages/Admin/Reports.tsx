@@ -27,8 +27,8 @@ const Reports: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Role Segmentation & Filtering State for Admins
-  const [adminRoleView, setAdminRoleView] = useState<'customer' | 'parent'>('customer');
-  const [selectedCustomerCompanyId, setSelectedCustomerCompanyId] = useState<string>('all');
+  const [adminRoleView, setAdminRoleView] = useState<string | string[]>('all');
+  const [selectedCustomerCompanyId, setSelectedCustomerCompanyId] = useState<string | string[]>('all');
   const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(() => new Map<string, string>());
   const [customerCompanies, setCustomerCompanies] = useState<{ id: string, name: string }[]>([]);
   const [rawJobs, setRawJobs] = useState<any[]>([]);
@@ -146,18 +146,26 @@ const Reports: React.FC = () => {
   const applyAdminFilters = (item: any) => {
     if (!isAdmin) return true;
     const itemRole = getItemUserRole(item);
-    if (itemRole !== adminRoleView) {
-      return false;
-    }
-    if (adminRoleView === 'customer') {
-      if (selectedCustomerCompanyId !== 'all') {
-        const matchId = item.customer_id === selectedCustomerCompanyId;
-        const matchName = (item.customer?.company || '').toLowerCase() === (allCustomerCompanyOptions.find((c: any) => c.id === selectedCustomerCompanyId)?.name || '').toLowerCase();
-        return matchId || matchName;
+    if (adminRoleView !== 'all' && !(Array.isArray(adminRoleView) && (adminRoleView.length === 0 || adminRoleView.includes('all')))) {
+      const roleList = Array.isArray(adminRoleView) ? adminRoleView : [adminRoleView];
+      if (!roleList.includes(itemRole)) {
+        return false;
       }
-    } else if (adminRoleView === 'parent') {
-      if (selectedParentId !== 'all') {
-        return item.parent_id === selectedParentId;
+    }
+    if (selectedCustomerCompanyId !== 'all' && !(Array.isArray(selectedCustomerCompanyId) && (selectedCustomerCompanyId.length === 0 || selectedCustomerCompanyId.includes('all')))) {
+      const companyList = Array.isArray(selectedCustomerCompanyId) ? selectedCustomerCompanyId : [selectedCustomerCompanyId];
+      const match = companyList.some(cid => {
+        const matchId = item.customer_id === cid || item.customer?.id === cid;
+        const compName = allCustomerCompanyOptions.find((c: any) => c.id === cid)?.name;
+        const matchName = compName && (item.customer?.company || '').toLowerCase() === compName.toLowerCase();
+        return matchId || matchName;
+      });
+      if (!match) return false;
+    }
+    if (selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && (selectedParentId.length === 0 || selectedParentId.includes('all')))) {
+      const parentList = Array.isArray(selectedParentId) ? selectedParentId : [selectedParentId];
+      if (!item.parent_id || !parentList.includes(item.parent_id)) {
+        return false;
       }
     }
     return true;
@@ -256,7 +264,9 @@ const Reports: React.FC = () => {
 
         // Fetch customers count
         let totalCustomers = 0;
-        const parentsToQuery = selectedParentId === 'all' ? allParents : allParents.filter(l => l.id === selectedParentId);
+        const parentsToQuery = (selectedParentId === 'all' || (Array.isArray(selectedParentId) && selectedParentId.includes('all')))
+          ? allParents
+          : allParents.filter(l => Array.isArray(selectedParentId) ? selectedParentId.includes(l.id) : l.id === selectedParentId);
         
         if (parentsToQuery.length === 0 && parent) {
           parentsToQuery.push(parent);
@@ -370,38 +380,40 @@ const Reports: React.FC = () => {
               <>
                 <CustomSelect 
                   value={adminRoleView}
-                  onChange={(val) => {
-                    setAdminRoleView(val as any);
-                    setSelectedCustomerCompanyId('all');
-                  }}
+                  onChange={(val) => setAdminRoleView(val as any)}
                   options={[
+                    { value: 'all', label: 'All Roles', icon: <Layers size={14} /> },
                     { value: 'customer', label: 'Role: Customer', icon: <Users size={14} /> },
                     { value: 'parent', label: 'Role: Parent', icon: <Building2 size={14} /> }
                   ]}
+                  isMulti={true}
+                  placeholder="Filter Roles"
                   className="lpo-select-custom"
                 />
-
-                {adminRoleView === 'customer' ? (
-                  <CustomSelect 
-                    value={selectedCustomerCompanyId}
-                    onChange={(val) => setSelectedCustomerCompanyId(val)}
-                    options={[
-                      { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
-                      ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
-                    ]}
-                    className="lpo-select-custom"
-                  />
-                ) : (
-                  <CustomSelect 
-                    value={selectedParentId}
-                    onChange={(val) => setSelectedParentId(val)}
-                    options={[
-                      { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
-                      ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
-                    ]}
-                    className="lpo-select-custom"
-                  />
-                )}
+                <CustomSelect 
+                  value={selectedCustomerCompanyId}
+                  onChange={(val) => setSelectedCustomerCompanyId(val)}
+                  options={[
+                    { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
+                    ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
+                  ]}
+                  isMulti={true}
+                  searchable={true}
+                  placeholder="All Customer Companies"
+                  className="lpo-select-custom"
+                />
+                <CustomSelect 
+                  value={selectedParentId}
+                  onChange={(val) => setSelectedParentId(val)}
+                  options={[
+                    { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
+                    ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
+                  ]}
+                  isMulti={true}
+                  searchable={true}
+                  placeholder="All Regions / Parents"
+                  className="lpo-select-custom"
+                />
               </>
             )}
             <div className="date-range-glass">

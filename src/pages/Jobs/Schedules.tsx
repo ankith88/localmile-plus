@@ -145,10 +145,13 @@ const Schedules: React.FC = () => {
         let baseQ = collection(db, 'scheduled_jobs');
         let constraints: any[] = [orderBy('createdAt', 'desc')];
 
-        if (userData?.role === 'customer' && userData?.customer_id) {
-          constraints.unshift(where('customer_id', '==', userData.customer_id));
-        } else if (selectedParentId !== 'all') {
-          constraints.unshift(where('parent_id', '==', selectedParentId));
+        if (!isAdmin) {
+          if (userData?.role === 'customer' && userData?.customer_id) {
+            constraints.unshift(where('customer_id', '==', userData.customer_id));
+          } else if (selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && selectedParentId.includes('all'))) {
+            const pId = Array.isArray(selectedParentId) ? selectedParentId[0] : selectedParentId;
+            if (pId) constraints.unshift(where('parent_id', '==', pId));
+          }
         }
 
         const q = query(baseQ, ...constraints);
@@ -159,10 +162,11 @@ const Schedules: React.FC = () => {
         // Fallback for missing indexes
         let baseQ = collection(db, 'scheduled_jobs');
         let q;
-        if (userData?.role === 'customer' && userData?.customer_id) {
+        if (!isAdmin && userData?.role === 'customer' && userData?.customer_id) {
           q = query(baseQ, where('customer_id', '==', userData.customer_id));
-        } else if (selectedParentId !== 'all') {
-          q = query(baseQ, where('parent_id', '==', selectedParentId));
+        } else if (!isAdmin && selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && selectedParentId.includes('all'))) {
+          const pId = Array.isArray(selectedParentId) ? selectedParentId[0] : selectedParentId;
+          q = pId ? query(baseQ, where('parent_id', '==', pId)) : baseQ;
         } else {
           q = baseQ;
         }
@@ -281,7 +285,13 @@ const Schedules: React.FC = () => {
       matchesRole = getItemUserRole(s) === adminRoleView;
     }
 
-    return matchesSearch && isActive && matchesCustomer && matchesService && matchesRole;
+    let matchesParent = true;
+    if (isAdmin && selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && (selectedParentId.length === 0 || selectedParentId.includes('all')))) {
+      const parentList = Array.isArray(selectedParentId) ? selectedParentId : [selectedParentId];
+      matchesParent = s.parent_id ? parentList.includes(s.parent_id) : false;
+    }
+
+    return matchesSearch && isActive && matchesCustomer && matchesService && matchesRole && matchesParent;
   });
 
   // Calendar Logic Helpers
@@ -370,14 +380,17 @@ const Schedules: React.FC = () => {
                    className="role-select-custom"
                  />
                )}
-               {isAdmin && adminRoleView === 'parent' && (
+               {isAdmin && (
                  <CustomSelect 
                    value={selectedParentId}
                    onChange={(val) => setSelectedParentId(val)}
                    options={[
-                     { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
+                     { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
                      ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
                    ]}
+                   isMulti={true}
+                   searchable={true}
+                   placeholder="All Regions / Parents"
                    className="lpo-select-custom"
                  />
                )}

@@ -50,9 +50,10 @@ export default function Invoices() {
     async function fetchInvoices() {
       setLoading(true);
       
-      const parentsToFetch = isAdmin && selectedParentId === 'all' 
+      const isAllParents = selectedParentId === 'all' || (Array.isArray(selectedParentId) && (selectedParentId.length === 0 || selectedParentId.includes('all')));
+      const parentsToFetch = isAdmin && isAllParents 
         ? allParents 
-        : allParents.filter(p => p.id === (isAdmin ? selectedParentId : (userData?.parent_id || userData?.customer_id)));
+        : allParents.filter(p => Array.isArray(selectedParentId) ? selectedParentId.includes(p.id) : p.id === (isAdmin ? selectedParentId : (userData?.parent_id || userData?.customer_id)));
 
       let targets = [...parentsToFetch];
       if (targets.length === 0) {
@@ -177,15 +178,18 @@ export default function Invoices() {
            </div>
            <div className="header-right">
              {isAdmin && (
-               <CustomSelect 
-                 value={selectedParentId}
-                 onChange={(val) => setSelectedParentId(val)}
-                 options={[
-                   { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
-                   ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
-                 ]}
-                 className="lpo-select-custom"
-               />
+                <CustomSelect 
+                  value={selectedParentId}
+                  onChange={(val) => setSelectedParentId(val)}
+                  options={[
+                    { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
+                    ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
+                  ]}
+                  isMulti={true}
+                  searchable={true}
+                  placeholder="All Regions / Parents"
+                  className="lpo-select-custom"
+                />
              )}
            </div>
         </header>

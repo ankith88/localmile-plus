@@ -1,23 +1,37 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { ChevronDown, Check, Search, X } from 'lucide-react';
 
-interface Option {
+export interface Option {
   value: string;
   label: string;
   icon?: React.ReactNode;
 }
 
-interface CustomSelectProps {
-  value: string;
-  onChange: (value: string) => void;
+export interface CustomSelectProps {
+  value: string | string[];
+  onChange: (value: any) => void;
   options: Option[];
   placeholder?: string;
   className?: string;
+  isMulti?: boolean;
+  searchable?: boolean;
+  allLabel?: string;
 }
 
-const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, placeholder, className }) => {
+const CustomSelect: React.FC<CustomSelectProps> = ({ 
+  value, 
+  onChange, 
+  options, 
+  placeholder = 'Select option', 
+  className,
+  isMulti = false,
+  searchable = false,
+  allLabel
+}) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -29,7 +43,88 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedOption = options.find(opt => opt.value === value);
+  useEffect(() => {
+    if (isOpen && (searchable || isMulti)) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    } else {
+      setSearchQuery('');
+    }
+  }, [isOpen, searchable, isMulti]);
+
+  const nonAllOptions = useMemo(() => options.filter(opt => opt.value !== 'all'), [options]);
+
+  const selectedValues = useMemo<string[]>(() => {
+    if (!isMulti) return [];
+    if (Array.isArray(value)) return value;
+    if (value === 'all' || !value) return ['all'];
+    return [value];
+  }, [value, isMulti]);
+
+  const isAllSelected = useMemo(() => {
+    if (!isMulti) return value === 'all';
+    return selectedValues.includes('all') || selectedValues.length === 0 || selectedValues.length === nonAllOptions.length;
+  }, [isMulti, value, selectedValues, nonAllOptions]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchQuery.trim()) return options;
+    const query = searchQuery.toLowerCase();
+    return options.filter(opt => opt.label.toLowerCase().includes(query) || opt.value.toLowerCase().includes(query));
+  }, [options, searchQuery]);
+
+  const triggerLabel = useMemo(() => {
+    if (!isMulti) {
+      const selectedOption = options.find(opt => opt.value === value);
+      return selectedOption ? selectedOption.label : placeholder;
+    }
+
+    if (isAllSelected) {
+      const allOpt = options.find(opt => opt.value === 'all');
+      return allOpt ? allOpt.label : (allLabel || `All (${nonAllOptions.length})`);
+    }
+
+    if (selectedValues.length === 1) {
+      const opt = options.find(o => o.value === selectedValues[0]);
+      return opt ? opt.label : placeholder;
+    }
+
+    return `${selectedValues.length} Selected`;
+  }, [isMulti, isAllSelected, value, selectedValues, options, placeholder, allLabel, nonAllOptions]);
+
+  const triggerIcon = useMemo(() => {
+    if (!isMulti) {
+      const selectedOption = options.find(opt => opt.value === value);
+      return selectedOption?.icon;
+    }
+    return undefined;
+  }, [isMulti, options, value]);
+
+  const handleOptionClick = (optValue: string) => {
+    if (!isMulti) {
+      onChange(optValue);
+      setIsOpen(false);
+      return;
+    }
+
+    if (optValue === 'all') {
+      onChange('all');
+      return;
+    }
+
+    let nextValues: string[];
+    const current = selectedValues.filter(v => v !== 'all');
+
+    if (current.includes(optValue)) {
+      nextValues = current.filter(v => v !== optValue);
+    } else {
+      nextValues = [...current, optValue];
+    }
+
+    if (nextValues.length === 0 || nextValues.length === nonAllOptions.length) {
+      onChange('all');
+    } else {
+      onChange(nextValues);
+    }
+  };
 
   return (
     <div className={`custom-select-container ${className || ''}`} ref={containerRef}>
@@ -38,9 +133,9 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="trigger-content">
-          {selectedOption?.icon && <span className="option-icon">{selectedOption.icon}</span>}
-          <span className={selectedOption ? 'selected-label' : 'placeholder'}>
-            {selectedOption ? selectedOption.label : (placeholder || 'Select option')}
+          {triggerIcon && <span className="option-icon">{triggerIcon}</span>}
+          <span className="selected-label">
+            {triggerLabel}
           </span>
         </div>
         <ChevronDown size={16} className={`chevron ${isOpen ? 'rotate' : ''}`} />
@@ -48,22 +143,53 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
 
       {isOpen && (
         <div className="select-dropdown glass fade-in">
-          {options.map((option) => (
-            <div 
-              key={option.value} 
-              className={`select-option ${option.value === value ? 'selected' : ''}`}
-              onClick={() => {
-                onChange(option.value);
-                setIsOpen(false);
-              }}
-            >
-              <div className="option-info">
-                {option.icon && <span className="option-icon">{option.icon}</span>}
-                <span className="option-label">{option.label}</span>
-              </div>
-              {option.value === value && <Check size={14} className="check-icon" />}
+          {(searchable || isMulti || options.length > 5) && (
+            <div className="dropdown-search-container" onClick={(e) => e.stopPropagation()}>
+              <Search size={14} className="search-icon" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="dropdown-search-input"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <X size={14} className="clear-search-icon" onClick={() => setSearchQuery('')} />
+              )}
             </div>
-          ))}
+          )}
+
+          <div className="options-scroll-area">
+            {filteredOptions.length === 0 ? (
+              <div className="no-options">No matches found</div>
+            ) : (
+              filteredOptions.map((option) => {
+                const isSelected = isMulti 
+                  ? (option.value === 'all' ? isAllSelected : (!isAllSelected && selectedValues.includes(option.value)))
+                  : option.value === value;
+
+                return (
+                  <div 
+                    key={option.value} 
+                    className={`select-option ${isSelected ? 'selected' : ''}`}
+                    onClick={() => handleOptionClick(option.value)}
+                  >
+                    <div className="option-info">
+                      {isMulti && (
+                        <div className={`checkbox-box ${isSelected ? 'checked' : ''}`}>
+                          {isSelected && <Check size={12} className="checkbox-check" />}
+                        </div>
+                      )}
+                      {option.icon && <span className="option-icon">{option.icon}</span>}
+                      <span className="option-label">{option.label}</span>
+                    </div>
+                    {!isMulti && isSelected && <Check size={14} className="check-icon" />}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 
@@ -113,11 +239,6 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
           text-overflow: ellipsis;
         }
 
-        .placeholder {
-          color: var(--ink-soft);
-          opacity: 0.5;
-        }
-
         .chevron {
           transition: transform 0.3s ease;
           opacity: 0.6;
@@ -142,27 +263,81 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
           border-radius: 18px;
           padding: 6px;
           box-shadow: 0 20px 50px rgba(26, 61, 51, 0.15);
-          max-height: 300px;
+          max-height: 320px;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .dropdown-search-container {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          margin-bottom: 6px;
+          background: rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(0, 0, 0, 0.08);
+          border-radius: 12px;
+        }
+
+        .search-icon {
+          color: var(--ink-soft);
+          opacity: 0.6;
+          flex-shrink: 0;
+        }
+
+        .clear-search-icon {
+          color: var(--ink-soft);
+          opacity: 0.6;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+
+        .clear-search-icon:hover {
+          opacity: 1;
+        }
+
+        .dropdown-search-input {
+          border: none;
+          outline: none;
+          background: transparent;
+          width: 100%;
+          font-size: 0.85rem;
+          font-weight: 500;
+          color: var(--ink);
+        }
+
+        .options-scroll-area {
           overflow-y: auto;
+          max-height: 250px;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .no-options {
+          padding: 12px;
+          text-align: center;
+          font-size: 0.85rem;
+          color: var(--ink-soft);
+          opacity: 0.7;
         }
 
         .select-option {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 10px 12px;
+          padding: 8px 12px;
           border-radius: 12px;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.15s;
           color: var(--ink-soft);
           font-weight: 600;
-          font-size: 0.9rem;
+          font-size: 0.88rem;
         }
 
         .select-option:hover {
           background: rgba(26, 61, 51, 0.05);
           color: var(--ink);
-          transform: translateX(4px);
         }
 
         .select-option.selected {
@@ -174,6 +349,35 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
           display: flex;
           align-items: center;
           gap: 10px;
+          overflow: hidden;
+        }
+
+        .option-label {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .checkbox-box {
+          width: 16px;
+          height: 16px;
+          border-radius: 4px;
+          border: 1.5px solid rgba(0, 0, 0, 0.25);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          transition: all 0.15s ease;
+          background: white;
+        }
+
+        .checkbox-box.checked {
+          background: var(--ink);
+          border-color: var(--ink);
+        }
+
+        .checkbox-check {
+          color: white;
         }
 
         .check-icon {
@@ -181,7 +385,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
         }
 
         .fade-in {
-          animation: fadeIn 0.2s ease-out;
+          animation: fadeIn 0.15s ease-out;
         }
 
         @keyframes fadeIn {
@@ -190,17 +394,17 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
         }
 
         /* Custom Scrollbar */
-        .select-dropdown::-webkit-scrollbar {
+        .options-scroll-area::-webkit-scrollbar {
           width: 6px;
         }
-        .select-dropdown::-webkit-scrollbar-track {
+        .options-scroll-area::-webkit-scrollbar-track {
           background: transparent;
         }
-        .select-dropdown::-webkit-scrollbar-thumb {
+        .options-scroll-area::-webkit-scrollbar-thumb {
           background: rgba(26, 61, 51, 0.1);
           border-radius: 10px;
         }
-        .select-dropdown::-webkit-scrollbar-thumb:hover {
+        .options-scroll-area::-webkit-scrollbar-thumb:hover {
           background: rgba(26, 61, 51, 0.2);
         }
       `}</style>
@@ -209,3 +413,4 @@ const CustomSelect: React.FC<CustomSelectProps> = ({ value, onChange, options, p
 };
 
 export default CustomSelect;
+

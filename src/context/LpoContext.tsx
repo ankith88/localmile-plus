@@ -72,8 +72,8 @@ interface LpoContextType {
   updateUserData: (data: Partial<UserMetadata>) => Promise<void>;
   updateCompanyData: (data: Partial<CompanyData>) => Promise<void>;
   isAdmin: boolean;
-  selectedParentId: string; // Used by admins to filter, defaults to own parent_id or 'all'
-  setSelectedParentId: (id: string) => void;
+  selectedParentId: string | string[]; // Used by admins to filter, defaults to own parent_id or 'all'
+  setSelectedParentId: (id: string | string[]) => void;
   allParents: ParentEntity[];
   awaitingTcCount: number;
   signUp: (email: string, password: string, firstName: string, lastName: string, phone: string, parentId?: string, customerId?: string) => Promise<any>;
@@ -81,6 +81,17 @@ interface LpoContextType {
   setImpersonation: (state: ImpersonationState | null) => void;
   isRealSuperAdmin: boolean;
 }
+
+export const matchesParentFilter = (itemParentId: string | undefined | null, filter: string | string[]) => {
+  if (!filter || filter === 'all' || (Array.isArray(filter) && (filter.length === 0 || filter.includes('all')))) {
+    return true;
+  }
+  if (!itemParentId) return false;
+  if (Array.isArray(filter)) {
+    return filter.includes(itemParentId);
+  }
+  return filter === itemParentId;
+};
 
 const SUPER_ADMIN_ID = 'lwOQ8j5MSIdOiyR0VZ1zEvfpx7A3';
 
@@ -119,7 +130,7 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loading, setLoading] = useState(true);
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const [hasCompletedTour, setHasCompletedTour] = useState(true);
-  const [selectedParentId, setSelectedParentId] = useState<string>('all');
+  const [selectedParentId, setSelectedParentId] = useState<string | string[]>('all');
   const [allParents, setAllParents] = useState<ParentEntity[]>([]);
   const [awaitingTcCount, setAwaitingTcCount] = useState(0);
   const [impersonation, setImpersonation] = useState<ImpersonationState | null>(() => {

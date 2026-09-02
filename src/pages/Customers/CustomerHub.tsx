@@ -98,8 +98,9 @@ const CustomerHub: React.FC = () => {
         
         if (userData?.role === 'customer' && userData?.uid) {
           reqConstraints.push(where('uid', '==', userData.uid));
-        } else if (selectedParentId !== 'all') {
-          reqConstraints.push(where('parent_id', '==', selectedParentId));
+        } else if (!isAdmin && selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && selectedParentId.includes('all'))) {
+          const pId = Array.isArray(selectedParentId) ? selectedParentId[0] : selectedParentId;
+          if (pId) reqConstraints.push(where('parent_id', '==', pId));
         }
         
         const requestsSnap = await getDocs(query(reqBaseQ, ...reqConstraints));
@@ -118,7 +119,7 @@ const CustomerHub: React.FC = () => {
           }
           statsMap[key].totalJobs += 1;
           if (req.date) {
-            if (!statsMap[key].lastJobDate || req.date > statsMap[key].lastJobDate) {
+            if (!statsMap[key].lastJobDate || req.date > statsMap[key].lastJobDate!) {
               statsMap[key].lastJobDate = req.date;
             }
           }
@@ -221,9 +222,12 @@ const CustomerHub: React.FC = () => {
                   value={selectedParentId}
                   onChange={(val) => setSelectedParentId(val)}
                   options={[
-                    { value: 'all', label: 'All Parents', icon: <MapPin size={14} /> },
+                    { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
                     ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
                   ]}
+                  isMulti={true}
+                  searchable={true}
+                  placeholder="All Regions / Parents"
                   className="lpo-select-custom"
                 />
               )}

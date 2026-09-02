@@ -65,8 +65,9 @@ const AwaitingTCPage: React.FC = () => {
         let reqBaseQ = collection(db, 'requests');
         let constraints: any[] = [];
 
-        if (selectedParentId !== 'all') {
-          constraints.push(where('parent_id', '==', selectedParentId));
+        if (!isAdmin && selectedParentId !== 'all' && !(Array.isArray(selectedParentId) && selectedParentId.includes('all'))) {
+          const pId = Array.isArray(selectedParentId) ? selectedParentId[0] : selectedParentId;
+          if (pId) constraints.push(where('parent_id', '==', pId));
         }
 
         const reqQ = query(reqBaseQ, ...constraints);
@@ -88,9 +89,9 @@ const AwaitingTCPage: React.FC = () => {
 
   const filteredRequests = requests.filter(j => {
     const matchesSearch = j.customer.company.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         j.customer.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         j.id.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
+                         j.customer.address.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesParent = !isAdmin || selectedParentId === 'all' || (Array.isArray(selectedParentId) && (selectedParentId.length === 0 || selectedParentId.includes('all'))) || (Array.isArray(selectedParentId) ? (j.parent_id && selectedParentId.includes(j.parent_id)) : j.parent_id === selectedParentId);
+    return matchesSearch && matchesParent;
   });
 
   const handleDeleteRequest = async (id: string) => {

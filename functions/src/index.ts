@@ -1070,6 +1070,330 @@ export const onScheduledJobCreated = onDocumentCreated({
   }
 });
 
+// Logic: onScheduledJobUpdated (Notify Franchisee & Dispatcher when a recurring visit is skipped or stopped)
+export const onScheduledJobUpdated = onDocumentUpdated({
+  document: "scheduled_jobs/{scheduledJobId}",
+  database: "(default)",
+  secrets: [gmailAppPassword, prospectplusApiKey],
+}, async (event) => {
+  const afterData = event.data?.after.data();
+  const beforeData = event.data?.before.data();
+  const scheduledJobId = event.params.scheduledJobId;
+
+  if (!afterData || !beforeData) return;
+
+  const db = getDB();
+  const uid = afterData.uid;
+
+  let customerId = extractStringId(afterData.customer_id) || extractStringId(afterData.customer?.id);
+  let companyName = afterData.customer?.company || "";
+  let franchiseeEmail = "";
+  let userEmail = afterData.customer?.email || "";
+
+  if (uid) {
+    try {
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (userDoc.exists) {
+        const uData = userDoc.data();
+        customerId = customerId || extractStringId(uData?.customer_id);
+        companyName = companyName || uData?.company || uData?.companyName || "";
+        franchiseeEmail = uData?.franchiseeEmail || "";
+        userEmail = userEmail || uData?.email || "";
+      }
+    } catch (err) {
+      console.error(`[onScheduledJobUpdated] Error fetching user ${uid}:`, err);
+    }
+  }
+
+  if (customerId) {
+    try {
+      const companyDoc = await db.collection("companies").doc(customerId).get();
+      if (companyDoc.exists) {
+        const companyData = companyDoc.data() || {};
+        franchiseeEmail = companyData.franchiseeEmail || companyData.customerServiceEmail || companyData.email || companyData.contactEmail || franchiseeEmail;
+        companyName = companyName || companyData.companyName || companyData.name || "Valued Customer";
+      }
+    } catch (err) {
+      console.error(`[onScheduledJobUpdated] Error fetching company ${customerId}:`, err);
+    }
+  }
+
+  const primaryRecipient = franchiseeEmail ? franchiseeEmail.trim() : "dispatcher@mailplus.com.au";
+  const ccRecipient = (franchiseeEmail && franchiseeEmail.trim().toLowerCase() !== "dispatcher@mailplus.com.au") ? "dispatcher@mailplus.com.au" : undefined;
+
+  const rawService = afterData.service || afterData.serviceName || afterData.serviceType;
+  const displayService = typeof rawService === "string" ? rawService : "Recurring Service";
+
+  const pickupStop = afterData.stops?.find((s: any) => s.type === "pickup");
+  const deliveryStop = afterData.stops?.find((s: any) => s.type === "delivery");
+  const pickupAddress = pickupStop?.address || pickupStop?.fullAddress || afterData.customer?.address || "";
+  const deliveryAddress = deliveryStop?.address || deliveryStop?.fullAddress || "";
+
+  // Helper to send email via ProspectPlus API + Nodemailer fallback
+  const sendEmailNotification = async (subject: string, htmlContent: string, eventType: string) => {
+    let sentViaApi = false;
+    try {
+      console.log(`[onScheduledJobUpdated] Sending ${eventType} email to ${primaryRecipient} (CC: ${ccRecipient || 'none'}) via ProspectPlus API...`);
+      const sendEmailRes = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+          to: primaryRecipient,
+          ...(ccRecipient ? { cc: ccRecipient } : {}),
+          replyTo: 'localmile@mailplus.com.au',
+          subject: subject,
+          html: htmlContent,
+          from: 'localmile@mailplus.com.au',
+          metadata: {
+            customerId: customerId || '',
+            scheduledJobId: scheduledJobId,
+            type: eventType
+          }
+        })
+      });
+
+      if (sendEmailRes.ok) {
+        sentViaApi = true;
+        console.log(`[onScheduledJobUpdated] Successfully sent ${eventType} email via ProspectPlus API.`);
+      } else {
+        console.error(`[onScheduledJobUpdated] ProspectPlus API send-email failed for ${eventType}:`, await sendEmailRes.text());
+      }
+    } catch (apiErr) {
+      console.error(`[onScheduledJobUpdated] Error sending ${eventType} email via ProspectPlus API:`, apiErr);
+    }
+
+    if (!sentViaApi) {
+      try {
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: "bookings@localmile.plus",
+            pass: gmailAppPassword.value(),
+          },
+        });
+
+        await transporter.sendMail({
+          from: '"LocalMile.Plus Bookings" <localmile@mailplus.com.au>',
+          to: primaryRecipient,
+          ...(ccRecipient ? { cc: [ccRecipient] } : {}),
+          replyTo: "localmile@mailplus.com.au",
+          subject: subject,
+          html: htmlContent
+        });
+        console.log(`[onScheduledJobUpdated] Email sent via direct Nodemailer fallback to ${primaryRecipient}`);
+      } catch (emailErr) {
+        console.error(`[onScheduledJobUpdated] Failed to send email via Nodemailer fallback:`, emailErr);
+      }
+    }
+
+    // Attach email log to ProspectPlus DB
+    if (customerId) {
+      try {
+        let prospectDb: admin.firestore.Firestore;
+        try {
+          prospectDb = admin.app("prospectplus").firestore();
+        } catch {
+          prospectDb = admin.initializeApp({
+            projectId: "mailplus-outbound-leads-crm"
+          }, "prospectplus").firestore();
+        }
+
+        const emailLogPayload = {
+          subject: subject,
+          bodyHtml: htmlContent,
+          sentAt: new Date().toISOString(),
+          sender: 'localmile@mailplus.com.au',
+          recipient: primaryRecipient,
+          cc: ccRecipient || '',
+          status: 'delivered',
+          type: eventType,
+          scheduledJobId: scheduledJobId,
+          companyName: companyName
+        };
+
+        const leadDoc = await prospectDb.collection("leads").doc(customerId).get();
+        if (leadDoc.exists) {
+          await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
+        } else {
+          const compDoc = await prospectDb.collection("companies").doc(customerId).get();
+          if (compDoc.exists) {
+            await prospectDb.collection("companies").doc(customerId).collection("emails").add(emailLogPayload);
+          } else {
+            await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
+          }
+        }
+      } catch (dbAttachErr) {
+        console.error(`[onScheduledJobUpdated] Error attaching ${eventType} email to ProspectPlus DB:`, dbAttachErr);
+      }
+    }
+
+    // Log local communication
+    try {
+      await logCommunication({
+        from: "bookings@localmile.plus",
+        to: ccRecipient ? [primaryRecipient, ccRecipient] : [primaryRecipient],
+        subject: subject,
+        body: htmlContent,
+        type: "sent",
+        metadata: {
+          customerId,
+          companyName,
+          scheduledJobId,
+          service: displayService,
+          franchiseeEmail: primaryRecipient,
+          eventType
+        }
+      });
+    } catch (logErr) {
+      console.error(`[onScheduledJobUpdated] Error logging local communication for ${eventType}:`, logErr);
+    }
+  };
+
+  // 1. Detect New Skipped Dates
+  const beforeSkipped = Array.isArray(beforeData.skippedDates) ? beforeData.skippedDates : [];
+  const afterSkipped = Array.isArray(afterData.skippedDates) ? afterData.skippedDates : [];
+  const newlySkippedDates = afterSkipped.filter((d: string) => !beforeSkipped.includes(d));
+
+  for (const skippedDate of newlySkippedDates) {
+    const subject = `VISIT SKIPPED: ${companyName} - ${skippedDate}`;
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2d3748; background-color: #f4f7f8; margin: 0; padding: 20px; }
+          .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+          .header { background-color: #d97706; padding: 25px; text-align: center; color: #ffffff; }
+          .header h2 { margin: 0; font-size: 22px; font-weight: 700; }
+          .content { padding: 30px; }
+          .details-card { background-color: #fffbeb; border-left: 4px solid #d97706; border-radius: 6px; padding: 18px 20px; margin: 20px 0; border-top: 1px solid #fef3c7; border-right: 1px solid #fef3c7; border-bottom: 1px solid #fef3c7; }
+          .details-table { width: 100%; border-collapse: collapse; }
+          .details-table td { padding: 8px 0; font-size: 14px; }
+          .details-table td.label { font-weight: 600; color: #4a5568; width: 40%; }
+          .details-table td.value { color: #1a202c; font-weight: 500; }
+          .footer { background-color: #f8fafb; padding: 15px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Recurring Service Visit Skipped</h2>
+          </div>
+          <div class="content">
+            <p>Hello Franchisee & Dispatch Team,</p>
+            <p>A recurring service visit has been marked as <strong>SKIPPED</strong> for <strong>${companyName}</strong>.</p>
+            
+            <div class="details-card">
+              <table class="details-table">
+                <tr>
+                  <td class="label">Company Name:</td>
+                  <td class="value"><strong>${companyName}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Service:</td>
+                  <td class="value"><strong>${displayService}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Skipped Date:</td>
+                  <td class="value"><strong style="color: #b45309;">${skippedDate}</strong></td>
+                </tr>
+                ${pickupAddress ? `<tr><td class="label">Pickup Address:</td><td class="value">${pickupAddress}</td></tr>` : ''}
+                ${deliveryAddress ? `<tr><td class="label">Delivery Address:</td><td class="value">${deliveryAddress}</td></tr>` : ''}
+                ${userEmail ? `<tr><td class="label">Customer Email:</td><td class="value">${userEmail}</td></tr>` : ''}
+              </table>
+            </div>
+
+            <p>No job dispatch will be generated on this skipped date.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; LocalMile.Plus &bull; MailPlus System Notification</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await sendEmailNotification(subject, htmlContent, "scheduled_job_skipped");
+  }
+
+  // 2. Detect Recurring Schedule Series Stopped
+  const beforeStatus = beforeData.recurrenceStatus;
+  const afterStatus = afterData.recurrenceStatus;
+
+  if (afterStatus === 'stopped' && beforeStatus !== 'stopped') {
+    const rawFrequency = afterData.frequency;
+    let daysFormatted = "N/A";
+    if (Array.isArray(rawFrequency)) {
+      daysFormatted = rawFrequency.join(", ");
+    }
+
+    const subject = `RECURRING SERVICE STOPPED: ${companyName} - ${displayService}`;
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2d3748; background-color: #f4f7f8; margin: 0; padding: 20px; }
+          .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+          .header { background-color: #dc2626; padding: 25px; text-align: center; color: #ffffff; }
+          .header h2 { margin: 0; font-size: 22px; font-weight: 700; }
+          .content { padding: 30px; }
+          .details-card { background-color: #fef2f2; border-left: 4px solid #dc2626; border-radius: 6px; padding: 18px 20px; margin: 20px 0; border-top: 1px solid #fee2e2; border-right: 1px solid #fee2e2; border-bottom: 1px solid #fee2e2; }
+          .details-table { width: 100%; border-collapse: collapse; }
+          .details-table td { padding: 8px 0; font-size: 14px; }
+          .details-table td.label { font-weight: 600; color: #4a5568; width: 40%; }
+          .details-table td.value { color: #1a202c; font-weight: 500; }
+          .footer { background-color: #f8fafb; padding: 15px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Recurring Schedule Stopped Notification</h2>
+          </div>
+          <div class="content">
+            <p>Hello Franchisee & Dispatch Team,</p>
+            <p>The recurring schedule series for <strong>${companyName}</strong> has been <strong>STOPPED</strong>. All future visits for this recurring schedule have been cancelled.</p>
+            
+            <div class="details-card">
+              <table class="details-table">
+                <tr>
+                  <td class="label">Company Name:</td>
+                  <td class="value"><strong>${companyName}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Stopped Service:</td>
+                  <td class="value"><strong>${displayService}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Original Days:</td>
+                  <td class="value"><strong>${daysFormatted}</strong></td>
+                </tr>
+                ${pickupAddress ? `<tr><td class="label">Pickup Address:</td><td class="value">${pickupAddress}</td></tr>` : ''}
+                ${deliveryAddress ? `<tr><td class="label">Delivery Address:</td><td class="value">${deliveryAddress}</td></tr>` : ''}
+                ${userEmail ? `<tr><td class="label">Customer Email:</td><td class="value">${userEmail}</td></tr>` : ''}
+              </table>
+            </div>
+
+            <p>No further automatic jobs will be dispatched for this recurring schedule series.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; LocalMile.Plus &bull; MailPlus System Notification</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await sendEmailNotification(subject, htmlContent, "scheduled_job_stopped");
+  }
+});
+
 // Logic: onJobStatusUpdated
 export const onJobStatusUpdated = onDocumentUpdated({
   document: "jobs/{jobId}",
@@ -4509,13 +4833,41 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
     }
 
     let finalScheduledService = service;
-    const isCustomerRole = req.body.userRole === 'customer' || req.body.role === 'customer' || req.body.user_role === 'customer';
+    const isCustomerRole = req.body.userRole === 'customer' || req.body.role === 'customer' || req.body.user_role === 'customer' || true;
     if (isCustomerRole) {
       if (finalScheduledService === 'site-to-lpo') {
         finalScheduledService = 'site-to-australia post';
       } else if (finalScheduledService === 'lpo-to-site') {
         finalScheduledService = 'australia post-to-site';
       }
+    }
+
+    const isAusPostService = isPMPO || isAMPO || finalScheduledService.includes('australia post') || finalScheduledService.includes('lpo');
+
+    let effectiveAuspostContact = auspostContact || null;
+    if (!effectiveAuspostContact && isAusPostService) {
+      effectiveAuspostContact = {
+        firstName: recipient?.firstName || 'Australia',
+        lastName: recipient?.lastName || 'Post',
+        phone: recipient?.phone || '13 13 18',
+        email: recipient?.email || 'no-reply@auspost.com.au'
+      };
+    }
+
+    let effectiveRecipient = recipient || null;
+    if (!effectiveRecipient && isAusPostService) {
+      effectiveRecipient = {
+        company: 'Australia Post',
+        address: parentLoc?.address || customerLoc?.address || '',
+        suburb: parentLoc?.suburb || customerLoc?.suburb || '',
+        state: parentLoc?.state || customerLoc?.state || 'NSW',
+        postcode: parentLoc?.postcode || customerLoc?.postcode || '',
+        firstName: 'Australia',
+        lastName: 'Post',
+        phone: '13 13 18',
+        email: 'no-reply@auspost.com.au',
+        coordinates: null
+      };
     }
 
     const newScheduledJob = {
@@ -4529,6 +4881,7 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       billing: billing || 'credit',
       date: startDate,
       jobType: 'scheduled',
+      userRole: req.body.userRole || req.body.role || req.body.user_role || 'customer',
       service: finalScheduledService,
       is_free_job: isTrial,
       customer: {
@@ -4543,8 +4896,8 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
         lastName: customer.lastName || '',
         coordinates: customer.coordinates || null
       },
-      recipient: recipient || null,
-      auspostContact: auspostContact || null,
+      recipient: effectiveRecipient,
+      auspostContact: effectiveAuspostContact,
       stops,
       serviceInternalId: req.body.serviceInternalId || serviceInternalId || null,
       serviceRate: req.body.serviceRate || serviceRate || null,

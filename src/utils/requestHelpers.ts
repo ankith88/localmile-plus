@@ -135,11 +135,34 @@ export const acceptJobRequest = async ({
       }
     }
 
+    const isAusPostService = scheduledService?.includes('australia post') || scheduledService?.includes('lpo');
+    const effectiveAuspostContact = requestData.auspostContact || (isAusPostService ? {
+      firstName: requestData.recipient?.firstName || 'Australia',
+      lastName: requestData.recipient?.lastName || 'Post',
+      phone: requestData.recipient?.phone || '13 13 18',
+      email: requestData.recipient?.email || 'no-reply@auspost.com.au'
+    } : null);
+
+    const effectiveRecipient = requestData.recipient || (isAusPostService ? {
+      company: 'Australia Post',
+      address: requestData.customer?.address || '',
+      suburb: requestData.customer?.suburb || '',
+      state: requestData.customer?.state || 'NSW',
+      postcode: requestData.customer?.postcode || '',
+      firstName: 'Australia',
+      lastName: 'Post',
+      phone: '13 13 18',
+      email: 'no-reply@auspost.com.au',
+      coordinates: null
+    } : null);
+
     const templateRef = await addDoc(collection(db, 'scheduled_jobs'), {
       ...requestData,
       service: scheduledService,
       parent_id: effectiveParentId,
       status: 'scheduled',
+      recipient: effectiveRecipient,
+      auspostContact: effectiveAuspostContact,
       serviceInternalId,
       serviceRate,
       createdAt: new Date(),
@@ -162,6 +185,8 @@ export const acceptJobRequest = async ({
         service: scheduledService,
         parent_id: effectiveParentId,
         status: 'scheduled',
+        recipient: effectiveRecipient,
+        auspostContact: effectiveAuspostContact,
         serviceInternalId,
         serviceRate,
         createdAt: new Date(),

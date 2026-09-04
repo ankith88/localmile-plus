@@ -2282,10 +2282,45 @@ export const generateDailyScheduledJobs = onSchedule({
           }
         }
 
+        // Determine effective serviceInternalId and serviceRate from template or company
+        let instanceServiceInternalId = template.serviceInternalId || null;
+        let instanceServiceRate = template.serviceRate || null;
+
+        if ((!instanceServiceInternalId || !instanceServiceRate) && customerId) {
+          try {
+            const compDoc = await db.collection('companies').doc(customerId).get();
+            if (compDoc.exists) {
+              const compData = compDoc.data();
+              const normSvc = (template.service || '').toLowerCase();
+              if (normSvc.includes('site-to-lpo') || normSvc.includes('site-to-australia post') || normSvc.includes('pmpo')) {
+                if (!instanceServiceInternalId) {
+                  instanceServiceInternalId = (instanceIsFree && compData?.serviceTrialInternalID)
+                    ? compData.serviceTrialInternalID
+                    : (compData?.servicePMPOInternalID || compData?.lpoServicePMPOInternalID || null);
+                }
+                if (!instanceServiceRate) {
+                  instanceServiceRate = compData?.servicePMPORate || compData?.lpoServicePMPORate || '15';
+                }
+              } else if (normSvc.includes('lpo-to-site') || normSvc.includes('australia post-to-site') || normSvc.includes('ampo')) {
+                if (!instanceServiceInternalId) {
+                  instanceServiceInternalId = compData?.serviceAMPOInternalID || compData?.lpoServiceAMPOInternalID || null;
+                }
+                if (!instanceServiceRate) {
+                  instanceServiceRate = compData?.serviceAMPORate || compData?.lpoServiceAMPORate || '15';
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`Error resolving service metadata for company ${customerId}:`, err);
+          }
+        }
+
         // Create new instance
         const newJobRef = jobsRef.doc();
         batch.set(newJobRef, {
           ...template, // Copies all fields including stops
+          serviceInternalId: instanceServiceInternalId,
+          serviceRate: instanceServiceRate,
           is_free_job: instanceIsFree,
           jobType: 'scheduled_instance',
           scheduledJobId: doc.id,
@@ -4823,13 +4858,13 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
     const trialBalance = companyData ? companyData.trial_credits_balance : 0;
     const isTrial = typeof trialBalance === 'number' && trialBalance > 0;
     if (service === 'lpo-to-site' || service === 'australia post-to-site') {
-      serviceInternalId = companyData?.serviceAMPOInternalID || '';
-      serviceRate = companyData?.serviceAMPORate || '';
+      serviceInternalId = companyData?.serviceAMPOInternalID || companyData?.lpoServiceAMPOInternalID || '';
+      serviceRate = companyData?.serviceAMPORate || companyData?.lpoServiceAMPORate || '15';
     } else if (service === 'site-to-lpo' || service === 'site-to-australia post') {
       serviceInternalId = (isTrial && companyData?.serviceTrialInternalID)
         ? companyData.serviceTrialInternalID
-        : (companyData?.servicePMPOInternalID || '');
-      serviceRate = companyData?.servicePMPORate || '';
+        : (companyData?.servicePMPOInternalID || companyData?.lpoServicePMPOInternalID || '');
+      serviceRate = companyData?.servicePMPORate || companyData?.lpoServicePMPORate || '15';
     }
 
     let finalScheduledService = service;

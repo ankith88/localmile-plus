@@ -60,9 +60,12 @@ export const getDayName = (date: Date): string => {
  */
 export const getNextOccurrences = (startDateStr: string, frequency: string[], count: number = 5): string[] => {
   const occurrences: string[] = [];
+  if (!startDateStr) return occurrences;
   
   // Ensure we handle date strings correctly across timezones
-  const [year, month, day] = startDateStr.split('-').map(Number);
+  const parts = startDateStr.split('-').map(Number);
+  if (parts.length < 3 || parts.some(isNaN)) return occurrences;
+  const [year, month, day] = parts;
   const start = startOfDay(new Date(year, month - 1, day));
   let current = start;
   

@@ -26,6 +26,7 @@ import SupportEmailModal from '../../components/SupportEmailModal';
 import { useLpo } from '../../context/LpoContext';
 import { getNextOccurrences, parseLocalDate } from '../../utils/scheduling';
 import CustomSelect from '../../components/CustomSelect';
+import CustomDatePicker from '../../components/CustomDatePicker';
 import { getDisplayServiceName } from '../../utils/serviceHelpers';
 
 const Schedules: React.FC = () => {
@@ -257,6 +258,26 @@ const Schedules: React.FC = () => {
     }
   };
 
+  const handleUpdateStartDate = async (jobId: string, newStartDate: string) => {
+    if (!newStartDate) return;
+    try {
+      await updateDoc(doc(db, 'scheduled_jobs', jobId), {
+        date: newStartDate
+      });
+      const updated = schedules.map(s => s.id === jobId ? { ...s, date: newStartDate } : s);
+      setSchedules(updated);
+      if (selectedSchedule?.id === jobId) {
+        setSelectedSchedule({ ...selectedSchedule, date: newStartDate });
+      }
+      const parts = newStartDate.split('-').map(Number);
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        setCurrentMonth(new Date(parts[0], parts[1] - 1, 1));
+      }
+    } catch (e) {
+      console.error("Error updating start date:", e);
+    }
+  };
+
   const getItemUserRole = (item: any): 'customer' | 'parent' => {
     if (item.userRole) {
       if (item.userRole === 'customer') return 'customer';
@@ -327,7 +348,7 @@ const Schedules: React.FC = () => {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dayName = dayNames[checkDate.getDay()];
         
-        if (s.date <= dateStr && s.frequency?.includes(dayName)) {
+        if (s.date && s.date <= dateStr && s.frequency?.includes(dayName)) {
           results.push({ ...s, date: dateStr });
         }
       }
@@ -587,10 +608,14 @@ const Schedules: React.FC = () => {
                               </div>
                             );
                           })()}
-                          <div className="meta-pill">
-                             <RotateCcw size={12} />
-                             <span>{schedule.billing}</span>
-                          </div>
+                           <div className="meta-pill">
+                              <RotateCcw size={12} />
+                              <span>{schedule.billing}</span>
+                           </div>
+                           <div className="meta-pill">
+                              <Calendar size={12} />
+                              <span>Starts: {schedule.date ? parseLocalDate(schedule.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                           </div>
                           <div 
                             className="job-ref interactive" 
                             onClick={(e) => {
@@ -652,6 +677,38 @@ const Schedules: React.FC = () => {
                   <MapPin size={12} />
                   <span>{selectedSchedule.customer.address}, {selectedSchedule.customer.suburb}</span>
                 </div>
+              </div>
+
+              <div className="mgmt-section">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label className="m-label" style={{ margin: 0 }}>Start Date</label>
+                  {isAdmin && (
+                    <span style={{ fontSize: '0.65rem', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', background: 'rgba(234, 240, 68, 0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+                      Admin Editable
+                    </span>
+                  )}
+                </div>
+                {isAdmin ? (
+                  <div style={{ marginTop: '8px' }}>
+                    <CustomDatePicker 
+                      value={selectedSchedule.date || ''}
+                      onChange={(newDate) => {
+                        if (newDate) {
+                          handleUpdateStartDate(selectedSchedule.id, newDate);
+                        }
+                      }}
+                      placeholder="Select start date"
+                    />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--ink-soft)', marginTop: '4px', display: 'block' }}>
+                      Changing the start date updates the recurring schedule start and recalculates calendar projections.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="m-start-date-display" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'white', border: '1px solid var(--cream-warm)', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '700', color: 'var(--ink)' }}>
+                    <Calendar size={16} />
+                    <span>{selectedSchedule.date ? parseLocalDate(selectedSchedule.date).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'Not set'}</span>
+                  </div>
+                )}
               </div>
 
               <div className="mgmt-section">

@@ -1417,13 +1417,9 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
       const stops = generateStops(formData, parent || customer);
 
       let finalService = formData.service;
-      const checkAusPost = userData?.role === 'customer' 
-        ? (recipientData?.company?.toLowerCase().includes('australia post') || isAusPostPrefilled)
-        : (parent?.name?.toLowerCase().includes('australia post') || !!formData.auspostContact);
-
-      if (formData.service === 'site-to-lpo' && (userData?.role === 'customer' || checkAusPost)) {
+      if (formData.service === 'site-to-lpo') {
           finalService = 'site-to-australia post';
-      } else if (formData.service === 'lpo-to-site' && (userData?.role === 'customer' || checkAusPost)) {
+      } else if (formData.service === 'lpo-to-site') {
           finalService = 'australia post-to-site';
       }
 

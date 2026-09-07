@@ -1,7 +1,11 @@
 import * as admin from 'firebase-admin';
 
 // Initialize Firebase Admin
-admin.initializeApp();
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: 'localmile-plus'
+  });
+}
 const db = admin.firestore();
 
 async function updateScheduledJobsFreeStatus() {
@@ -64,26 +68,40 @@ async function updateScheduledJobsFreeStatus() {
       console.error(`Error fetching company ${customerId}:`, err);
     }
 
-    // 3. If trial credits balance <= 0 and job is currently marked free, update to false
+    // 3. If trial credits balance <= 0, verify free status and service IDs
     const isCurrentlyFree = template.is_free_job === true || template.is_free_job === 'true';
+    const usesTrialId = Boolean(
+      companyData?.serviceTrialInternalID && (
+        template.serviceInternalId === companyData.serviceTrialInternalID ||
+        template.servicePMPOInternalID === companyData.serviceTrialInternalID
+      )
+    );
 
     if (trialBalance <= 0) {
-      if (isCurrentlyFree) {
-        const updateData: any = {
-          is_free_job: false
-        };
+      if (isCurrentlyFree || usesTrialId) {
+        const updateData: any = {};
+        if (isCurrentlyFree) {
+          updateData.is_free_job = false;
+        }
 
         // If it was using trial service ID, revert to standard service ID
-        if (companyData && companyData.servicePMPOInternalID && template.serviceInternalId === companyData.serviceTrialInternalID) {
-          updateData.serviceInternalId = companyData.servicePMPOInternalID;
+        if (companyData && companyData.servicePMPOInternalID) {
+          if (template.serviceInternalId === companyData.serviceTrialInternalID || !template.serviceInternalId) {
+            updateData.serviceInternalId = companyData.servicePMPOInternalID;
+          }
+          if (template.servicePMPOInternalID === companyData.serviceTrialInternalID) {
+            updateData.servicePMPOInternalID = companyData.servicePMPOInternalID;
+          }
           if (companyData.servicePMPORate) {
             updateData.serviceRate = companyData.servicePMPORate;
           }
         }
 
-        await scheduledJobsRef.doc(doc.id).update(updateData);
-        console.log(`Updated scheduled job template ${doc.id} for customer ${customerId}: set is_free_job = false.`);
-        updatedCount++;
+        if (Object.keys(updateData).length > 0) {
+          await scheduledJobsRef.doc(doc.id).update(updateData);
+          console.log(`Updated scheduled job template ${doc.id} for customer ${customerId}:`, updateData);
+          updatedCount++;
+        }
       }
     } else {
       skippedActiveTrialCount++;

@@ -1573,6 +1573,160 @@ async function activateRequestsForCustomer(newData: any, oldData: any) {
   }
 }
 
+
+/**
+ * Helper to clean up (cancel) all scheduled jobs, pending requests, and future/today jobs
+ * when a company's LocalMile access has been removed / cancelled / deactivated.
+ */
+export async function cleanupJobsAndSchedulesForCancelledCompany(
+  db: admin.firestore.Firestore,
+  companyId: string,
+  reason: string = "Company LocalMile access removed"
+) {
+  if (!companyId) return;
+  const companyIdStr = String(companyId).trim();
+  if (!companyIdStr) return;
+
+  console.log(`[cleanupJobsAndSchedulesForCancelledCompany] Starting cleanup for company: ${companyIdStr} (Reason: ${reason})`);
+
+  const now = new Date();
+  const sydneyFormatter = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const parts = sydneyFormatter.formatToParts(now);
+  let year = '', month = '', day = '';
+  for (const part of parts) {
+    if (part.type === 'year') year = part.value;
+    if (part.type === 'month') month = part.value;
+    if (part.type === 'day') day = part.value;
+  }
+  const todayStr = `${year}-${month}-${day}`;
+
+  const batch = db.batch();
+  let ops = 0;
+
+  try {
+    // 1. Cancel active scheduled_jobs templates (by customer_id or parent_id)
+    const schedQueries = [
+      db.collection('scheduled_jobs').where('customer_id', '==', companyIdStr).where('status', 'in', ['accepted', 'scheduled', 'active']),
+      db.collection('scheduled_jobs').where('parent_id', '==', companyIdStr).where('status', 'in', ['accepted', 'scheduled', 'active']),
+    ];
+
+    const schedProcessed = new Set<string>();
+    for (const q of schedQueries) {
+      const snap = await q.get();
+      for (const doc of snap.docs) {
+        if (!schedProcessed.has(doc.id)) {
+          schedProcessed.add(doc.id);
+          batch.update(doc.ref, {
+            status: 'cancelled',
+            recurrenceStatus: 'stopped',
+            cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+            cancelledBy: 'system_access_revoked',
+            cancellationReason: reason
+          });
+          ops++;
+        }
+      }
+    }
+
+    // 2. Cancel pending requests (by customer_id, netsuiteCustomerId, or parent_id)
+    const reqQueries = [
+      db.collection('requests').where('customer_id', '==', companyIdStr).where('status', 'in', ['pending', 'awaiting-activation']),
+      db.collection('requests').where('netsuiteCustomerId', '==', companyIdStr).where('status', 'in', ['pending', 'awaiting-activation']),
+      db.collection('requests').where('parent_id', '==', companyIdStr).where('status', 'in', ['pending', 'awaiting-activation']),
+    ];
+
+    const reqProcessed = new Set<string>();
+    for (const q of reqQueries) {
+      const snap = await q.get();
+      for (const doc of snap.docs) {
+        if (!reqProcessed.has(doc.id)) {
+          reqProcessed.add(doc.id);
+          batch.update(doc.ref, {
+            status: 'cancelled',
+            cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+            cancelledBy: 'system_access_revoked',
+            cancellationReason: reason
+          });
+          ops++;
+        }
+      }
+    }
+
+    // 3. Cancel future or today's jobs (by customer_id or parent_id)
+    const jobQueries = [
+      db.collection('jobs').where('customer_id', '==', companyIdStr).where('status', 'in', ['scheduled', 'pending', 'accepted']),
+      db.collection('jobs').where('parent_id', '==', companyIdStr).where('status', 'in', ['scheduled', 'pending', 'accepted']),
+    ];
+
+    const jobProcessed = new Set<string>();
+    for (const q of jobQueries) {
+      const snap = await q.get();
+      for (const doc of snap.docs) {
+        const jData = doc.data();
+        // Only cancel if date is today or in the future
+        if (jData.date >= todayStr && !jobProcessed.has(doc.id)) {
+          jobProcessed.add(doc.id);
+          batch.update(doc.ref, {
+            status: 'cancelled',
+            cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+            cancelledBy: 'system_access_revoked',
+            cancelReason: reason
+          });
+          ops++;
+        }
+      }
+    }
+
+    if (ops > 0) {
+      await batch.commit();
+      console.log(`[cleanupJobsAndSchedulesForCancelledCompany] Successfully cancelled ${schedProcessed.size} scheduled templates, ${reqProcessed.size} requests, and ${jobProcessed.size} jobs for company ${companyIdStr}`);
+    } else {
+      console.log(`[cleanupJobsAndSchedulesForCancelledCompany] No active jobs, requests, or schedules found to cancel for company ${companyIdStr}`);
+    }
+  } catch (err) {
+    console.error(`[cleanupJobsAndSchedulesForCancelledCompany] Error cleaning up company ${companyIdStr}:`, err);
+  }
+}
+
+/**
+ * Check if a company has had its LocalMile access removed / cancelled / deactivated.
+ */
+export async function isCompanyLocalMileAccessRevoked(
+  db: admin.firestore.Firestore,
+  companyId: string
+): Promise<{ isRevoked: boolean; reason?: string }> {
+  if (!companyId || companyId === 'test_standalone_customer') {
+    return { isRevoked: false };
+  }
+
+  try {
+    const compDoc = await db.collection('companies').doc(String(companyId)).get();
+    if (compDoc.exists) {
+      const compData = compDoc.data();
+      const status = (compData?.status || compData?.customerStatus || '').toString().toLowerCase().trim();
+      if (
+        status === 'cancelled' ||
+        status === 'deactivated' ||
+        status === 'inactive' ||
+        status === 'disabled' ||
+        status === 'lost' ||
+        compData?.deactivatedAt != null
+      ) {
+        return { isRevoked: true, reason: `Company status is '${status || 'deactivated'}'` };
+      }
+    }
+  } catch (err) {
+    console.error(`[isCompanyLocalMileAccessRevoked] Error checking company ${companyId}:`, err);
+  }
+
+  return { isRevoked: false };
+}
+
 // Logic: onCustomerActive (LPO Subcollection)
 export const onCustomerActive = onDocumentUpdated({
   document: "companies/{parentId}/customers/{customerId}",
@@ -1600,6 +1754,9 @@ async function handleCustomerCancellation(newData: any, oldData: any, customerId
     console.log(`[Customer Cancellation] Triggered for ${newData.companyName} (${customerId})`);
 
     const db = getDB();
+
+    // Clean up all scheduled jobs, pending requests, and future jobs for this cancelled customer
+    await cleanupJobsAndSchedulesForCancelledCompany(db, customerId, newData.cancellationReason || "Customer status marked cancelled");
 
     // Get Parent Name
     let parentName = "Independent Customer";
@@ -1716,6 +1873,29 @@ export const onIndependentCustomerCancelled = onDocumentUpdated({
   const { customerId } = event.params;
   if (!newData || !oldData) return;
   await handleCustomerCancellation(newData, oldData, customerId, undefined, gmailAppPassword);
+});
+
+// Logic: onCompanyUpdated (Monitor company status change to cancelled/deactivated/inactive)
+export const onCompanyUpdated = onDocumentUpdated({
+  document: "companies/{companyId}",
+  database: "(default)",
+}, async (event) => {
+  const newData = event.data?.after.data();
+  const oldData = event.data?.before.data();
+  const { companyId } = event.params;
+  if (!newData || !oldData) return;
+
+  const newStatus = (newData.status || newData.customerStatus || "").toString().toLowerCase().trim();
+  const oldStatus = (oldData.status || oldData.customerStatus || "").toString().toLowerCase().trim();
+
+  const isCancelledNow = newStatus === "cancelled" || newStatus === "deactivated" || newStatus === "inactive" || newStatus === "lost" || newData.deactivatedAt != null;
+  const wasCancelledBefore = oldStatus === "cancelled" || oldStatus === "deactivated" || oldStatus === "inactive" || oldStatus === "lost" || oldData.deactivatedAt != null;
+
+  if (isCancelledNow && !wasCancelledBefore) {
+    console.log(`[onCompanyUpdated] Company ${companyId} status changed from '${oldStatus}' to '${newStatus}'. Cleaning up jobs and schedules...`);
+    const db = getDB();
+    await cleanupJobsAndSchedulesForCancelledCompany(db, companyId, `Company status updated to '${newStatus || 'cancelled'}'`);
+  }
 });
 
 // Logic: sendEmailFromNetSuite (NetSuite API)
@@ -2164,6 +2344,57 @@ export const updateJobStatus = onRequest({
   });
 });
 
+// Helpers for checking customer overdue invoices (> 7 days old & unpaid)
+function parseInvoiceDate(dateVal: any): Date | null {
+  if (!dateVal) return null;
+  if (typeof dateVal.toDate === 'function') {
+    return dateVal.toDate();
+  }
+  if (typeof dateVal === 'number') {
+    return new Date(dateVal);
+  }
+  if (typeof dateVal === 'string') {
+    const match = dateVal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+    }
+    const d = new Date(dateVal);
+    if (!isNaN(d.getTime())) {
+      return d;
+    }
+  }
+  return null;
+}
+
+async function checkCompanyOverdueInvoices(
+  db: admin.firestore.Firestore,
+  companyId: string
+): Promise<{ isOverdue: boolean; invoiceNum?: string }> {
+  if (!companyId || companyId === 'test_standalone_customer') {
+    return { isOverdue: false };
+  }
+  try {
+    const invoicesSnap = await db.collection(`companies/${companyId}/invoices`).get();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    for (const docSnap of invoicesSnap.docs) {
+      const data = docSnap.data();
+      const status = data.status || '';
+      const isPaid = status.toLowerCase() === 'paid in full' || status.toLowerCase() === 'paid';
+      if (!isPaid) {
+        const invoiceDate = parseInvoiceDate(data.date);
+        if (invoiceDate && invoiceDate < sevenDaysAgo) {
+          return { isOverdue: true, invoiceNum: data.invoiceNum || docSnap.id };
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[checkCompanyOverdueInvoices] Error checking invoices for company ${companyId}:`, err);
+  }
+  return { isOverdue: false };
+}
+
 // Logic: generateDailyScheduledJobs
 export const generateDailyScheduledJobs = onSchedule({
   schedule: "5 5 * * *", // 5:05 AM every day
@@ -2214,6 +2445,8 @@ export const generateDailyScheduledJobs = onSchedule({
 
   const batch = db.batch();
   let operationsInBatch = 0;
+  const overdueInvoiceCache = new Map<string, { isOverdue: boolean; invoiceNum?: string }>();
+  const companyAccessCache = new Map<string, { isRevoked: boolean; reason?: string }>();
 
   for (const doc of snapshot.docs) {
     const template = doc.data();
@@ -2228,6 +2461,21 @@ export const generateDailyScheduledJobs = onSchedule({
     // Check if today matches the frequency
     if (template.frequency && Array.isArray(template.frequency) && template.frequency.includes(todayDayName)) {
 
+      // Check if access to LocalMile for this company has been revoked/cancelled
+      const companyIdForAccessCheck = template.customer_id || template.customer?.netsuiteId || template.customer?.id || template.parent_id;
+      if (companyIdForAccessCheck && companyIdForAccessCheck !== 'test_standalone_customer') {
+        let accessStatus = companyAccessCache.get(companyIdForAccessCheck);
+        if (!accessStatus) {
+          accessStatus = await isCompanyLocalMileAccessRevoked(db, companyIdForAccessCheck);
+          companyAccessCache.set(companyIdForAccessCheck, accessStatus);
+        }
+        if (accessStatus.isRevoked) {
+          console.log(`[generateDailyScheduledJobs] Skipping and cleaning up scheduled job template ${doc.id} for company ${companyIdForAccessCheck}: ${accessStatus.reason}`);
+          await cleanupJobsAndSchedulesForCancelledCompany(db, companyIdForAccessCheck, accessStatus.reason);
+          continue;
+        }
+      }
+
       // Avoid duplicate generation for this exact template + date
       const existingInstances = await jobsRef
         .where('scheduledJobId', '==', doc.id)
@@ -2235,6 +2483,20 @@ export const generateDailyScheduledJobs = onSchedule({
         .get();
 
       if (existingInstances.empty) {
+        // Check for unpaid overdue invoice (>7 days old) for this company
+        const companyIdForInvoiceCheck = template.customer_id || template.customer?.netsuiteId || template.customer?.id || template.parent_id;
+        if (companyIdForInvoiceCheck && companyIdForInvoiceCheck !== 'test_standalone_customer') {
+          let overdueStatus = overdueInvoiceCache.get(companyIdForInvoiceCheck);
+          if (!overdueStatus) {
+            overdueStatus = await checkCompanyOverdueInvoices(db, companyIdForInvoiceCheck);
+            overdueInvoiceCache.set(companyIdForInvoiceCheck, overdueStatus);
+          }
+          if (overdueStatus.isOverdue) {
+            console.log(`[generateDailyScheduledJobs] Skipping scheduled job template ${doc.id} for company ${companyIdForInvoiceCheck} due to unpaid overdue invoice #${overdueStatus.invoiceNum || 'N/A'}`);
+            continue;
+          }
+        }
+
         let instanceIsFree = template.is_free_job;
         const customerId = template.customer_id;
 
@@ -2269,11 +2531,19 @@ export const generateDailyScheduledJobs = onSchedule({
                 // If template was marked free previously, update template doc to false
                 if (template.is_free_job === true || template.is_free_job === 'true') {
                   const tUpdate: any = { is_free_job: false };
-                  if (compData?.servicePMPOInternalID && template.serviceInternalId === compData.serviceTrialInternalID) {
-                    tUpdate.serviceInternalId = compData.servicePMPOInternalID;
-                    if (compData.servicePMPORate) tUpdate.serviceRate = compData.servicePMPORate;
+                  if (compData?.servicePMPOInternalID) {
+                    if (template.serviceInternalId === compData.serviceTrialInternalID || !template.serviceInternalId) {
+                      tUpdate.serviceInternalId = compData.servicePMPOInternalID;
+                    }
+                    if (template.servicePMPOInternalID === compData.serviceTrialInternalID) {
+                      tUpdate.servicePMPOInternalID = compData.servicePMPOInternalID;
+                    }
+                    if (compData.servicePMPORate) {
+                      tUpdate.serviceRate = compData.servicePMPORate;
+                    }
                   }
                   await scheduledJobsRef.doc(doc.id).update(tUpdate);
+                  Object.assign(template, tUpdate);
                 }
               }
             }
@@ -2351,6 +2621,38 @@ export const generateDailyScheduledJobs = onSchedule({
   }
 
   console.log(`Generated ${generatedCount} daily scheduled jobs for ${todayStr}`);
+
+  // Safeguard: Check all jobs scheduled for today and cancel any whose company access has been revoked
+  try {
+    const todayJobsSnap = await jobsRef
+      .where('date', '==', todayStr)
+      .where('status', 'in', ['scheduled', 'pending'])
+      .get();
+
+    for (const jobDoc of todayJobsSnap.docs) {
+      const jData = jobDoc.data();
+      const compId = jData.customer_id || jData.customer?.netsuiteId || jData.customer?.id || jData.parent_id;
+      if (compId && compId !== 'test_standalone_customer') {
+        let accessStatus = companyAccessCache.get(compId);
+        if (!accessStatus) {
+          accessStatus = await isCompanyLocalMileAccessRevoked(db, compId);
+          companyAccessCache.set(compId, accessStatus);
+        }
+        if (accessStatus.isRevoked) {
+          console.log(`[generateDailyScheduledJobs] Cancelling job instance ${jobDoc.id} for company ${compId}: ${accessStatus.reason}`);
+          await jobDoc.ref.update({
+            status: 'cancelled',
+            cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+            cancelledBy: 'system_access_revoked',
+            cancelReason: accessStatus.reason || 'Company LocalMile access removed'
+          });
+          await cleanupJobsAndSchedulesForCancelledCompany(db, compId, accessStatus.reason);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[generateDailyScheduledJobs] Error checking today's jobs for cancelled company access:`, err);
+  }
 });
 
 // Logic: sendSupportEmail
@@ -5511,6 +5813,9 @@ export const deactivateExternalUserAccount = onRequest({
         deactivatedAt: new Date().toISOString(),
       }, { merge: true });
       console.log(`[deactivateExternalUserAccount] Updated company status to cancelled for customer_id: ${targetLeadId}`);
+
+      // Clean up all scheduled jobs, pending requests, and future jobs for this deactivated company
+      await cleanupJobsAndSchedulesForCancelledCompany(db, String(targetLeadId), "LocalMile account deactivated");
     }
 
     res.status(200).json({

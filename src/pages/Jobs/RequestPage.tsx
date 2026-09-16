@@ -42,7 +42,7 @@ import { acceptJobRequest } from '../../utils/requestHelpers';
 
 const RequestPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { parent, userData, loading: parentLoading, companyData, isAdmin } = useLpo();
+  const { parent, userData, loading: parentLoading, companyData } = useLpo();
   const [request, setRequest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
@@ -67,7 +67,7 @@ const RequestPage: React.FC = () => {
   const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
   const [proposedTime, setProposedTime] = useState('');
 
-  // Identity: If userData exists, person is the Customer (Logged in user).
+  // Identity: If userData exists, person is an Authenticated User (Customer/Parent).
   // Otherwise, they are a Franchisee Owner (Not logged in).
   const isCustomerUser = !!userData;
   const isFranchiseeOwner = !userData;
@@ -327,13 +327,38 @@ const RequestPage: React.FC = () => {
     }
   };
 
+  const handleAcceptProposedTime = async () => {
+    if (!request || !id) return;
+    const timeDisplay = request.preferredTime ? ` (${request.preferredTime})` : '';
+    if (window.confirm(`Accept the proposed Ready From time${timeDisplay}?`)) {
+      try {
+        const sysMessage = {
+          id: Date.now().toString(),
+          sender: 'system',
+          text: `Customer accepted the proposed 'Ready From' time: ${request.preferredTime || 'N/A'}`,
+          timestamp: new Date().toISOString()
+        };
+
+        await updateDoc(doc(db, 'requests', id), {
+          status: 'pending',
+          timeAcceptedAt: new Date().toISOString(),
+          chat: arrayUnion(sysMessage)
+        });
+
+        alert("Proposed time accepted. The request is now pending operator acceptance.");
+      } catch (err) {
+        console.error("Error accepting proposed time:", err);
+        alert("Failed to accept proposed time. Please try again.");
+      }
+    }
+  };
+
   const handleAccept = async () => {
     if (!request) return;
-    if (!isAdmin) {
-      alert("Only admin and super admin users can accept job requests.");
+    if (isParentUser) {
+      alert("Authenticated users cannot accept the job request directly.");
       return;
     }
-    if (isParentUser && !parent) return;
 
     const parentId = parent?.id || request.parent_id || "";
 
@@ -870,6 +895,14 @@ const RequestPage: React.FC = () => {
                   </div>
                 </div>
               )}
+              {request.status === 'new-time-proposed' && (
+                <div className="tc-banner fade-in" style={{ background: '#e0f2fe', borderColor: '#7dd3fc' }}>
+                  <div className="tc-icon" style={{ color: '#0369a1' }}><Clock size={16} /></div>
+                  <div className="tc-text" style={{ color: '#0369a1' }}>
+                    <strong>New Time Proposed ({request.preferredTime}):</strong> {isParentUser ? 'The operator has suggested a new ready from time. You can accept it above or coordinate in chat.' : 'Waiting for the customer to review the proposed time.'}
+                  </div>
+                </div>
+              )}
            </div>
            
            {(request.status === 'pending' || request.status === 'new-time-proposed' || request.status === 'awaiting-activation') && (
@@ -879,6 +912,14 @@ const RequestPage: React.FC = () => {
                    <button className="btn-reject" onClick={handleCancelRequest}>
                      <XCircle size={18} /> CANCEL REQUEST
                    </button>
+                   {request.status === 'new-time-proposed' && (
+                     <button className="btn-accept shadow-teal" onClick={handleAcceptProposedTime}>
+                       <div className="accept-content">
+                         <CheckCircle2 size={18} /> 
+                         <span>ACCEPT PROPOSED TIME</span>
+                       </div>
+                     </button>
+                   )}
                  </>
                ) : (
                  <>
@@ -888,21 +929,19 @@ const RequestPage: React.FC = () => {
                    <button className="btn-propose" onClick={() => setIsTimeModalOpen(true)}>
                      <Clock size={18} /> PROPOSE NEW TIME
                    </button>
-                   {isAdmin && (
-                      <button 
-                        className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
-                        onClick={handleAccept}
-                        title={request.status === 'awaiting-activation' ? "Awaiting Customer T&C Activation" : ""}
-                      >
-                        <div className="accept-content">
-                          <CheckCircle2 size={18} /> 
-                          <span>ACCEPT JOB</span>
-                        </div>
-                        {request.preferredTime && (
-                          <div className="btn-badge">Time Priority</div>
-                        )}
-                      </button>
-                    )}
+                   <button 
+                     className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
+                     onClick={handleAccept}
+                     title={request.status === 'awaiting-activation' ? "Awaiting Customer T&C Activation" : ""}
+                   >
+                     <div className="accept-content">
+                       <CheckCircle2 size={18} /> 
+                       <span>ACCEPT JOB</span>
+                     </div>
+                     {request.preferredTime && (
+                       <div className="btn-badge">Time Priority</div>
+                     )}
+                   </button>
                  </>
                )}
              </div>
@@ -1270,9 +1309,15 @@ const RequestPage: React.FC = () => {
           <div className="actions-container">
             {isParentUser ? (
               <>
-                <button className="btn-reject" style={{ width: '100%' }} onClick={handleCancelRequest}>
+                <button className="btn-reject" style={{ width: request.status === 'new-time-proposed' ? 'auto' : '100%' }} onClick={handleCancelRequest}>
                   <XCircle size={18} /> CANCEL REQUEST
                 </button>
+                {request.status === 'new-time-proposed' && (
+                  <button className="btn-accept shadow-teal" onClick={handleAcceptProposedTime}>
+                    <CheckCircle2 size={18} /> 
+                    <span>ACCEPT TIME</span>
+                  </button>
+                )}
               </>
             ) : (
               <>
@@ -1282,15 +1327,13 @@ const RequestPage: React.FC = () => {
                 <button className="btn-propose-mobile" onClick={() => setIsTimeModalOpen(true)}>
                   <Clock size={18} /> PROPOSE TIME
                 </button>
-                {isAdmin && (
-                  <button 
-                    className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
-                    onClick={handleAccept}
-                  >
-                    <CheckCircle2 size={18} /> 
-                    <span>ACCEPT</span>
-                  </button>
-                )}
+                <button 
+                  className={`btn-accept ${request.status === 'awaiting-activation' ? 'disabled' : 'shadow-teal'}`} 
+                  onClick={handleAccept}
+                >
+                  <CheckCircle2 size={18} /> 
+                  <span>ACCEPT</span>
+                </button>
               </>
             )}
           </div>

@@ -1901,6 +1901,9 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
               try {
                 await fetch(fullUrl2650, { mode: 'no-cors' });
                 console.log("NetSuite Script 2650 dispatched.");
+                await updateDoc(doc(db, 'jobs', directJobId), {
+                  syncedWithNetSuite: true
+                });
               } catch (fetchErr) {
                 console.error("NetSuite Script 2650 error:", fetchErr);
               }

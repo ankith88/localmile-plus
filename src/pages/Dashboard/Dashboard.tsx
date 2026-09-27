@@ -42,6 +42,7 @@ import CustomDatePicker from '../../components/CustomDatePicker';
 import CustomSelect from '../../components/CustomSelect';
 import { getDisplayServiceName } from '../../utils/serviceHelpers';
 import { acceptJobRequest } from '../../utils/requestHelpers';
+import { syncJobWithNetSuite } from '../../utils/netsuiteSync';
 
 
 const Dashboard: React.FC = () => {
@@ -86,6 +87,8 @@ const Dashboard: React.FC = () => {
   const [bulkAcceptStatus, setBulkAcceptStatus] = useState('');
   const [isBulkUpdateDateModalOpen, setIsBulkUpdateDateModalOpen] = useState(false);
   const [isBulkUpdatingDate, setIsBulkUpdatingDate] = useState(false);
+  const [syncingJobIds, setSyncingJobIds] = useState<Set<string>>(new Set());
+  const [isBulkSyncing, setIsBulkSyncing] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -854,6 +857,78 @@ const Dashboard: React.FC = () => {
 
 
 
+  const handleManualNetSuiteSync = async (job: any) => {
+    if (!isAdmin) {
+      alert("Only admins and superadmins can sync jobs with NetSuite.");
+      return;
+    }
+    setSyncingJobIds(prev => new Set(prev).add(job.id));
+    try {
+      const res = await syncJobWithNetSuite(job, userData);
+      if (res.success) {
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, syncedWithNetSuite: true } : j));
+        alert(`Job ${job.id} successfully synced with NetSuite!`);
+      } else {
+        alert(res.message || "Failed to sync job with NetSuite.");
+      }
+    } catch (err: any) {
+      console.error("Manual NetSuite Sync Error:", err);
+      alert(err?.message || "Failed to sync job with NetSuite.");
+    } finally {
+      setSyncingJobIds(prev => {
+        const next = new Set(prev);
+        next.delete(job.id);
+        return next;
+      });
+    }
+  };
+
+  const handleBulkNetSuiteSync = async () => {
+    if (!isAdmin) {
+      alert("Only admins and superadmins can sync jobs with NetSuite.");
+      return;
+    }
+    const selectedJobsList = jobs.filter(j => selectedJobIds.has(j.id) && j.syncedWithNetSuite !== true);
+    if (selectedJobsList.length === 0) {
+      alert("None of the selected items are unsynced jobs.");
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to sync ${selectedJobsList.length} unsynced job(s) with NetSuite?`)) {
+      return;
+    }
+
+    setIsBulkSyncing(true);
+    let successCount = 0;
+    let failCount = 0;
+    const syncedIds = new Set<string>();
+
+    for (const job of selectedJobsList) {
+      setSyncingJobIds(prev => new Set(prev).add(job.id));
+      try {
+        const res = await syncJobWithNetSuite(job, userData);
+        if (res.success) {
+          successCount++;
+          syncedIds.add(job.id);
+        } else {
+          failCount++;
+        }
+      } catch (err) {
+        failCount++;
+      } finally {
+        setSyncingJobIds(prev => {
+          const next = new Set(prev);
+          next.delete(job.id);
+          return next;
+        });
+      }
+    }
+
+    setJobs(prev => prev.map(j => syncedIds.has(j.id) ? { ...j, syncedWithNetSuite: true } : j));
+    setIsBulkSyncing(false);
+    alert(`Bulk NetSuite sync finished: ${successCount} job(s) synced successfully.${failCount > 0 ? ` (${failCount} failed)` : ''}`);
+  };
+
   const handleEditRequest = (request: any) => {
     localStorage.setItem('edit_request_draft', JSON.stringify(request));
     handleBookJob(`/new-job?edit=true&id=${request.id}`);
@@ -1163,6 +1238,30 @@ const Dashboard: React.FC = () => {
                             <span>Update Start Date ({selectedJobIds.size})</span>
                           </button>
                         </>
+                      )}
+                      {activeTab !== 'pending' && (
+                        <button 
+                          onClick={handleBulkNetSuiteSync}
+                          disabled={isBulkSyncing || isBulkDeleting}
+                          style={{
+                            background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '10px',
+                            padding: '8px 16px',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            cursor: isBulkSyncing ? 'wait' : 'pointer',
+                            boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+                            opacity: isBulkSyncing ? 0.8 : 1
+                          }}
+                        >
+                          <RefreshCw size={16} className={isBulkSyncing ? 'spin' : ''} />
+                          <span>{isBulkSyncing ? 'Syncing...' : `Sync NetSuite (${selectedJobIds.size})`}</span>
+                        </button>
                       )}
                      <button 
                        onClick={handleBulkDelete}
@@ -1505,6 +1604,45 @@ const Dashboard: React.FC = () => {
                                       <span>{job.billing}</span>
                                    </div>
                                    )}
+                                   {isAdmin && activeTab !== 'pending' && (
+                                     job.syncedWithNetSuite === true ? (
+                                       <div 
+                                         className="meta-pill synced-pill" 
+                                         style={{ background: 'rgba(16, 185, 129, 0.08)', color: '#059669', border: '1px solid rgba(16, 185, 129, 0.25)', display: 'inline-flex', alignItems: 'center', gap: '4px' }} 
+                                         title="Synced with NetSuite"
+                                       >
+                                         <CheckCircle2 size={12} />
+                                         <span>NetSuite Synced</span>
+                                       </div>
+                                     ) : (
+                                       <button
+                                         className="meta-pill unsynced-btn"
+                                         onClick={(e) => {
+                                           e.stopPropagation();
+                                           handleManualNetSuiteSync(job);
+                                         }}
+                                         disabled={syncingJobIds.has(job.id)}
+                                         style={{
+                                           background: 'rgba(245, 158, 11, 0.12)',
+                                           color: '#d97706',
+                                           border: '1px solid rgba(245, 158, 11, 0.3)',
+                                           cursor: syncingJobIds.has(job.id) ? 'wait' : 'pointer',
+                                           fontWeight: 600,
+                                           display: 'inline-flex',
+                                           alignItems: 'center',
+                                           gap: '5px',
+                                           padding: '3px 8px',
+                                           borderRadius: '6px',
+                                           fontSize: '0.75rem',
+                                           transition: 'all 0.2s ease'
+                                         }}
+                                         title="Job not synced with NetSuite yet. Click to sync now."
+                                       >
+                                         <RefreshCw size={12} className={syncingJobIds.has(job.id) ? 'spin' : ''} />
+                                         <span>{syncingJobIds.has(job.id) ? 'Syncing...' : 'Sync NetSuite'}</span>
+                                       </button>
+                                     )
+                                   )}
                                     <div 
                                       className="job-ref interactive" 
                                       onClick={(e) => {
@@ -1566,6 +1704,16 @@ const Dashboard: React.FC = () => {
                                                </>
                                              ) : (
                                                <>
+                                                 {isAdmin && job.syncedWithNetSuite !== true && (
+                                                   <button 
+                                                     onClick={() => handleManualNetSuiteSync(job)}
+                                                     style={{ color: '#d97706', fontWeight: 600 }}
+                                                     disabled={syncingJobIds.has(job.id)}
+                                                   >
+                                                     <RefreshCw size={14} className={syncingJobIds.has(job.id) ? 'spin' : ''} /> 
+                                                     {syncingJobIds.has(job.id) ? 'Syncing...' : 'Sync with NetSuite'}
+                                                   </button>
+                                                 )}
                                                  <button onClick={() => handleRebook(job)}><RotateCcw size={14} /> Rebook</button>
                                                  {(job.status !== 'accepted' && job.status !== 'rejected' && job.status !== 'in-progress' && job.status !== 'completed') && (
                                                    <button className="cancel" onClick={() => handleDelete(job.id)}><Trash2 size={14} /> {job.status === 'scheduled' ? 'Cancel Job' : 'Cancel'}</button>

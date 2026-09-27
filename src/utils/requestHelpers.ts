@@ -311,6 +311,9 @@ export const acceptJobRequest = async ({
       const res = await fetch(`${NETSUITE_API}&${params.toString()}`);
       const data = await res.json();
       console.log("NetSuite Script 2650 Response:", data);
+      await updateDoc(doc(db, 'jobs', jobDocRef.id), {
+        syncedWithNetSuite: true
+      });
     } catch (err) {
       console.error("NetSuite Script 2650 Error:", err);
     }

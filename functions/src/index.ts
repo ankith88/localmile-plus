@@ -2374,15 +2374,53 @@ async function checkCompanyOverdueInvoices(
     return { isOverdue: false };
   }
   try {
+    // 1. Check if company has at least one active/scheduled job template in LocalMile
+    const schedJobsSnap = await db.collection('scheduled_jobs')
+      .where('customer_id', '==', String(companyId))
+      .where('status', 'in', ['accepted', 'scheduled', 'active'])
+      .limit(1)
+      .get();
+
+    let hasScheduledJob = !schedJobsSnap.empty;
+    if (!hasScheduledJob) {
+      const schedJobsParentSnap = await db.collection('scheduled_jobs')
+        .where('parent_id', '==', String(companyId))
+        .where('status', 'in', ['accepted', 'scheduled', 'active'])
+        .limit(1)
+        .get();
+      hasScheduledJob = !schedJobsParentSnap.empty;
+    }
+
+    // 2. If it has a scheduled job, check if this company exists in ProspectPlus DB under 'companies' collection
+    if (hasScheduledJob) {
+      let prospectDb: admin.firestore.Firestore;
+      try {
+        prospectDb = admin.app("prospectplus").firestore();
+      } catch {
+        prospectDb = admin.initializeApp({
+          projectId: "mailplus-outbound-leads-crm"
+        }, "prospectplus").firestore();
+      }
+
+      const prospectCompanyDoc = await prospectDb.collection("companies").doc(String(companyId)).get();
+      if (prospectCompanyDoc.exists) {
+        console.log(`[checkCompanyOverdueInvoices] Company ${companyId} has scheduled jobs and exists in ProspectPlus companies collection. Bypassing overdue invoice policy.`);
+        return { isOverdue: false };
+      }
+    }
+
     const invoicesSnap = await db.collection(`companies/${companyId}/invoices`).get();
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     for (const docSnap of invoicesSnap.docs) {
       const data = docSnap.data();
-      const status = data.status || '';
-      const isPaid = status.toLowerCase() === 'paid in full' || status.toLowerCase() === 'paid';
-      if (!isPaid) {
+      const status = (data.status || '').toString().toLowerCase().trim();
+      const isPaid = status === 'paid in full' || status === 'paid';
+      const isVoidOrCancelled = status === 'voided' || status === 'void' || status === 'cancelled' || status === 'canceled';
+      const totalAmount = typeof data.totalAmount === 'number' ? data.totalAmount : parseFloat(data.totalAmount || '0');
+
+      if (!isPaid && !isVoidOrCancelled && totalAmount > 0) {
         const invoiceDate = parseInvoiceDate(data.date);
         if (invoiceDate && invoiceDate < sevenDaysAgo) {
           return { isOverdue: true, invoiceNum: data.invoiceNum || docSnap.id };

@@ -32,7 +32,7 @@ import SupportEmailModal from '../../components/SupportEmailModal';
 import CancelJobModal from '../../components/CancelJobModal';
 import FranchiseeContactModal from '../../components/FranchiseeContactModal';
 import BulkUpdateDateModal from '../../components/BulkUpdateDateModal';
-import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy, arrayUnion } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy, arrayUnion, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
 import { useLpo } from '../../context/LpoContext';
@@ -89,6 +89,7 @@ const Dashboard: React.FC = () => {
   const [isBulkUpdatingDate, setIsBulkUpdatingDate] = useState(false);
   const [syncingJobIds, setSyncingJobIds] = useState<Set<string>>(new Set());
   const [isBulkSyncing, setIsBulkSyncing] = useState(false);
+  const [recreatingJobIds, setRecreatingJobIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -497,6 +498,82 @@ const Dashboard: React.FC = () => {
   const handleRebook = (job: any) => {
     localStorage.setItem('rebook_draft', JSON.stringify(job));
     handleBookJob('/new-job?rebook=true');
+  };
+
+  const handleRecreateJobForToday = async (job: any) => {
+    if (!isAdmin) {
+      alert("Only admins and superadmins can recreate missed jobs.");
+      return;
+    }
+
+    const todayStr = formatDateForInput(new Date());
+    const jobLabel = job.customer?.company || job.id || 'Missed Job';
+    const isPastJob = job.date < todayStr;
+    const confirmMsg = `Recreate ${isPastJob ? 'missed' : ''} job for "${jobLabel}" for today (${todayStr})?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setRecreatingJobIds(prev => new Set(prev).add(job.id));
+    try {
+      const updatedStops = Array.isArray(job.stops)
+        ? job.stops.map((s: any) => ({
+            ...s,
+            status: 'pending',
+            completedAt: null,
+            proofOfDelivery: null,
+            signatureUrl: null,
+            notes: s.notes || ''
+          }))
+        : [];
+
+      const isRequest = !job.scheduledJobId && (job.status === 'pending' || job.status === 'new-time-proposed' || job.status === 'awaiting-activation');
+      
+      const newPayload: any = {
+        customer: job.customer || {},
+        service: job.service || '',
+        billing: job.billing || 'customer',
+        date: todayStr,
+        jobType: job.jobType === 'scheduled' || job.jobType === 'scheduled_instance' ? 'one-off' : (job.jobType || 'one-off'),
+        preferredTime: job.preferredTime || job.preferred_time || '',
+        preferred_time: job.preferred_time || job.preferredTime || '',
+        stops: updatedStops,
+        serviceInternalId: job.serviceInternalId || '',
+        serviceRate: job.serviceRate || '',
+        notes: job.notes || '',
+        parent_id: job.parent_id || '',
+        customer_id: job.customer_id || '',
+        uid: job.uid || '',
+        recreatedFromJobId: job.id,
+        recreatedReason: 'Missed job recreated for today',
+        status: isRequest ? 'pending' : 'scheduled',
+        syncedWithNetSuite: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        operatorNetSuiteId: job.operatorNetSuiteId || null,
+        operatorName: job.operatorName || null,
+        operatorEmail: job.operatorEmail || null,
+        operatorPhone: job.operatorPhone || null,
+        originalRequestId: null
+      };
+
+      if (isRequest) {
+        const docRef = await addDoc(collection(db, 'requests'), newPayload);
+        setRequests(prev => [{ id: docRef.id, ...newPayload, createdAt: new Date() }, ...prev]);
+      } else {
+        const docRef = await addDoc(collection(db, 'jobs'), newPayload);
+        setJobs(prev => [{ id: docRef.id, ...newPayload, createdAt: new Date() }, ...prev]);
+      }
+
+      alert(`Job successfully recreated for today (${todayStr})! Check the "In-Progress" / Today's tab.`);
+    } catch (err) {
+      console.error("Error recreating missed job for today:", err);
+      alert("Failed to recreate job. Please try again or rebook via New Job form.");
+    } finally {
+      setRecreatingJobIds(prev => {
+        const next = new Set(prev);
+        next.delete(job.id);
+        return next;
+      });
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -1687,6 +1764,25 @@ const Dashboard: React.FC = () => {
                                            </button>
                                         </div>
                                       )}
+
+                                      {isAdmin && job.date < today && job.status !== 'completed' && (
+                                        <button 
+                                          className="btn-primary-glass mini-chat" 
+                                          onClick={() => handleRecreateJobForToday(job)}
+                                          disabled={recreatingJobIds.has(job.id)}
+                                          style={{ 
+                                            color: '#d97706', 
+                                            borderColor: 'rgba(217, 119, 6, 0.4)', 
+                                            background: 'rgba(217, 119, 6, 0.1)',
+                                            fontWeight: 600,
+                                            cursor: recreatingJobIds.has(job.id) ? 'wait' : 'pointer'
+                                          }}
+                                          title="Recreate this missed job for today"
+                                        >
+                                          <RotateCcw size={14} className={recreatingJobIds.has(job.id) ? 'spin' : ''} />
+                                          <span>{recreatingJobIds.has(job.id) ? 'RECREATING...' : 'RECREATE FOR TODAY'}</span>
+                                        </button>
+                                      )}
                                      
                                     <div className="overflow-menu">
                                        <div className="menu-trigger">
@@ -1697,6 +1793,16 @@ const Dashboard: React.FC = () => {
                                                  {activeTab === 'pending' && isAdmin && (
                                                    <button onClick={() => handleSingleAccept(job)} style={{ color: '#10b981' }}>
                                                      <CheckCircle2 size={14} /> Accept Request
+                                                   </button>
+                                                 )}
+                                                 {isAdmin && job.date < today && job.status !== 'completed' && (
+                                                   <button 
+                                                     onClick={() => handleRecreateJobForToday(job)}
+                                                     style={{ color: '#d97706', fontWeight: 600 }}
+                                                     disabled={recreatingJobIds.has(job.id)}
+                                                   >
+                                                     <RotateCcw size={14} className={recreatingJobIds.has(job.id) ? 'spin' : ''} />
+                                                     {recreatingJobIds.has(job.id) ? 'Recreating...' : 'Recreate for Today'}
                                                    </button>
                                                  )}
                                                  <button onClick={() => handleEditRequest(job)}><RotateCcw size={14} /> Edit Request</button>
@@ -1712,6 +1818,16 @@ const Dashboard: React.FC = () => {
                                                    >
                                                      <RefreshCw size={14} className={syncingJobIds.has(job.id) ? 'spin' : ''} /> 
                                                      {syncingJobIds.has(job.id) ? 'Syncing...' : 'Sync with NetSuite'}
+                                                   </button>
+                                                 )}
+                                                 {isAdmin && job.date < today && job.status !== 'completed' && (
+                                                   <button 
+                                                     onClick={() => handleRecreateJobForToday(job)}
+                                                     style={{ color: '#d97706', fontWeight: 600 }}
+                                                     disabled={recreatingJobIds.has(job.id)}
+                                                   >
+                                                     <RotateCcw size={14} className={recreatingJobIds.has(job.id) ? 'spin' : ''} />
+                                                     {recreatingJobIds.has(job.id) ? 'Recreating...' : 'Recreate for Today'}
                                                    </button>
                                                  )}
                                                  <button onClick={() => handleRebook(job)}><RotateCcw size={14} /> Rebook</button>

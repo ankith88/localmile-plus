@@ -246,7 +246,7 @@ const JobMap: React.FC<{ stops: any[], onDistanceCalculated?: (distance: string)
 };
 
 const NewJobForm: React.FC = () => {
-  const { parent, customer, userData, companyData } = useLpo();
+  const { parent, customer, userData, companyData, isAdmin } = useLpo();
 
   const isCompanyEligibleForScheduled = (company: CompanyData | null | undefined): boolean => {
     if (!company) return true;
@@ -263,6 +263,9 @@ const NewJobForm: React.FC = () => {
   const [customerStatus, setCustomerStatus] = useState<string | null>(null);
   const [isAwaitingTC, setIsAwaitingTC] = useState(false);
   const [isExistingCustomer, setIsExistingCustomer] = useState(false);
+  const [adminCustomerList, setAdminCustomerList] = useState<any[]>([]);
+  const [selectedAdminCustomerCompanyId, setSelectedAdminCustomerCompanyId] = useState<string>('');
+  const [selectedAdminCustomer, setSelectedAdminCustomer] = useState<any | null>(null);
   const [createdRequestId, setCreatedRequestId] = useState<string | null>(null);
   // @ts-ignore
   const [routeDistance, setRouteDistance] = useState<string | null>(null);
@@ -836,6 +839,89 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
     };
     fetchAll();
   }, [userData, parent]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const fetchCustomerUsersAndCompanies = async () => {
+      try {
+        const usersQ = query(collection(db, 'users'), where('role', '==', 'customer'));
+        const usersSnap = await getDocs(usersQ);
+        const customerUsers = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() as any }));
+
+        const compSnap = await getDocs(collection(db, 'companies'));
+        const companiesMap = new Map<string, any>();
+        compSnap.docs.forEach(d => {
+          companiesMap.set(d.id, { id: d.id, ...d.data() });
+        });
+
+        const combinedList: any[] = [];
+        const seenCompIds = new Set<string>();
+
+        customerUsers.forEach(u => {
+          const compId = u.customer_id;
+          let compData = compId ? companiesMap.get(compId) : null;
+
+          if (!compData) {
+            for (const c of companiesMap.values()) {
+              if (
+                (c.customerServiceEmail && c.customerServiceEmail.toLowerCase() === u.email?.toLowerCase()) ||
+                (c.email && c.email.toLowerCase() === u.email?.toLowerCase()) ||
+                (c.companyName && u.companyName && c.companyName.toLowerCase() === u.companyName.toLowerCase())
+              ) {
+                compData = c;
+                break;
+              }
+            }
+          }
+
+          const targetCompanyId = compData?.id || compId || u.uid;
+          const companyName = compData?.companyName || compData?.name || u.companyName || u.email || 'Customer Company';
+
+          if (!seenCompIds.has(targetCompanyId)) {
+            seenCompIds.add(targetCompanyId);
+            const combined = {
+              ...(compData || {}),
+              companyId: targetCompanyId,
+              id: targetCompanyId,
+              companyName,
+              company_name: companyName,
+              uid: u.uid,
+              userEmail: u.email,
+              first_name: u.first_name || compData?.first_name || '',
+              last_name: u.last_name || compData?.last_name || '',
+              customerServiceEmail: compData?.customerServiceEmail || u.email || '',
+              customerPhone: compData?.customerPhone || u.mobile || '',
+              address1: compData?.address1 || compData?.street || '',
+              city: compData?.city || compData?.suburb || '',
+              state: compData?.state || '',
+              zip: compData?.zip || compData?.postcode || '',
+              customerInternalId: compData?.customerInternalId || compData?.companyId || targetCompanyId,
+              status: compData?.status || compData?.customerStatus || 'Active',
+              lpoServiceAMPOInternalID: compData?.serviceAMPOInternalID || compData?.lpoServiceAMPOInternalID || null,
+              lpoServiceAMPORate: compData?.serviceAMPORate || compData?.lpoServiceAMPORate || null,
+              lpoServicePMPOInternalID: compData?.servicePMPOInternalID || compData?.lpoServicePMPOInternalID || null,
+              lpoServicePMPORate: compData?.servicePMPORate || compData?.lpoServicePMPORate || null,
+              lpoServiceH2HInternalID: compData?.serviceH2HInternalID || compData?.lpoServiceH2HInternalID || null,
+              lpoServiceH2HRate: compData?.serviceH2HRate || compData?.lpoServiceH2HRate || null
+            };
+            combinedList.push(combined);
+          }
+        });
+
+        combinedList.sort((a, b) => (a.companyName || '').localeCompare(b.companyName || ''));
+        setAdminCustomerList(combinedList);
+        setAllCustomers(prev => {
+          const ids = new Set(prev.map(p => p.id));
+          const additions = combinedList.filter(c => !ids.has(c.id));
+          return [...prev, ...additions];
+        });
+      } catch (err) {
+        console.error("Error fetching customer users & companies for admin:", err);
+      }
+    };
+
+    fetchCustomerUsersAndCompanies();
+  }, [isAdmin]);
 
   useEffect(() => {
     const term = (userData?.role === 'customer' ? recipientData.company : formData.customer.company).toLowerCase();
@@ -1599,10 +1685,10 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
 
       const finalCustomerData = {
         ...formData.customer,
-        firstName: userData?.first_name || formData.customer.firstName,
-        lastName: userData?.last_name || formData.customer.lastName,
-        email: userData?.email || formData.customer.email,
-        phone: userData?.mobile || formData.customer.phone
+        firstName: isAdmin ? (formData.customer.firstName || '') : (userData?.first_name || formData.customer.firstName),
+        lastName: isAdmin ? (formData.customer.lastName || '') : (userData?.last_name || formData.customer.lastName),
+        email: isAdmin ? (formData.customer.email || '') : (userData?.email || formData.customer.email),
+        phone: isAdmin ? (formData.customer.phone || '') : (userData?.mobile || formData.customer.phone)
       };
 
       if (userData?.role === 'parent') {
@@ -1672,10 +1758,10 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
           service: finalService,
           stops,
           recipient: (userData?.role === 'customer' || userData?.role === 'parent') ? recipientData : null,
-          parent_id: parent?.id || userData?.parent_id || "",
-          customer_id: userData?.role === 'parent' ? (parentSubCustomerId || "") : (customer?.id || userData?.customer_id || ""),
-          uid: userData?.uid,
-          userRole: userData?.role || 'parent',
+          parent_id: isAdmin ? (selectedAdminCustomer?.parent_id || parent?.id || "") : (parent?.id || userData?.parent_id || ""),
+          customer_id: isAdmin ? (selectedAdminCustomer?.companyId || selectedAdminCustomer?.id || formData.customer.netsuiteId || "") : (userData?.role === 'parent' ? (parentSubCustomerId || "") : (customer?.id || userData?.customer_id || "")),
+          uid: isAdmin ? (selectedAdminCustomer?.uid || userData?.uid) : userData?.uid,
+          userRole: isAdmin ? 'customer' : (userData?.role || 'parent'),
           isExistingCustomer,
           netsuiteCustomerId: userData?.role === 'parent' ? (parentSubCustomerId || nsResult.customerInternalId || formData.customer.netsuiteId || null) : (nsResult.customerInternalId || formData.customer.netsuiteId || null),
           status: isDirectBook ? 'scheduled' : initialRequestStatus,
@@ -2465,6 +2551,39 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                     </div>
                   ) : (
                     <div className="input-grid">
+                      {isAdmin && (
+                        <div style={{ gridColumn: '1 / -1', marginBottom: '16px', background: 'rgba(217, 119, 6, 0.06)', border: '1px solid rgba(217, 119, 6, 0.25)', borderRadius: '12px', padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <Building2 size={16} style={{ color: '#d97706' }} />
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--ink)' }}>Select Customer Account (Users with Role: Customer)</span>
+                          </div>
+                          <div className="input-pill full" style={{ padding: '4px 12px', background: '#ffffff', border: '1px solid rgba(0,0,0,0.08)' }}>
+                            <select
+                              value={selectedAdminCustomerCompanyId}
+                              onChange={(e) => {
+                                const compId = e.target.value;
+                                setSelectedAdminCustomerCompanyId(compId);
+                                const found = adminCustomerList.find(c => (c.companyId === compId || c.id === compId));
+                                if (found) {
+                                  selectCustomer(found);
+                                  setSelectedAdminCustomer(found);
+                                } else {
+                                  setSelectedAdminCustomer(null);
+                                }
+                              }}
+                              style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', fontSize: '0.9rem', color: 'var(--ink)', cursor: 'pointer' }}
+                            >
+                              <option value="">-- Choose Customer Company --</option>
+                              {adminCustomerList.map(c => (
+                                <option key={c.companyId || c.id} value={c.companyId || c.id}>
+                                  {c.companyName || c.name} {c.userEmail ? `(${c.userEmail})` : ''} {c.city ? `- ${c.city}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="input-pill full has-suggestions">
                         <Building2 size={18} />
                         <input 

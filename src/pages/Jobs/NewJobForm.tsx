@@ -1338,12 +1338,14 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
       lng: rawParentLng ? parseFloat(rawParentLng) : undefined
     };
 
-    const normService = (data.service || '').toLowerCase();
-    const isAMPO = normService === 'ampo' || normService === 'lpo-to-site' || normService === 'australia post-to-site';
-    const isH2H = normService === 'h2h';
-    const isH2H2 = normService === 'h2h 2' || normService === 'h2h2';
-    const isPMPO = normService === 'pmpo' || normService === 'site-to-lpo' || normService === 'site-to-australia post';
+    const normService = (data.service || '').toLowerCase().trim();
+    const isAMPO = normService.includes('ampo') || normService === 'lpo-to-site' || normService === 'australia post-to-site' || normService === 'post office-to-im';
+    const isH2H = normService === 'h2h' || normService === 'im-to-site' || normService === 'im to site';
+    const isH2H2 = normService === 'h2h 2' || normService === 'h2h2' || normService === 'site-to-im' || normService === 'site to im';
+    const isPMPO = normService.includes('pmpo') || normService === 'site-to-lpo' || normService === 'site-to-australia post' || normService === 'outgoing mail lodgement';
     const isRoundTrip = normService === 'round-trip' || normService === 'roundtrip';
+
+    const isParentRole = userData?.role === 'parent' || (userData as any)?.userType === 'IM' || (userData as any)?.user_type === 'IM';
 
     if (userData?.role === 'customer') {
       if (independentServiceType === 'outbound') {
@@ -1357,13 +1359,15 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
           { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
       }
-    } else if (userData?.role === 'parent') {
+    } else if (isParentRole) {
       if (isH2H) {
+        // IM-to-Site: Pickup at Parent (IM), Deliver to Subcustomer (Site)
         stops.push(
           { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
-      } else if (isH2H2) {
+      } else if (isH2H2 || isPMPO) {
+        // Site-to-IM / PMPO: Pickup at Subcustomer (Site), Deliver to Parent Company (IM)
         stops.push(
           { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
@@ -1384,6 +1388,13 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
           { type: 'pickup', label: 'Pickup PO Box', locationName: poBoxLoc.name, address: poBoxLoc.address, suburb: poBoxLoc.suburb, state: poBoxLoc.state, postcode: poBoxLoc.postcode, lat: poBoxLoc.lat, lng: poBoxLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
+      } else if (isRoundTrip) {
+        stops.push(
+          { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null },
+          { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 3, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 4, status: 'pending', appJobId: null }
+        );
       } else {
         stops.push(
           { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
@@ -1391,7 +1402,17 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
         );
       }
     } else {
-      if (isAMPO) {
+      if (isH2H) {
+        stops.push(
+          { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        );
+      } else if (isH2H2 || isPMPO) {
+        stops.push(
+          { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
+        );
+      } else if (isAMPO) {
         const partnerLocName = (data.customer as any).billingPartnerLocation || (data.customer as any).billingAddresses?.[0]?.partnerLocation;
         const poBoxLoc = {
           name: (partnerLocName && String(partnerLocName).trim()) ? String(partnerLocName).trim() : `${data.customer.company} - PO Box`,
@@ -1406,17 +1427,17 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
           { type: 'pickup', label: 'Pickup PO Box', locationName: poBoxLoc.name, address: poBoxLoc.address, suburb: poBoxLoc.suburb, state: poBoxLoc.state, postcode: poBoxLoc.postcode, lat: poBoxLoc.lat, lng: poBoxLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
-      } else if (isPMPO) {
-        stops.push(
-          { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
-          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
-        );
       } else if (isRoundTrip) {
         stops.push(
           { type: 'pickup', label: 'Pickup Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 1, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 2, status: 'pending', appJobId: null },
           { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 3, status: 'pending', appJobId: null },
           { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 4, status: 'pending', appJobId: null }
+        );
+      } else {
+        stops.push(
+          { type: 'pickup', label: 'Pickup Site', locationName: customerLoc.name, address: customerLoc.address, suburb: customerLoc.suburb, state: customerLoc.state, postcode: customerLoc.postcode, lat: customerLoc.lat, lng: customerLoc.lng, sequence: 1, status: 'pending', appJobId: null },
+          { type: 'delivery', label: 'Delivery Parent', locationName: parentLoc.name, address: parentLoc.address, suburb: parentLoc.suburb, state: parentLoc.state, postcode: parentLoc.postcode, lat: parentLoc.lat, lng: parentLoc.lng, sequence: 2, status: 'pending', appJobId: null }
         );
       }
     }
@@ -1597,10 +1618,13 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
       const isSiteToAusPost = finalService === 'site-to-australia post' || finalService === 'site-to-lpo';
       const isAusPostToSite = finalService === 'australia post-to-site' || finalService === 'lpo-to-site';
 
-      if (userData?.role === 'parent') {
+      const isParentOrIM = userData?.role === 'parent' || (userData as any)?.userType === 'IM' || (userData as any)?.user_type === 'IM';
+
+      if (isParentOrIM) {
         const sId = formData.serviceInternalId || null;
         const sRate = formData.serviceRate || null;
-        if (finalService === 'H2H') {
+        const normFinal = (finalService || '').toLowerCase().trim();
+        if (normFinal === 'h2h' || normFinal === 'im-to-site' || normFinal === 'im to site') {
           conditionalServiceData = {
             imServiceH2HInternalID: sId,
             imServiceH2HIRate: sRate,
@@ -1609,7 +1633,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
             imServiceH2H2InternalID: null,
             imServiceH2H2Rate: null
           };
-        } else if (finalService === 'AMPO') {
+        } else if (normFinal.includes('ampo') || normFinal === 'lpo-to-site' || normFinal === 'australia post-to-site' || normFinal === 'post office-to-im') {
           conditionalServiceData = {
             imServiceH2HInternalID: null,
             imServiceH2HIRate: null,
@@ -1618,7 +1642,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
             imServiceH2H2InternalID: null,
             imServiceH2H2Rate: null
           };
-        } else if (finalService === 'H2H 2') {
+        } else if (normFinal === 'h2h 2' || normFinal === 'h2h2' || normFinal === 'site-to-im' || normFinal === 'site to im') {
           conditionalServiceData = {
             imServiceH2HInternalID: null,
             imServiceH2HIRate: null,
@@ -2743,16 +2767,21 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                               ? `${partnerLocStr} (${rawPoBoxStr.replace(/^,\s*/, '')})`
                               : rawPoBoxStr;
 
+                            const normSvc = (formData.service || '').toLowerCase().trim();
+                            const isH2HPreview = normSvc === 'h2h' || normSvc === 'im-to-site' || normSvc === 'im to site';
+                            const isH2H2Preview = normSvc === 'h2h 2' || normSvc === 'h2h2' || normSvc === 'site-to-im' || normSvc === 'site to im';
+                            const isAmpoPreview = normSvc.includes('ampo') || normSvc === 'lpo-to-site' || normSvc === 'australia post-to-site' || normSvc === 'post office-to-im';
+
                             let pickup = '';
                             let delivery = '';
 
-                            if (formData.service === 'H2H') {
+                            if (isH2HPreview) {
                               pickup = parentLocStr || 'Parent Address';
                               delivery = customerLocStr || 'Customer Site Address';
-                            } else if (formData.service === 'H2H 2') {
+                            } else if (isH2H2Preview) {
                               pickup = customerLocStr || 'Customer Site Address';
                               delivery = parentLocStr || 'Parent Address';
-                            } else if (formData.service === 'AMPO') {
+                            } else if (isAmpoPreview) {
                               pickup = poBoxStr || 'Customer PO Box Address';
                               delivery = parentLocStr || 'Parent Address';
                             } else {

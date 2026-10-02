@@ -11,16 +11,16 @@ export const getDisplayServiceName = (service: string, isParentRole: boolean = f
   if (!service) return '';
   if (isParentRole) {
     const norm = service.trim().toLowerCase();
-    if (norm === 'h2h 2' || norm === 'h2h2' || norm === 'site-to-im') {
+    if (norm === 'h2h 2' || norm === 'h2h2' || norm === 'site-to-im' || norm === 'site to im') {
       return 'Site-to-IM';
     }
-    if (norm === 'h2h' || norm === 'im-to-site') {
+    if (norm === 'h2h' || norm === 'im-to-site' || norm === 'im to site') {
       return 'IM-to-Site';
     }
-    if (norm === 'ampo' || norm.includes('ampo') || norm === 'lpo-to-site' || norm === 'australia post-to-site') {
+    if (norm === 'ampo' || norm.includes('ampo') || norm === 'lpo-to-site' || norm === 'australia post-to-site' || norm === 'post office-to-im') {
       return 'Post Office-to-IM';
     }
-    if (norm === 'pmpo' || norm === 'site-to-lpo' || norm === 'site-to-australia post') {
+    if (norm === 'pmpo' || norm.includes('pmpo') || norm === 'site-to-lpo' || norm === 'site-to-australia post' || norm === 'outgoing mail lodgement') {
       return 'Outgoing Mail Lodgement';
     }
   }

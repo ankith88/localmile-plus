@@ -5213,13 +5213,22 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
       return stop;
     };
 
-    const normService = (service || '').toLowerCase();
-    const isAMPO = normService === 'ampo' || normService === 'lpo-to-site' || normService === 'australia post-to-site';
-    const isPMPO = normService === 'pmpo' || normService === 'site-to-lpo' || normService === 'site-to-australia post';
+    const normService = (service || '').toLowerCase().trim();
+    const isAMPO = normService.includes('ampo') || normService === 'lpo-to-site' || normService === 'australia post-to-site' || normService === 'post office-to-im';
+    const isPMPO = normService.includes('pmpo') || normService === 'site-to-lpo' || normService === 'site-to-australia post' || normService === 'outgoing mail lodgement';
     const isRoundTrip = normService === 'round-trip' || normService === 'roundtrip';
+    const isH2H = normService === 'h2h' || normService === 'im-to-site' || normService === 'im to site';
+    const isH2H2 = normService === 'h2h 2' || normService === 'h2h2' || normService === 'site-to-im' || normService === 'site to im';
 
     const stops: any[] = [];
-    if (isPMPO) {
+    if (isH2H) {
+      // IM-to-Site: Pickup at Parent (IM), Deliver to Subcustomer (Site)
+      stops.push(
+        createStop('pickup', 'Pickup Parent', parentLoc, 1),
+        createStop('delivery', 'Delivery Site', customerLoc, 2)
+      );
+    } else if (isH2H2 || isPMPO) {
+      // Site-to-IM / PMPO: Pickup at Subcustomer (Site), Deliver to Parent Company (IM)
       stops.push(
         createStop('pickup', 'Pickup Site', customerLoc, 1),
         createStop('delivery', 'Delivery Parent', parentLoc, 2)
@@ -5246,6 +5255,11 @@ apiApp.post("/api/v1/companies/:companyId/scheduled-jobs", async (req: express.R
         createStop('delivery', 'Delivery Site', customerLoc, 2),
         createStop('pickup', 'Pickup Site', customerLoc, 3),
         createStop('delivery', 'Delivery Parent', parentLoc, 4)
+      );
+    } else {
+      stops.push(
+        createStop('pickup', 'Pickup Site', customerLoc, 1),
+        createStop('delivery', 'Delivery Parent', parentLoc, 2)
       );
     }
 

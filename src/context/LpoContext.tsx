@@ -46,6 +46,8 @@ export interface UserMetadata {
   parent_id?: string;
   customer_id?: string;
   role: 'superadmin' | 'admin' | 'lpoadmin' | 'operator' | 'customer' | 'parent';
+  userType?: string;
+  user_type?: string;
   hasCompletedTour: boolean;
   hasAcceptedTC?: boolean;
 }
@@ -55,6 +57,8 @@ export interface ImpersonationState {
   parent_id?: string;
   customer_id?: string;
   uid?: string;
+  userType?: string;
+  user_type?: string;
 }
 
 interface LpoContextType {

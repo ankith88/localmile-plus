@@ -21,19 +21,20 @@ export const sortStops = (stops: any[]) => {
       }
       
       // 2. Fallback to label-based priority
-      const getPriority = (label: string) => {
-        const l = (label || '').toLowerCase();
+      const getPriority = (stop: any) => {
+        const l = ((stop?.label || '') + ' ' + (stop?.type || '')).toLowerCase();
         if (l.includes('pickup site')) return 1;
-        if (l.includes('delivery site')) return 2;
-        if (l.includes('site')) return 3;
-        if (l.includes('pickup lpo')) return 4;
-        if (l.includes('delivery lpo')) return 5;
-        if (l.includes('lpo')) return 6;
-        return 7;
+        if (l.includes('pickup po box') || l.includes('pickup sender')) return 2;
+        if (l.includes('pickup parent') || l.includes('pickup lpo')) return 3;
+        if (l.includes('pickup')) return 4;
+        if (l.includes('delivery site') || l.includes('delivery recipient')) return 5;
+        if (l.includes('delivery parent') || l.includes('delivery lpo')) return 6;
+        if (l.includes('delivery')) return 7;
+        return 8;
       };
       
-      const pA = getPriority(a.label);
-      const pB = getPriority(b.label);
+      const pA = getPriority(a);
+      const pB = getPriority(b);
       
       if (pA !== pB) return pA - pB;
       

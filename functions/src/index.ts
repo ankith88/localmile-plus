@@ -409,7 +409,7 @@ export const onJobCreated = onDocumentCreated({
     const deliverySuburb = deliveryStop?.suburb || "";
     const price = afterData.serviceRate || (afterData.service === "round-trip" ? "20.00" : "10.00");
 
-    console.log(`[onJobCreated] Job created for leadId ${leadId}. Pushing to ProspectPlus API...`);
+    let prospectPlusData: any = null;
     try {
       const response = await fetch(`https://prospectplus.com.au/api/localmile/jobs`, {
         method: "POST",
@@ -430,67 +430,112 @@ export const onJobCreated = onDocumentCreated({
       if (!response.ok) {
         console.error("[onJobCreated] Failed to push created job:", await response.text());
       } else {
-        console.log(`[onJobCreated] Successfully logged created job for leadId ${leadId}`);
+        prospectPlusData = await response.json();
+        console.log(`[onJobCreated] Successfully logged created job for leadId ${leadId}:`, prospectPlusData);
       }
     } catch (error) {
       console.error("[onJobCreated] Error pushing created job:", error);
     }
 
     // Send 1st Job Notification email to Account Manager via ProspectPlus Email API
-    if (uid) {
-      try {
-        const userRef = db.collection("users").doc(uid);
+    // Must be sent ONLY at the customer/company level, not contact level
+    try {
+      let userData: any = null;
+      let userRef: any = null;
+      if (uid) {
+        userRef = db.collection("users").doc(uid);
         const userDoc = await userRef.get();
-
         if (userDoc.exists) {
-          const userData = userDoc.data();
-          if (userData?.role === "customer" && !userData?.firstJobEmailSent) {
-            console.log(`[onJobCreated] 1st job created for customer ${uid} (Lead: ${leadId}). Fetching lead details from ProspectPlus...`);
+          userData = userDoc.data();
+        }
+      }
+
+      // Check user role: If created by an internal user/admin (not customer), skip customer 1st job email
+      const isCustomerRole = !userData || userData?.role === "customer";
+      if (!isCustomerRole) {
+        console.log(`[onJobCreated] User role is ${userData?.role}, not customer. Skipping 1st job email.`);
+      } else {
+        const customerId = extractStringId(userData?.customer_id) || extractStringId(afterData.customer_id) || leadId;
+
+        let compDoc: any = null;
+        let compData: any = null;
+        let compRef: any = null;
+
+        if (customerId) {
+          compRef = db.collection("companies").doc(customerId);
+          compDoc = await compRef.get();
+          if (compDoc.exists) {
+            compData = compDoc.data() || {};
+          } else if (userData?.companyId || userData?.company_id) {
+            const fallbackCompId = String(userData.companyId || userData.company_id);
+            const compById = await db.collection("companies").doc(fallbackCompId).get();
+            if (compById.exists) {
+              compData = compById.data() || {};
+              compRef = db.collection("companies").doc(fallbackCompId);
+            }
+          }
+        }
+
+        // GUARD 1: If company already had 1st job email sent, skip immediately
+        if (compData?.firstJobEmailSent === true) {
+          console.log(`[onJobCreated] 1st job email already previously sent for customer/company ${customerId}. Skipping.`);
+        }
+        // GUARD 2: If ProspectPlus webhook confirmed this is NOT the 1st job, skip immediately
+        else if (prospectPlusData && prospectPlusData.isFirstJob === false) {
+          console.log(`[onJobCreated] ProspectPlus confirmed this is NOT the 1st job for customer ${customerId || leadId} (Total jobs: ${prospectPlusData.jobCount}). Skipping 1st job email.`);
+          if (compRef) {
+            await compRef.set({ firstJobEmailSent: true }, { merge: true });
+          }
+        }
+        else {
+          // GUARD 3: Check LocalMile jobs collection for existing customer jobs
+          let hasPriorJobs = false;
+          if (customerId) {
+            try {
+              const existingJobsSnap = await db.collection("jobs")
+                .where("customer_id", "==", customerId)
+                .limit(2)
+                .get();
+
+              const otherJobs = existingJobsSnap.docs.filter((d: any) => d.id !== jobId);
+              if (otherJobs.length > 0) {
+                hasPriorJobs = true;
+                console.log(`[onJobCreated] Customer ${customerId} already has prior jobs in LocalMile. Skipping 1st job email.`);
+                if (compRef) {
+                  await compRef.set({ firstJobEmailSent: true }, { merge: true });
+                }
+              }
+            } catch (jobQueryErr) {
+              console.error("[onJobCreated] Error checking existing customer jobs:", jobQueryErr);
+            }
+          }
+
+          if (!hasPriorJobs) {
+            console.log(`[onJobCreated] Legitimate 1st job created for customer ${customerId || uid} (Lead: ${leadId}). Fetching lead details for notification...`);
 
             let franchiseeEmail = "";
             let amEmail = "";
             let amName = "Account Manager";
-            let companyName = afterData.customer?.company || userData?.company || "Valued Customer";
+            let companyName = afterData.customer?.company || userData?.company || compData?.companyName || compData?.name || "Valued Customer";
             let contactName = `${afterData.customer?.firstName || userData?.first_name || ''} ${afterData.customer?.lastName || userData?.last_name || ''}`.trim() || "Customer";
             let contactEmail = afterData.customer?.email || userData?.email || "";
 
-            try {
-              // 1. Get customer_id from logged-in user document or job payload
-              const customerId = extractStringId(userData?.customer_id) || extractStringId(afterData.customer_id) || leadId;
+            if (compData) {
+              companyName = compData.companyName || compData.name || companyName;
 
-              if (customerId) {
-                // 2. Go to that customer_id's companies document within LocalMile application (db)
-                const compDoc = await db.collection("companies").doc(customerId).get();
-                let compData: any = null;
-                if (compDoc.exists) {
-                  compData = compDoc.data() || {};
-                } else if (userData?.companyId || userData?.company_id) {
-                  const compById = await db.collection("companies").doc(String(userData.companyId || userData.company_id)).get();
-                  if (compById.exists) {
-                    compData = compById.data() || {};
-                  }
-                }
-
-                if (compData) {
-                  companyName = compData.companyName || compData.name || companyName;
-
-                  // 3. Get value of account manager email from accountManagerEmail field
-                  if (compData.accountManagerEmail) {
-                    amEmail = compData.accountManagerEmail.toString().trim();
-                  } else if (compData.amEmail) {
-                    amEmail = compData.amEmail.toString().trim();
-                  }
-
-                  // 4. Get value of franchisee email from franchiseeEmail field
-                  if (compData.franchiseeEmail) {
-                    franchiseeEmail = compData.franchiseeEmail.toString().trim();
-                  } else if (compData.customerServiceEmail) {
-                    franchiseeEmail = compData.customerServiceEmail.toString().trim();
-                  }
-                }
+              // Get value of account manager email from accountManagerEmail field
+              if (compData.accountManagerEmail) {
+                amEmail = compData.accountManagerEmail.toString().trim();
+              } else if (compData.amEmail) {
+                amEmail = compData.amEmail.toString().trim();
               }
-            } catch (compErr) {
-              console.error("[onJobCreated] Error fetching company details from LocalMile Firestore:", compErr);
+
+              // Get value of franchisee email from franchiseeEmail field
+              if (compData.franchiseeEmail) {
+                franchiseeEmail = compData.franchiseeEmail.toString().trim();
+              } else if (compData.customerServiceEmail) {
+                franchiseeEmail = compData.customerServiceEmail.toString().trim();
+              }
             }
 
             // Fallbacks from LocalMile Plus customer user profile if still not found
@@ -713,8 +758,14 @@ export const onJobCreated = onDocumentCreated({
             if (!sendEmailRes.ok) {
               console.error("[onJobCreated] Failed to send 1st job email via ProspectPlus:", await sendEmailRes.text());
             } else {
-              await userRef.update({ firstJobEmailSent: true });
-              console.log("[onJobCreated] Successfully sent 1st job email via ProspectPlus API.");
+              const nowIso = new Date().toISOString();
+              if (compRef) {
+                await compRef.set({ firstJobEmailSent: true, firstJobEmailSentAt: nowIso }, { merge: true });
+              }
+              if (userRef) {
+                await userRef.set({ firstJobEmailSent: true }, { merge: true });
+              }
+              console.log("[onJobCreated] Successfully sent 1st job email via ProspectPlus API and marked firstJobEmailSent on company.");
             }
 
             // Attach email to ProspectPlus Firestore database (companies or leads collection subcollection emails)
@@ -756,9 +807,9 @@ export const onJobCreated = onDocumentCreated({
             }
           }
         }
-      } catch (emailErr) {
-        console.error("[onJobCreated] Error in 1st job email notification:", emailErr);
       }
+    } catch (emailErr) {
+      console.error("[onJobCreated] Error in 1st job email notification:", emailErr);
     }
   } else {
     console.warn(`[onJobCreated] No leadId found for job ${jobId}. Skipping ProspectPlus API call.`);

@@ -25,13 +25,15 @@ import {
   Phone,
   Repeat,
   Lock,
-  Building2
+  Building2,
+  Camera
 } from 'lucide-react';
 import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
 import CancelJobModal from '../../components/CancelJobModal';
 import FranchiseeContactModal from '../../components/FranchiseeContactModal';
 import BulkUpdateDateModal from '../../components/BulkUpdateDateModal';
+import ProofOfDeliveryModal from '../../components/ProofOfDeliveryModal';
 import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, orderBy, arrayUnion, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, functions } from '../../firebase/config';
 import { httpsCallable } from 'firebase/functions';
@@ -77,6 +79,21 @@ const Dashboard: React.FC = () => {
   const handleFranchiseeContact = (job: any) => {
     setSelectedJobForFranchiseeModal(job);
     setIsFranchiseeModalOpen(true);
+  };
+
+  // Proof of Delivery (POD) State
+  const [selectedJobForPod, setSelectedJobForPod] = useState<any>(null);
+  const [isPodModalOpen, setIsPodModalOpen] = useState(false);
+
+  const handleOpenPod = (job: any) => {
+    setSelectedJobForPod(job);
+    setIsPodModalOpen(true);
+  };
+
+  const handlePodSuccess = (updatedJob: any) => {
+    setJobs(prev => prev.map(j => j.id === updatedJob.id ? { ...j, ...updatedJob } : j));
+    setRequests(prev => prev.map(r => r.id === updatedJob.id ? { ...r, ...updatedJob } : r));
+    setSelectedJobForPod((prev: any) => prev?.id === updatedJob.id ? { ...prev, ...updatedJob } : updatedJob);
   };
 
   // Admin Multi-Select Bulk Action State
@@ -1668,6 +1685,108 @@ const Dashboard: React.FC = () => {
                                    </div>
                                   )}
 
+                                  {/* Proof of Delivery visual preview banner if available */}
+                                  {(() => {
+                                    const podPhotos: string[] = (job.podFiles && job.podFiles.length > 0)
+                                      ? job.podFiles.map((p: any) => typeof p === 'string' ? p : p.url)
+                                      : (job.podUrls || []);
+                                    if (podPhotos.length === 0) return null;
+
+                                    return (
+                                      <div 
+                                        className="job-pod-banner fade-in"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenPod(job);
+                                        }}
+                                        title="Click to view Proof of Delivery"
+                                        style={{
+                                          margin: '10px 0 6px 0',
+                                          padding: '8px 12px',
+                                          background: 'rgba(16, 185, 129, 0.06)',
+                                          border: '1px solid rgba(16, 185, 129, 0.22)',
+                                          borderRadius: '10px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.2s ease'
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                          <div style={{
+                                            width: '32px',
+                                            height: '32px',
+                                            borderRadius: '8px',
+                                            background: 'rgba(16, 185, 129, 0.15)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            color: '#059669',
+                                            flexShrink: 0
+                                          }}>
+                                            <Camera size={16} />
+                                          </div>
+                                          <div>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#065f46', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                              <span>Proof of Delivery</span>
+                                              <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#10b981', color: '#fff', padding: '1px 6px', borderRadius: '10px' }}>
+                                                {podPhotos.length} {podPhotos.length === 1 ? 'Photo' : 'Photos'}
+                                              </span>
+                                            </div>
+                                            {job.podNotes ? (
+                                              <div style={{ fontSize: '0.72rem', color: '#047857', marginTop: '2px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                "{job.podNotes}"
+                                              </div>
+                                            ) : (
+                                              <div style={{ fontSize: '0.72rem', color: '#047857', marginTop: '2px' }}>
+                                                Click to view photos &amp; delivery verification
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <div style={{ display: 'flex', gap: '4px' }}>
+                                            {podPhotos.slice(0, 3).map((pUrl: string, pIdx: number) => (
+                                              <img 
+                                                key={pIdx} 
+                                                src={pUrl} 
+                                                alt="POD Thumbnail" 
+                                                style={{
+                                                  width: '34px',
+                                                  height: '34px',
+                                                  borderRadius: '6px',
+                                                  objectFit: 'cover',
+                                                  border: '1px solid rgba(16, 185, 129, 0.3)'
+                                                }} 
+                                              />
+                                            ))}
+                                            {podPhotos.length > 3 && (
+                                              <div style={{
+                                                width: '34px',
+                                                height: '34px',
+                                                borderRadius: '6px',
+                                                background: 'rgba(16, 185, 129, 0.2)',
+                                                color: '#065f46',
+                                                fontSize: '0.72rem',
+                                                fontWeight: 700,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                              }}>
+                                                +{podPhotos.length - 3}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#059669', marginLeft: '4px' }}>
+                                            View &rarr;
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+
                                 <div className="card-meta">
                                    {userData?.role !== 'customer' && (
                                    <div className="meta-pill">
@@ -1720,6 +1839,73 @@ const Dashboard: React.FC = () => {
                                        </button>
                                      )
                                    )}
+                                    {/* Proof of Delivery Pill */}
+                                    {(() => {
+                                      const podCount = (job.podFiles?.length) || (job.podUrls?.length) || 0;
+                                      const hasPod = podCount > 0 || job.hasPod === true;
+
+                                      if (hasPod) {
+                                        return (
+                                          <button 
+                                            className="meta-pill pod-pill has-pod"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenPod(job);
+                                            }}
+                                            title="View Proof of Delivery photos"
+                                            style={{
+                                              background: 'rgba(16, 185, 129, 0.12)',
+                                              color: '#059669',
+                                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                                              cursor: 'pointer',
+                                              fontWeight: 700,
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '5px',
+                                              padding: '3px 8px',
+                                              borderRadius: '6px',
+                                              fontSize: '0.75rem',
+                                              transition: 'all 0.2s ease'
+                                            }}
+                                          >
+                                            <Camera size={12} />
+                                            <span>POD ({podCount})</span>
+                                          </button>
+                                        );
+                                      }
+
+                                      if (isAdmin && activeTab !== 'declined') {
+                                        return (
+                                          <button
+                                            className="meta-pill pod-pill upload-pod"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenPod(job);
+                                            }}
+                                            title="Upload Proof of Delivery photos for this job"
+                                            style={{
+                                              background: 'rgba(37, 99, 235, 0.08)',
+                                              color: '#2563eb',
+                                              border: '1px dashed rgba(37, 99, 235, 0.4)',
+                                              cursor: 'pointer',
+                                              fontWeight: 600,
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                              padding: '3px 8px',
+                                              borderRadius: '6px',
+                                              fontSize: '0.75rem',
+                                              transition: 'all 0.2s ease'
+                                            }}
+                                          >
+                                            <Camera size={12} />
+                                            <span>Upload POD</span>
+                                          </button>
+                                        );
+                                      }
+
+                                      return null;
+                                    })()}
                                     <div 
                                       className="job-ref interactive" 
                                       onClick={(e) => {
@@ -1783,11 +1969,53 @@ const Dashboard: React.FC = () => {
                                           <span>{recreatingJobIds.has(job.id) ? 'RECREATING...' : 'RECREATE FOR TODAY'}</span>
                                         </button>
                                       )}
+
+                                       {/* Admin POD button */}
+                                       {isAdmin && (
+                                         <button 
+                                           className="btn-primary-glass mini-chat" 
+                                           onClick={() => handleOpenPod(job)}
+                                           style={{ 
+                                             color: ((job.podFiles?.length || job.podUrls?.length || 0) > 0) ? '#059669' : '#2563eb', 
+                                             borderColor: ((job.podFiles?.length || job.podUrls?.length || 0) > 0) ? 'rgba(16, 185, 129, 0.4)' : 'rgba(37, 99, 235, 0.3)', 
+                                             background: ((job.podFiles?.length || job.podUrls?.length || 0) > 0) ? 'rgba(16, 185, 129, 0.08)' : 'rgba(37, 99, 235, 0.06)', 
+                                             fontWeight: 600
+                                           }}
+                                           title={((job.podFiles?.length || job.podUrls?.length || 0) > 0) ? "Manage Proof of Delivery photos" : "Upload Proof of Delivery photos"}
+                                         >
+                                           <Camera size={14} />
+                                           <span>{((job.podFiles?.length || job.podUrls?.length || 0) > 0) ? `POD (${(job.podFiles?.length || job.podUrls?.length || 0)})` : 'UPLOAD POD'}</span>
+                                         </button>
+                                       )}
+
+                                       {/* Actual user (Customer/Franchisee) POD view button */}
+                                       {!isAdmin && ((job.podFiles?.length || job.podUrls?.length || 0) > 0) && (
+                                         <button 
+                                           className="btn-primary-glass mini-chat" 
+                                           onClick={() => handleOpenPod(job)}
+                                           style={{ 
+                                             color: '#059669', 
+                                             borderColor: 'rgba(16, 185, 129, 0.4)', 
+                                             background: 'rgba(16, 185, 129, 0.08)', 
+                                             fontWeight: 700
+                                           }}
+                                           title="View Proof of Delivery photos"
+                                         >
+                                           <Camera size={14} />
+                                           <span>VIEW POD ({(job.podFiles?.length || job.podUrls?.length || 0)})</span>
+                                         </button>
+                                       )}
                                      
                                     <div className="overflow-menu">
                                        <div className="menu-trigger">
                                           <MoreHorizontal size={18} />
                                           <div className="menu-dropdown glass">
+                                             {/* Proof of Delivery option in dropdown */}
+                                             {(isAdmin || ((job.podFiles?.length || job.podUrls?.length || 0) > 0)) && (
+                                               <button onClick={() => handleOpenPod(job)}>
+                                                 <Camera size={14} /> {((job.podFiles?.length || job.podUrls?.length || 0) > 0) ? (isAdmin ? `Manage POD (${(job.podFiles?.length || job.podUrls?.length || 0)})` : `View POD (${(job.podFiles?.length || job.podUrls?.length || 0)})`) : 'Upload Proof of Delivery'}
+                                               </button>
+                                             )}
                                              {activeTab === 'pending' || activeTab === 'declined' ? (
                                                <>
                                                  {activeTab === 'pending' && isAdmin && (
@@ -1946,6 +2174,16 @@ const Dashboard: React.FC = () => {
         selectedCount={selectedJobIds.size}
         onConfirm={handleBulkUpdateStartDate}
         isUpdating={isBulkUpdatingDate}
+      />
+
+      <ProofOfDeliveryModal 
+        isOpen={isPodModalOpen}
+        onClose={() => {
+          setIsPodModalOpen(false);
+          setSelectedJobForPod(null);
+        }}
+        job={selectedJobForPod}
+        onSuccess={handlePodSuccess}
       />
 
       <style>{`

@@ -4,6 +4,7 @@ import { getFirestore } from 'firebase/firestore';
 import { getMessaging } from 'firebase/messaging';
 import { getAnalytics } from "firebase/analytics";
 import { getFunctions } from 'firebase/functions';
+import { getStorage } from 'firebase/storage';
 
 // TODO: Replace with actual Firebase config from USER
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -23,6 +24,7 @@ const app = initializeApp(firebaseConfig);
 export const analytics = getAnalytics(app);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 export const functions = getFunctions(app, 'us-central1');
 export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 

@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Plus
 } from 'lucide-react';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, deleteObject } from 'firebase/storage';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, storage } from '../firebase/config';
 import { useLpo } from '../context/LpoContext';
@@ -79,8 +79,8 @@ const compressImage = async (file: File): Promise<Blob> => {
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const MAX_WIDTH = 1920;
-        const MAX_HEIGHT = 1920;
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 1200;
         let width = img.width;
         let height = img.height;
 
@@ -105,7 +105,7 @@ const compressImage = async (file: File): Promise<Blob> => {
           canvas.toBlob(
             (blob) => resolve(blob || file),
             'image/jpeg',
-            0.85
+            0.75
           );
         } else {
           resolve(file);
@@ -116,6 +116,21 @@ const compressImage = async (file: File): Promise<Blob> => {
     };
     reader.onerror = () => resolve(file);
     reader.readAsDataURL(file);
+  });
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Failed to convert image to data URL"));
+      }
+    };
+    reader.onerror = () => reject(reader.error || new Error("Failed to read image"));
+    reader.readAsDataURL(blob);
   });
 };
 
@@ -248,45 +263,17 @@ const ProofOfDeliveryModal: React.FC<ProofOfDeliveryModalProps> = ({
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
-        setUploadProgress(Math.round(15 + ((i + 1) / selectedFiles.length) * 70));
+        setUploadProgress(Math.round(20 + ((i + 1) / selectedFiles.length) * 70));
 
-        // 1. Compress image
+        // 1. Compress image to clean, lightweight JPEG (< 50KB)
         const compressedBlob = await compressImage(file);
 
-        // 2. Upload to Firebase Storage
-        const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const storagePath = `proof_of_delivery/${job.id}/${Date.now()}_${i}_${cleanName}`;
-        let downloadUrl = '';
-
-        try {
-          const storageReference = ref(storage, storagePath);
-          await uploadBytes(storageReference, compressedBlob, {
-            contentType: 'image/jpeg',
-            customMetadata: {
-              jobId: job.id,
-              uploadedBy: userEmail,
-              originalName: file.name
-            }
-          });
-          downloadUrl = await getDownloadURL(storageReference);
-        } catch (storageErr: unknown) {
-          console.warn("Direct Firebase Storage upload encountered issue, checking base64 fallback:", storageErr);
-          // Fallback: convert compressed blob to data URL if storage rules reject
-          if (compressedBlob.size < 500000) {
-            downloadUrl = await new Promise((res) => {
-              const r = new FileReader();
-              r.onloadend = () => res(r.result as string);
-              r.readAsDataURL(compressedBlob);
-            });
-          } else {
-            throw storageErr;
-          }
-        }
+        // 2. Convert to Base64 Data URL (instant, no CORS, works without external storage bucket)
+        const dataUrl = await blobToDataUrl(compressedBlob);
 
         uploadedPodFiles.push({
           id: `pod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          url: downloadUrl,
-          storagePath,
+          url: dataUrl,
           name: file.name,
           size: compressedBlob.size,
           uploadedAt: new Date().toISOString(),
@@ -417,9 +404,15 @@ const ProofOfDeliveryModal: React.FC<ProofOfDeliveryModalProps> = ({
     ? `${job.customer.address}, ${job.customer.suburb} ${job.customer.state || ''}`
     : (job.stops && job.stops.length > 0 ? `${job.stops[job.stops.length - 1].address || ''} ${job.stops[job.stops.length - 1].suburb || ''}` : 'Location provided in job');
 
-  const customerName = job.customer?.company || job.customer?.firstName 
-    ? `${job.customer.firstName || ''} ${job.customer.lastName || ''}`.trim() 
-    : 'Customer';
+  const customerName = (() => {
+    if (job.customer?.company && typeof job.customer.company === 'string' && job.customer.company.trim()) {
+      return job.customer.company.trim();
+    }
+    const first = typeof job.customer?.firstName === 'string' && job.customer.firstName !== 'undefined' ? job.customer.firstName.trim() : '';
+    const last = typeof job.customer?.lastName === 'string' && job.customer.lastName !== 'undefined' ? job.customer.lastName.trim() : '';
+    const fullName = `${first} ${last}`.trim();
+    return fullName || 'Customer';
+  })();
 
   return (
     <div className="modal-overlay active">

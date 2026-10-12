@@ -487,7 +487,9 @@ const Schedules: React.FC = () => {
                       if (day.type === 'padding') return <div key={idx} className="day-cell padding"></div>;
                       
                       const dayJobs = monthProjections.filter(p => p.date === day.date);
-                      const isToday = day.date === new Date().toISOString().split('T')[0];
+                      const now = new Date();
+                      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                      const isToday = day.date === todayStr;
 
                       return (
                         <div key={day.date} className={`day-cell ${isToday ? 'is-today' : ''}`}>

@@ -2417,44 +2417,56 @@ function parseInvoiceDate(dateVal: any): Date | null {
   return null;
 }
 
+const prospectCompanyExistenceCache = new Map<string, boolean>();
+
 async function checkCompanyOverdueInvoices(
   db: admin.firestore.Firestore,
-  companyId: string
+  companyId: string,
+  hasKnownScheduledJob: boolean = false
 ): Promise<{ isOverdue: boolean; invoiceNum?: string }> {
   if (!companyId || companyId === 'test_standalone_customer') {
     return { isOverdue: false };
   }
   try {
     // 1. Check if company has at least one active/scheduled job template in LocalMile
-    const schedJobsSnap = await db.collection('scheduled_jobs')
-      .where('customer_id', '==', String(companyId))
-      .where('status', 'in', ['accepted', 'scheduled', 'active'])
-      .limit(1)
-      .get();
-
-    let hasScheduledJob = !schedJobsSnap.empty;
+    let hasScheduledJob = hasKnownScheduledJob;
     if (!hasScheduledJob) {
-      const schedJobsParentSnap = await db.collection('scheduled_jobs')
-        .where('parent_id', '==', String(companyId))
+      const schedJobsSnap = await db.collection('scheduled_jobs')
+        .where('customer_id', '==', String(companyId))
         .where('status', 'in', ['accepted', 'scheduled', 'active'])
         .limit(1)
         .get();
-      hasScheduledJob = !schedJobsParentSnap.empty;
+
+      hasScheduledJob = !schedJobsSnap.empty;
+      if (!hasScheduledJob) {
+        const schedJobsParentSnap = await db.collection('scheduled_jobs')
+          .where('parent_id', '==', String(companyId))
+          .where('status', 'in', ['accepted', 'scheduled', 'active'])
+          .limit(1)
+          .get();
+        hasScheduledJob = !schedJobsParentSnap.empty;
+      }
     }
 
     // 2. If it has a scheduled job, check if this company exists in ProspectPlus DB under 'companies' collection
     if (hasScheduledJob) {
-      let prospectDb: admin.firestore.Firestore;
-      try {
-        prospectDb = admin.app("prospectplus").firestore();
-      } catch {
-        prospectDb = admin.initializeApp({
-          projectId: "mailplus-outbound-leads-crm"
-        }, "prospectplus").firestore();
+      let existsInProspect = prospectCompanyExistenceCache.get(String(companyId));
+      if (existsInProspect === undefined) {
+        let prospectDb: admin.firestore.Firestore;
+        try {
+          prospectDb = admin.app("prospectplus").firestore();
+        } catch {
+          prospectDb = admin.initializeApp({
+            projectId: "mailplus-outbound-leads-crm"
+          }, "prospectplus").firestore();
+        }
+
+        const prospectCompanyDoc = await prospectDb.collection("companies").doc(String(companyId)).get();
+        existsInProspect = prospectCompanyDoc.exists;
+        prospectCompanyExistenceCache.set(String(companyId), existsInProspect);
       }
 
-      const prospectCompanyDoc = await prospectDb.collection("companies").doc(String(companyId)).get();
-      if (prospectCompanyDoc.exists) {
+      if (existsInProspect) {
         console.log(`[checkCompanyOverdueInvoices] Company ${companyId} has scheduled jobs and exists in ProspectPlus companies collection. Bypassing overdue invoice policy.`);
         return { isOverdue: false };
       }
@@ -2488,6 +2500,8 @@ async function checkCompanyOverdueInvoices(
 export const generateDailyScheduledJobs = onSchedule({
   schedule: "5 5 * * *", // 5:05 AM every day
   timeZone: "Australia/Sydney", // Adjust to LPO timezone
+  timeoutSeconds: 540,
+  memory: "512MiB",
 }, async (event) => {
   const db = getDB();
 
@@ -2532,7 +2546,7 @@ export const generateDailyScheduledJobs = onSchedule({
   const snapshot = await scheduledJobsRef.where('status', 'in', ['accepted', 'scheduled']).get();
   let generatedCount = 0;
 
-  const batch = db.batch();
+  let batch = db.batch();
   let operationsInBatch = 0;
   const overdueInvoiceCache = new Map<string, { isOverdue: boolean; invoiceNum?: string }>();
   const companyAccessCache = new Map<string, { isRevoked: boolean; reason?: string }>();
@@ -2577,7 +2591,7 @@ export const generateDailyScheduledJobs = onSchedule({
         if (companyIdForInvoiceCheck && companyIdForInvoiceCheck !== 'test_standalone_customer') {
           let overdueStatus = overdueInvoiceCache.get(companyIdForInvoiceCheck);
           if (!overdueStatus) {
-            overdueStatus = await checkCompanyOverdueInvoices(db, companyIdForInvoiceCheck);
+            overdueStatus = await checkCompanyOverdueInvoices(db, companyIdForInvoiceCheck, true);
             overdueInvoiceCache.set(companyIdForInvoiceCheck, overdueStatus);
           }
           if (overdueStatus.isOverdue) {
@@ -2696,9 +2710,10 @@ export const generateDailyScheduledJobs = onSchedule({
         generatedCount++;
         operationsInBatch++;
 
-        // Firestore batch limit is 500
-        if (operationsInBatch >= 450) {
+        // Commit every 50 jobs so progress is persisted incrementally
+        if (operationsInBatch >= 50) {
           await batch.commit();
+          batch = db.batch();
           operationsInBatch = 0;
         }
       }

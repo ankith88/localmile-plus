@@ -441,6 +441,49 @@ const Dashboard: React.FC = () => {
     return matchesSearch && matchesService && matchesDate && matchesStatus && matchesAdminFilters;
   };
 
+  // Active filters helper
+  const isFilterActive = (val: string | string[] | undefined | null) => {
+    if (!val) return false;
+    if (Array.isArray(val)) {
+      return val.length > 0 && !val.includes('all');
+    }
+    return val !== 'all' && val !== '';
+  };
+
+  const hasActiveFilters = Boolean(
+    searchTerm.trim() ||
+    dateFilter ||
+    isFilterActive(serviceFilter) ||
+    isFilterActive(statusFilter) ||
+    (isAdmin && (
+      isFilterActive(adminRoleView) ||
+      isFilterActive(selectedCustomerCompanyId) ||
+      isFilterActive(selectedParentId)
+    ))
+  );
+
+  const activeFilterCount = [
+    Boolean(searchTerm.trim()),
+    Boolean(dateFilter),
+    isFilterActive(serviceFilter),
+    isFilterActive(statusFilter),
+    isAdmin && isFilterActive(adminRoleView),
+    isAdmin && isFilterActive(selectedCustomerCompanyId),
+    isAdmin && isFilterActive(selectedParentId),
+  ].filter(Boolean).length;
+
+  const handleClearAllFilters = () => {
+    setSearchTerm('');
+    setDateFilter('');
+    setServiceFilter('all');
+    setStatusFilter('all');
+    if (isAdmin) {
+      setAdminRoleView('all');
+      setSelectedCustomerCompanyId('all');
+      setSelectedParentId('all');
+    }
+  };
+
   const globalFilteredJobs = jobs.filter(applyGlobalFilters);
   const globalFilteredRequests = requests.filter(applyGlobalFilters);
 
@@ -1151,7 +1194,7 @@ const Dashboard: React.FC = () => {
            {/* Stats Section */}
            <div className="stats-row">
                {[
-                  { label: 'Active Jobs', value: globalFilteredJobs.filter(j => j.date === today && j.status !== 'completed').length, icon: Calendar, color: 'var(--ink)' },
+                  { label: 'Active Jobs', value: globalFilteredJobs.filter(j => j.date === today && j.status !== 'completed' && j.status !== 'cancelled' && j.status !== 'rejected').length, icon: Calendar, color: 'var(--ink)' },
                   { label: 'Pending Requests', value: globalFilteredRequests.filter(r => (r.status === 'pending' || r.status === 'new-time-proposed' || r.status === 'awaiting-activation')).length, icon: MessageSquare, color: 'var(--gold)' },
                   { label: 'Completed Jobs', value: globalFilteredJobs.filter(j => j.status === 'completed').length, icon: CheckCircle2, color: 'var(--ink)' }
                ].map((stat, i) => (
@@ -1203,107 +1246,153 @@ const Dashboard: React.FC = () => {
 
             {/* Filter Bar */}
             <div className="glass-card filter-bar" id="tour-filters">
-              <div className="search-pill">
-                <Search size={18} />
-                <input 
-                  type="text" 
-                  placeholder="Search company, address or Job ID..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-                <div className="filter-actions">
-                   {isAdmin && (
-                     <>
-                       <CustomSelect 
-                         value={adminRoleView}
-                         onChange={(val) => setAdminRoleView(val as any)}
-                         options={[
-                           { value: 'all', label: 'All Roles', icon: <Layers size={14} /> },
-                           { value: 'customer', label: 'Role: Customer', icon: <User size={14} /> },
-                           { value: 'parent', label: 'Role: Parent', icon: <Building2 size={14} /> }
-                         ]}
-                         isMulti={true}
-                         placeholder="Filter Roles"
-                         className="role-select-custom"
-                       />
-                       <CustomSelect 
-                         value={selectedCustomerCompanyId}
-                         onChange={(val) => setSelectedCustomerCompanyId(val)}
-                         options={[
-                           { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
-                           ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
-                         ]}
-                         isMulti={true}
-                         searchable={true}
-                         placeholder="All Customer Companies"
-                         className="company-select-custom"
-                       />
-                       <CustomSelect 
-                         value={selectedParentId}
-                         onChange={(val) => setSelectedParentId(val)}
-                         options={[
-                           { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
-                           ...allParents.map(p => ({ value: p.id, label: p.name, icon: <MapPin size={14} /> }))
-                         ]}
-                         isMulti={true}
-                         searchable={true}
-                         placeholder="All Regions / Parents"
-                         className="lpo-select-custom"
-                       />
-                     </>
-                   )}
-                   <div className="custom-filter-date" style={{ position: 'relative', zIndex: 10 }}>
-                     <CustomDatePicker 
-                       value={dateFilter}
-                       onChange={(val) => setDateFilter(val)}
-                       placeholder="All Dates"
-                     />
-                   </div>
-                    <CustomSelect 
-                       value={serviceFilter}
-                       onChange={(val) => setServiceFilter(val)}
-                       options={userData?.role === 'parent' || (isAdmin && (adminRoleView === 'parent' || (Array.isArray(adminRoleView) && adminRoleView.includes('parent')))) ? [
-                         { value: 'all', label: 'All Services' },
-                         { value: 'Post Office-to-IM', label: 'Post Office-to-IM' },
-                         { value: 'IM-to-Site', label: 'IM-to-Site' },
-                         { value: 'Site-to-IM', label: 'Site-to-IM' }
-                       ] : [
-                         { value: 'all', label: 'All Services' },
-                         { value: 'site-to-lpo', label: userData?.role === 'customer' ? 'Outbound' : 'Site ➔ Parent' },
-                         { value: 'site-to-australia post', label: userData?.role === 'customer' ? 'Outbound (AusPost)' : 'Site ➔ Australia Post' },
-                         { value: 'lpo-to-site', label: userData?.role === 'customer' ? 'Inbound' : 'Parent ➔ Site' },
-                         { value: 'australia post-to-site', label: userData?.role === 'customer' ? 'Inbound (AusPost)' : 'Australia Post ➔ Site' },
-                         { value: 'round-trip', label: 'Round Trip' }
-                       ]}
-                       isMulti={isAdmin}
-                       searchable={true}
-                       placeholder="All Services"
-                       className="service-select-custom"
-                     />
-                    <CustomSelect 
-                      value={statusFilter}
-                      onChange={(val) => setStatusFilter(val)}
-                      options={[
-                        { value: 'all', label: 'All Statuses' },
-                        { value: 'pending', label: 'Pending' },
-                        { value: 'accepted', label: 'Accepted' },
-                        { value: 'scheduled', label: 'Scheduled' },
-                        { value: 'in-progress', label: 'In Progress' },
-                        { value: 'completed', label: 'Completed' },
-                        { value: 'rejected', label: 'Rejected' },
-                        { value: 'cancelled', label: 'Cancelled' }
-                      ]}
-                      isMulti={isAdmin}
-                      searchable={true}
-                      placeholder="All Statuses"
-                      className="status-select-custom"
-                    />
-                  <button className="btn-secondary-glass" onClick={() => window.location.reload()}><RefreshCw size={18} /></button>
-                  <button className="btn-secondary-glass icon-only" onClick={exportJobsCSV} title="Export Jobs">
+              <div className="filter-bar-header">
+                <div className="search-pill">
+                  <Search size={18} className="search-icon" />
+                  <input 
+                    type="text" 
+                    placeholder="Search company, address or Job ID..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  {searchTerm && (
+                    <button 
+                      type="button" 
+                      className="search-clear-btn" 
+                      onClick={() => setSearchTerm('')}
+                      title="Clear search"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="filter-header-actions">
+                  {hasActiveFilters && (
+                    <button 
+                      className="btn-clear-filters" 
+                      onClick={handleClearAllFilters}
+                      title="Reset all active filters"
+                    >
+                      <RotateCcw size={14} />
+                      <span>Reset Filters ({activeFilterCount})</span>
+                    </button>
+                  )}
+                  <button 
+                    className="btn-secondary-glass icon-only" 
+                    onClick={() => window.location.reload()}
+                    title="Refresh Data"
+                  >
+                    <RefreshCw size={18} />
+                  </button>
+                  <button 
+                    className="btn-secondary-glass icon-only" 
+                    onClick={exportJobsCSV} 
+                    title="Export Jobs CSV"
+                  >
                     <Download size={18} />
                   </button>
-               </div>
+                </div>
+              </div>
+
+              <div className={`filter-controls-grid ${isAdmin ? 'admin-grid' : 'user-grid'}`}>
+                {isAdmin && (
+                  <>
+                    <div className="filter-item">
+                      <CustomSelect 
+                        value={adminRoleView}
+                        onChange={(val) => setAdminRoleView(val as any)}
+                        options={[
+                          { value: 'all', label: 'All Roles', icon: <Layers size={14} /> },
+                          { value: 'customer', label: 'Role: Customer', icon: <User size={14} /> },
+                          { value: 'parent', label: 'Role: Parent', icon: <Building2 size={14} /> }
+                        ]}
+                        isMulti={true}
+                        placeholder="Filter Roles"
+                        className="role-select-custom filter-select"
+                      />
+                    </div>
+                    <div className="filter-item">
+                      <CustomSelect 
+                        value={selectedCustomerCompanyId}
+                        onChange={(val) => setSelectedCustomerCompanyId(val)}
+                        options={[
+                          { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
+                          ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
+                        ]}
+                        isMulti={true}
+                        searchable={true}
+                        placeholder="All Customer Companies"
+                        className="company-select-custom filter-select"
+                      />
+                    </div>
+                    <div className="filter-item">
+                      <CustomSelect 
+                        value={selectedParentId}
+                        onChange={(val) => setSelectedParentId(val)}
+                        options={[
+                          { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
+                          ...allParents.map(p => ({ value: p.id, label: p.name, icon: <MapPin size={14} /> }))
+                        ]}
+                        isMulti={true}
+                        searchable={true}
+                        placeholder="All Regions / Parents"
+                        className="lpo-select-custom filter-select"
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="filter-item filter-item-date">
+                  <CustomDatePicker 
+                    value={dateFilter}
+                    onChange={(val) => setDateFilter(val)}
+                    placeholder="All Dates"
+                  />
+                </div>
+                <div className="filter-item">
+                  <CustomSelect 
+                    value={serviceFilter}
+                    onChange={(val) => setServiceFilter(val)}
+                    options={userData?.role === 'parent' || (isAdmin && (adminRoleView === 'parent' || (Array.isArray(adminRoleView) && adminRoleView.includes('parent')))) ? [
+                      { value: 'all', label: 'All Services' },
+                      { value: 'Post Office-to-IM', label: 'Post Office-to-IM' },
+                      { value: 'IM-to-Site', label: 'IM-to-Site' },
+                      { value: 'Site-to-IM', label: 'Site-to-IM' }
+                    ] : [
+                      { value: 'all', label: 'All Services' },
+                      { value: 'site-to-lpo', label: userData?.role === 'customer' ? 'Outbound' : 'Site ➔ Parent' },
+                      { value: 'site-to-australia post', label: userData?.role === 'customer' ? 'Outbound (AusPost)' : 'Site ➔ Australia Post' },
+                      { value: 'lpo-to-site', label: userData?.role === 'customer' ? 'Inbound' : 'Parent ➔ Site' },
+                      { value: 'australia post-to-site', label: userData?.role === 'customer' ? 'Inbound (AusPost)' : 'Australia Post ➔ Site' },
+                      { value: 'round-trip', label: 'Round Trip' }
+                    ]}
+                    isMulti={isAdmin}
+                    searchable={true}
+                    placeholder="All Services"
+                    className="service-select-custom filter-select"
+                  />
+                </div>
+                <div className="filter-item">
+                  <CustomSelect 
+                    value={statusFilter}
+                    onChange={(val) => setStatusFilter(val)}
+                    options={[
+                      { value: 'all', label: 'All Statuses' },
+                      { value: 'pending', label: 'Pending' },
+                      { value: 'accepted', label: 'Accepted' },
+                      { value: 'scheduled', label: 'Scheduled' },
+                      { value: 'in-progress', label: 'In Progress' },
+                      { value: 'completed', label: 'Completed' },
+                      { value: 'rejected', label: 'Rejected' },
+                      { value: 'cancelled', label: 'Cancelled' }
+                    ]}
+                    isMulti={isAdmin}
+                    searchable={true}
+                    placeholder="All Statuses"
+                    className="status-select-custom filter-select"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Admin Bulk Selection Bar */}
@@ -2417,40 +2506,228 @@ const Dashboard: React.FC = () => {
 
         .filter-bar {
           display: flex;
-          justify-content: space-between;
-          padding: 12px;
+          flex-direction: column;
+          gap: 14px;
+          padding: 18px 20px;
           margin-bottom: 24px;
           border-radius: 20px;
           position: relative;
-          z-index: 10;
+          z-index: 20;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+          background: rgba(255, 255, 255, 0.7);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255, 255, 255, 0.6);
         }
-        .search-pill {
-          flex: 1;
+
+        .filter-bar-header {
           display: flex;
           align-items: center;
+          justify-content: space-between;
           gap: 12px;
-          background: rgba(255, 255, 255, 0.8);
-          padding: 0 20px;
-          border-radius: 14px;
-          max-width: 400px;
+          flex-wrap: wrap;
         }
-        .search-pill input { border: none; background: transparent; padding: 14px 0; width: 100%; font-weight: 500; font-size: 0.95rem; }
-        .filter-actions { display: flex; gap: 8px; }
-        .lpo-select-custom { min-width: 200px; }
+
+        .search-pill {
+          flex: 1 1 280px;
+          min-width: 220px;
+          max-width: 480px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(255, 255, 255, 0.6);
+          padding: 0 16px;
+          border-radius: 14px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+          transition: all 0.2s ease;
+        }
+
+        .search-pill:focus-within {
+          background: #ffffff;
+          border-color: var(--ink);
+          box-shadow: 0 0 0 3px rgba(26, 61, 51, 0.08);
+        }
+
+        .search-pill input {
+          border: none;
+          background: transparent;
+          padding: 12px 0;
+          width: 100%;
+          font-weight: 500;
+          font-size: 0.92rem;
+          color: var(--ink);
+          outline: none;
+        }
+
+        .search-clear-btn {
+          background: rgba(0, 0, 0, 0.05);
+          border: none;
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          color: var(--ink-soft);
+          flex-shrink: 0;
+          transition: all 0.2s;
+        }
+
+        .search-clear-btn:hover {
+          background: var(--ink);
+          color: white;
+        }
+
+        .filter-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-left: auto;
+        }
+
+        .btn-clear-filters {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: rgba(239, 68, 68, 0.08);
+          color: #dc2626;
+          border: 1px solid rgba(239, 68, 68, 0.2);
+          border-radius: 12px;
+          padding: 8px 14px;
+          font-size: 0.82rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .btn-clear-filters:hover {
+          background: #dc2626;
+          color: white;
+          border-color: #dc2626;
+          transform: translateY(-1px);
+        }
+
+        .filter-controls-grid {
+          display: grid;
+          gap: 10px;
+          width: 100%;
+        }
+
+        .filter-controls-grid.admin-grid {
+          grid-template-columns: repeat(6, 1fr);
+        }
+
+        .filter-controls-grid.user-grid {
+          grid-template-columns: repeat(3, minmax(160px, 240px));
+        }
+
+        .filter-item {
+          min-width: 0;
+          position: relative;
+        }
+
+        .filter-item:focus-within,
+        .filter-item:has(.is-open) {
+          z-index: 50;
+        }
+
+        .filter-select {
+          min-width: 0 !important;
+          width: 100% !important;
+        }
+
+        .filter-item-date,
+        .custom-filter-date {
+          min-width: 0;
+          position: relative;
+          z-index: 10;
+        }
+
+        .filter-item-date:focus-within,
+        .filter-item-date:has(.is-open),
+        .custom-filter-date:focus-within,
+        .custom-filter-date:has(.is-open) {
+          z-index: 50;
+        }
+
+        .lpo-select-custom,
+        .company-select-custom,
+        .role-select-custom,
+        .service-select-custom,
+        .status-select-custom {
+          min-width: 0;
+          width: 100%;
+        }
 
         .btn-secondary-glass {
           background: rgba(255, 255, 255, 0.8);
           border: 1px solid rgba(255, 255, 255, 0.5);
           color: var(--ink);
           padding: 0 16px;
+          height: 40px;
           border-radius: 14px;
           font-weight: 700;
           cursor: pointer;
           display: flex; align-items: center; gap: 8px;
+          transition: all 0.2s;
+        }
+        .btn-secondary-glass:hover {
+          background: white;
+          border-color: var(--ink);
+          box-shadow: 0 4px 12px rgba(26, 61, 51, 0.05);
         }
         .btn-secondary-glass.icon-only {
-          padding: 10px;
+          width: 40px;
+          padding: 0;
           justify-content: center;
+        }
+
+        @media (max-width: 1160px) {
+          .filter-controls-grid.admin-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+          .filter-controls-grid.user-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+
+        @media (max-width: 780px) {
+          .filter-controls-grid.admin-grid,
+          .filter-controls-grid.user-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .filter-bar-header {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .search-pill {
+            max-width: 100%;
+          }
+          .filter-header-actions {
+            width: 100%;
+            justify-content: flex-end;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .filter-controls-grid.admin-grid,
+          .filter-controls-grid.user-grid {
+            grid-template-columns: 1fr;
+          }
+          .filter-bar {
+            padding: 14px;
+            gap: 12px;
+          }
+          .filter-header-actions {
+            justify-content: space-between;
+          }
+          .btn-clear-filters {
+            flex: 1;
+            justify-content: center;
+          }
         }
         .timeline-container { position: relative; padding-top: 20px; }
         .timeline-manifest { position: relative; padding-left: 60px; }
@@ -2706,11 +2983,6 @@ const Dashboard: React.FC = () => {
           .controls-row { flex-direction: column; align-items: stretch; gap: 12px; }
           .page-header h1 { font-size: 1.5rem; }
           .page-header p { font-size: 0.85rem; }
-          .filter-bar { flex-direction: column; gap: 12px; align-items: stretch; padding: 16px; margin-bottom: 20px; }
-          .search-pill { max-width: 100%; padding: 0 12px; }
-          .filter-actions { flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
-          .date-picker-glass, .select-glass { flex: 1; min-width: 110px; padding: 6px 10px; font-size: 0.8rem; }
-          .lpo-select-custom { flex: 1; min-width: 140px; }
         }
 
         @media (max-width: 700px) {

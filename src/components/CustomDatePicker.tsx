@@ -95,7 +95,11 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
   const isTodayDisabled = disableWeekends && (todayDate.getDay() === 0 || todayDate.getDay() === 6 || isPublicHoliday(todayDate, state));
 
   return (
-    <div className="custom-datepicker-container" ref={containerRef}>
+    <div 
+      className={`custom-datepicker-container ${isOpen ? 'is-open' : ''}`} 
+      ref={containerRef}
+      style={{ zIndex: isOpen ? 60 : undefined }}
+    >
       <div className="datepicker-trigger" onClick={() => setIsOpen(!isOpen)}>
         <CalendarIcon size={16} />
         <span className={value ? 'selected-value' : 'placeholder'}>
@@ -160,22 +164,25 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
           position: relative;
           display: inline-block;
           width: 100%;
+          box-sizing: border-box;
         }
 
         .datepicker-trigger {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
           background: rgba(255, 255, 255, 0.8);
           border: 1px solid rgba(255, 255, 255, 0.5);
-          padding: 10px 16px;
+          padding: 10px 14px;
           border-radius: 14px;
           cursor: pointer;
           transition: all 0.2s;
           color: var(--ink);
           font-weight: 600;
-          font-size: 0.9rem;
-          min-width: 160px;
+          font-size: 0.88rem;
+          min-width: 0;
+          width: 100%;
+          box-sizing: border-box;
         }
 
         .datepicker-trigger:hover {
@@ -221,7 +228,15 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
           border-radius: 20px;
           padding: 20px;
           width: 280px;
+          max-width: calc(100vw - 32px);
           box-shadow: 0 20px 50px rgba(26, 61, 51, 0.15);
+        }
+
+        @media (max-width: 500px) {
+          .datepicker-popup {
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+          }
         }
 
         .popup-header {

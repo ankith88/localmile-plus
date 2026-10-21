@@ -127,14 +127,18 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
   };
 
   return (
-    <div className={`custom-select-container ${className || ''}`} ref={containerRef}>
+    <div 
+      className={`custom-select-container ${className || ''} ${isOpen ? 'is-open' : ''}`} 
+      ref={containerRef}
+      style={{ zIndex: isOpen ? 60 : undefined }}
+    >
       <div 
         className={`select-trigger glass ${isOpen ? 'open' : ''}`} 
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="trigger-content">
           {triggerIcon && <span className="option-icon">{triggerIcon}</span>}
-          <span className="selected-label">
+          <span className="selected-label" title={typeof triggerLabel === 'string' ? triggerLabel : undefined}>
             {triggerLabel}
           </span>
         </div>
@@ -182,7 +186,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
                         </div>
                       )}
                       {option.icon && <span className="option-icon">{option.icon}</span>}
-                      <span className="option-label">{option.label}</span>
+                      <span className="option-label" title={option.label}>{option.label}</span>
                     </div>
                     {!isMulti && isSelected && <Check size={14} className="check-icon" />}
                   </div>
@@ -196,15 +200,17 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
       <style>{`
         .custom-select-container {
           position: relative;
-          min-width: 180px;
+          min-width: 0;
+          width: 100%;
           user-select: none;
+          box-sizing: border-box;
         }
 
         .select-trigger {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 10px 16px;
+          padding: 10px 14px;
           background: rgba(255, 255, 255, 0.8);
           border: 1px solid rgba(255, 255, 255, 0.5);
           border-radius: 14px;
@@ -212,7 +218,10 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
           transition: all 0.2s;
           color: var(--ink);
           font-weight: 600;
-          font-size: 0.9rem;
+          font-size: 0.88rem;
+          min-width: 0;
+          width: 100%;
+          box-sizing: border-box;
         }
 
         .select-trigger:hover {

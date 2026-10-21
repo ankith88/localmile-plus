@@ -1760,14 +1760,29 @@ export async function isCompanyLocalMileAccessRevoked(
     if (compDoc.exists) {
       const compData = compDoc.data();
       const status = (compData?.status || compData?.customerStatus || '').toString().toLowerCase().trim();
-      if (
+
+      // Check if the company was reactivated after any deactivation
+      const reactivatedTime = compData?.reactivatedAt ? new Date(compData.reactivatedAt).getTime() : 0;
+      const deactivatedTime = compData?.deactivatedAt ? new Date(compData.deactivatedAt).getTime() : 0;
+      const isReactivated = reactivatedTime > 0 && reactivatedTime >= deactivatedTime;
+
+      const isExplicitRevokedStatus =
         status === 'cancelled' ||
         status === 'deactivated' ||
         status === 'inactive' ||
         status === 'disabled' ||
-        status === 'lost' ||
-        compData?.deactivatedAt != null
-      ) {
+        status === 'lost';
+
+      if (isExplicitRevokedStatus) {
+        return { isRevoked: true, reason: `Company status is '${status}'` };
+      }
+
+      if (compData?.cancelled === true) {
+        return { isRevoked: true, reason: `Company is marked cancelled` };
+      }
+
+      // If deactivatedAt exists without being superseded by reactivatedAt
+      if (compData?.deactivatedAt != null && !isReactivated) {
         return { isRevoked: true, reason: `Company status is '${status || 'deactivated'}'` };
       }
     }
@@ -1939,8 +1954,14 @@ export const onCompanyUpdated = onDocumentUpdated({
   const newStatus = (newData.status || newData.customerStatus || "").toString().toLowerCase().trim();
   const oldStatus = (oldData.status || oldData.customerStatus || "").toString().toLowerCase().trim();
 
-  const isCancelledNow = newStatus === "cancelled" || newStatus === "deactivated" || newStatus === "inactive" || newStatus === "lost" || newData.deactivatedAt != null;
-  const wasCancelledBefore = oldStatus === "cancelled" || oldStatus === "deactivated" || oldStatus === "inactive" || oldStatus === "lost" || oldData.deactivatedAt != null;
+  const isExplicitRevoked = (s: string) => s === "cancelled" || s === "deactivated" || s === "inactive" || s === "lost";
+
+  const newReactivatedTime = newData.reactivatedAt ? new Date(newData.reactivatedAt).getTime() : 0;
+  const newDeactivatedTime = newData.deactivatedAt ? new Date(newData.deactivatedAt).getTime() : 0;
+  const isReactivatedNow = newReactivatedTime > 0 && newReactivatedTime >= newDeactivatedTime;
+
+  const isCancelledNow = (isExplicitRevoked(newStatus) || newData.cancelled === true || (newData.deactivatedAt != null && !isReactivatedNow)) && !isReactivatedNow;
+  const wasCancelledBefore = isExplicitRevoked(oldStatus) || oldData.cancelled === true || oldData.deactivatedAt != null;
 
   if (isCancelledNow && !wasCancelledBefore) {
     console.log(`[onCompanyUpdated] Company ${companyId} status changed from '${oldStatus}' to '${newStatus}'. Cleaning up jobs and schedules...`);

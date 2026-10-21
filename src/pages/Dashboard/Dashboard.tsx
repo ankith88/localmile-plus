@@ -48,7 +48,7 @@ import { syncJobWithNetSuite } from '../../utils/netsuiteSync';
 
 
 const Dashboard: React.FC = () => {
-  const { parent, customer, isAdmin, selectedParentId, setSelectedParentId, allParents, userData, companyData } = useLpo();
+  const { parent, customer, isAdmin, selectedParentId, setSelectedParentId, allParents, userData, companyData, isRealSuperAdmin } = useLpo();
   const [jobs, setJobs] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -518,15 +518,57 @@ const Dashboard: React.FC = () => {
   };
 
   const handleRecreateJobForToday = async (job: any) => {
-    if (!isAdmin) {
+    const isAdminOrSuperAdmin = Boolean(isAdmin || userData?.role === 'admin' || userData?.role === 'superadmin' || isRealSuperAdmin);
+    if (!isAdminOrSuperAdmin) {
       alert("Only admins and superadmins can recreate missed jobs.");
       return;
+    }
+
+    const companyId = job.customer_id || job.customer?.netsuiteId || job.customer?.id || job.parent_id;
+    let overdueInvoiceNum: string | null = null;
+
+    if (companyId && companyId !== 'test_standalone_customer') {
+      try {
+        const invoicesRef = collection(db, `companies/${companyId}/invoices`);
+        const querySnapshot = await getDocs(invoicesRef);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        for (const docSnap of querySnapshot.docs) {
+          const data = docSnap.data();
+          const status = (data.status || '').toString().toLowerCase().trim();
+          const isPaid = status === 'paid in full' || status === 'paid';
+          const isVoidOrCancelled = status === 'voided' || status === 'void' || status === 'cancelled' || status === 'canceled';
+          const totalAmount = typeof data.totalAmount === 'number' ? data.totalAmount : parseFloat(data.totalAmount || '0');
+
+          if (!isPaid && !isVoidOrCancelled && totalAmount > 0) {
+            let invDate: Date | null = null;
+            if (data.date) {
+              if (typeof data.date.toDate === 'function') invDate = data.date.toDate();
+              else if (typeof data.date === 'number') invDate = new Date(data.date);
+              else if (typeof data.date === 'string') {
+                const match = data.date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                invDate = match ? new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3])) : new Date(data.date);
+              }
+            }
+            if (invDate && !isNaN(invDate.getTime()) && invDate < sevenDaysAgo) {
+              overdueInvoiceNum = data.invoiceNum || docSnap.id;
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error checking invoices before recreating missed job:", e);
+      }
     }
 
     const todayStr = formatDateForInput(new Date());
     const jobLabel = job.customer?.company || job.id || 'Missed Job';
     const isPastJob = job.date < todayStr;
-    const confirmMsg = `Recreate ${isPastJob ? 'missed' : ''} job for "${jobLabel}" for today (${todayStr})?`;
+    const invoiceNotice = overdueInvoiceNum 
+      ? `\n\n⚠️ Notice: This customer has an overdue unpaid invoice (Invoice #${overdueInvoiceNum}). As an administrator, you have permission to recreate this job despite the unpaid invoice.`
+      : '';
+    const confirmMsg = `Recreate ${isPastJob ? 'missed' : ''} job for "${jobLabel}" for today (${todayStr})?${invoiceNotice}`;
     if (!window.confirm(confirmMsg)) return;
 
     setRecreatingJobIds(prev => new Set(prev).add(job.id));
@@ -560,7 +602,12 @@ const Dashboard: React.FC = () => {
         customer_id: job.customer_id || '',
         uid: job.uid || '',
         recreatedFromJobId: job.id,
-        recreatedReason: 'Missed job recreated for today',
+        recreatedReason: overdueInvoiceNum 
+          ? `Missed job recreated for today (Admin override - Unpaid invoice #${overdueInvoiceNum})` 
+          : 'Missed job recreated for today',
+        unpaidInvoiceOverride: Boolean(overdueInvoiceNum),
+        hasOverdueInvoiceOverride: Boolean(overdueInvoiceNum),
+        overdueInvoiceNum: overdueInvoiceNum || null,
         status: isRequest ? 'pending' : 'scheduled',
         syncedWithNetSuite: null,
         createdAt: serverTimestamp(),
@@ -580,7 +627,10 @@ const Dashboard: React.FC = () => {
         setJobs(prev => [{ id: docRef.id, ...newPayload, createdAt: new Date() }, ...prev]);
       }
 
-      alert(`Job successfully recreated for today (${todayStr})! Check the "In-Progress" / Today's tab.`);
+      const successMsg = overdueInvoiceNum
+        ? `Job successfully recreated for today (${todayStr}) despite unpaid invoice #${overdueInvoiceNum}! Check the "In-Progress" / Today's tab.`
+        : `Job successfully recreated for today (${todayStr})! Check the "In-Progress" / Today's tab.`;
+      alert(successMsg);
     } catch (err) {
       console.error("Error recreating missed job for today:", err);
       alert("Failed to recreate job. Please try again or rebook via New Job form.");

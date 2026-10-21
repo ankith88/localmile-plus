@@ -246,7 +246,7 @@ const JobMap: React.FC<{ stops: any[], onDistanceCalculated?: (distance: string)
 };
 
 const NewJobForm: React.FC = () => {
-  const { parent, customer, userData, companyData, isAdmin } = useLpo();
+  const { parent, customer, userData, companyData, isAdmin, isRealSuperAdmin } = useLpo();
 
   const isCompanyEligibleForScheduled = (company: CompanyData | null | undefined): boolean => {
     if (!company) return true;
@@ -446,7 +446,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
   };
 
   useEffect(() => {
-    const companyId = formData.customer.netsuiteId || customer?.id || userData?.customer_id || userData?.parent_id;
+    const companyId = selectedAdminCustomerCompanyId || formData.customer.netsuiteId || customer?.id || userData?.customer_id || userData?.parent_id;
     if (!companyId || companyId === 'test_standalone_customer') {
       setHasOverdueInvoice(false);
       setOverdueInvoiceNum(null);
@@ -465,9 +465,12 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
 
         for (const docSnap of querySnapshot.docs) {
           const data = docSnap.data();
-          const status = data.status || '';
-          const isPaid = status.toLowerCase() === 'paid in full' || status.toLowerCase() === 'paid';
-          if (!isPaid) {
+          const status = (data.status || '').toString().toLowerCase().trim();
+          const isPaid = status === 'paid in full' || status === 'paid';
+          const isVoidOrCancelled = status === 'voided' || status === 'void' || status === 'cancelled' || status === 'canceled';
+          const totalAmount = typeof data.totalAmount === 'number' ? data.totalAmount : parseFloat(data.totalAmount || '0');
+
+          if (!isPaid && !isVoidOrCancelled && totalAmount > 0) {
             const invoiceDate = parseInvoiceDate(data.date);
             if (invoiceDate && invoiceDate < sevenDaysAgo) {
               foundOverdue = true;
@@ -485,7 +488,7 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
     };
 
     checkInvoices();
-  }, [formData.customer.netsuiteId, customer?.id, userData]);
+  }, [selectedAdminCustomerCompanyId, formData.customer.netsuiteId, customer?.id, userData]);
 
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [addressPredictions, setAddressPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
@@ -603,12 +606,22 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
     if (draft && window.location.search.includes('rebook=true')) {
       try {
         const jobData = JSON.parse(draft);
+        const customerObj = jobData.customer || {};
+        const customerNetsuiteId = customerObj.netsuiteId || jobData.customer_id || jobData.netsuiteCustomerId || customerObj.id || undefined;
+
         setFormData(prev => ({
           ...prev,
-          customer: jobData.customer,
+          customer: {
+            ...customerObj,
+            netsuiteId: customerNetsuiteId
+          },
           service: jobData.service,
           billing: jobData.billing,
         }));
+
+        if (customerNetsuiteId) {
+          setSelectedAdminCustomerCompanyId(customerNetsuiteId);
+        }
         localStorage.removeItem('rebook_draft');
       } catch (e) {
         console.error("Failed to parse rebook draft", e);
@@ -915,6 +928,18 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
           const additions = combinedList.filter(c => !ids.has(c.id));
           return [...prev, ...additions];
         });
+
+        // Pre-select customer if customerId query param is present
+        const params = new URLSearchParams(window.location.search);
+        const customerIdParam = params.get('customerId');
+        if (customerIdParam) {
+          const found = combinedList.find(c => c.companyId === customerIdParam || c.id === customerIdParam);
+          if (found) {
+            setSelectedAdminCustomerCompanyId(found.companyId || found.id);
+            setSelectedAdminCustomer(found);
+            selectCustomer(found);
+          }
+        }
       } catch (err) {
         console.error("Error fetching customer users & companies for admin:", err);
       }
@@ -1512,6 +1537,11 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
       }
     }
 
+    if (isBlockedByInvoice) {
+      setValidationError(`Booking restricted: Customer has an outstanding invoice (Invoice #${overdueInvoiceNum || ''}) that is not Paid In Full and was created more than 7 days ago.`);
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingProgress(10);
     setProcessingMessage('Validating request details...');
@@ -1801,6 +1831,9 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
               } 
             : formData.auspostContact,
           is_free_job: isFreeJob,
+          unpaidInvoiceOverride: (hasOverdueInvoice && isAdminOrSuperAdmin) ? true : null,
+          hasOverdueInvoiceOverride: (hasOverdueInvoice && isAdminOrSuperAdmin) ? true : null,
+          overdueInvoiceNum: hasOverdueInvoice ? (overdueInvoiceNum || null) : null,
           ...conditionalServiceData
         }));
 
@@ -2107,8 +2140,14 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
     }
   };
 
+  const isAdminOrSuperAdmin = Boolean(
+    isAdmin || 
+    userData?.role === 'admin' || 
+    userData?.role === 'superadmin' || 
+    isRealSuperAdmin
+  );
   const isRestricted = userData?.role === 'customer' && (companyData?.franchisee === 435 || companyData?.franchisee === '435');
-  const isBlockedByInvoice = hasOverdueInvoice;
+  const isBlockedByInvoice = hasOverdueInvoice && !isAdminOrSuperAdmin;
 
   return (
     <div className="new-job-premium">
@@ -2254,6 +2293,20 @@ Please create/add the new PO Box address details for ${subcustomerName} in NetSu
                   <h3 style={{ margin: '0 0 4px 0', color: 'var(--ink)', fontSize: '16px', fontWeight: 600 }}>Booking Restricted</h3>
                   <p style={{ margin: 0, color: 'var(--ink)', opacity: 0.8, fontSize: '14px' }}>
                     You cannot book a job because you have an outstanding invoice (Invoice #{overdueInvoiceNum || ''}) that is not Paid In Full and was created more than 7 days ago.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isAdminOrSuperAdmin && hasOverdueInvoice && !isRestricted && (
+              <div style={{ background: 'rgba(217, 119, 6, 0.1)', border: '1px solid #d97706', borderRadius: '12px', padding: '16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ background: '#d97706', color: 'white', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: '0 0 4px 0', color: '#92400e', fontSize: '16px', fontWeight: 600 }}>Unpaid Invoice Warning (Admin Override Active)</h3>
+                  <p style={{ margin: 0, color: '#78350f', fontSize: '14px' }}>
+                    This customer has an outstanding invoice (Invoice #{overdueInvoiceNum || ''}) that is not Paid In Full and was created more than 7 days ago. As an administrator, you have permission to create or rebook jobs despite this unpaid invoice.
                   </p>
                 </div>
               </div>

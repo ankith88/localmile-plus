@@ -2594,7 +2594,7 @@ export const generateDailyScheduledJobs = onSchedule({
             overdueStatus = await checkCompanyOverdueInvoices(db, companyIdForInvoiceCheck, true);
             overdueInvoiceCache.set(companyIdForInvoiceCheck, overdueStatus);
           }
-          if (overdueStatus.isOverdue) {
+          if (overdueStatus.isOverdue && !template.unpaidInvoiceOverride && !template.hasOverdueInvoiceOverride) {
             console.log(`[generateDailyScheduledJobs] Skipping scheduled job template ${doc.id} for company ${companyIdForInvoiceCheck} due to unpaid overdue invoice #${overdueStatus.invoiceNum || 'N/A'}`);
             continue;
           }

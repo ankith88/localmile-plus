@@ -121,21 +121,22 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
       {isOpen && (
         <div className="datepicker-popup glass fade-in">
           <div className="popup-header">
-            <button onClick={() => navigateMonth(-1)}><ChevronLeft size={16} /></button>
+            <button type="button" onClick={() => navigateMonth(-1)}><ChevronLeft size={16} /></button>
             <span className="current-month-label">
               {currentMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
             </span>
-            <button onClick={() => navigateMonth(1)}><ChevronRight size={16} /></button>
+            <button type="button" onClick={() => navigateMonth(1)}><ChevronRight size={16} /></button>
           </div>
           
           <div className="calendar-grid">
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => (
-              <div key={d} className="weekday-label">{d}</div>
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+              <div key={`${d}-${i}`} className="weekday-label">{d}</div>
             ))}
             {daysInMonth(currentMonth).map((date, idx) => (
               <div key={idx} className="day-cell-wrapper">
                 {date ? (
                   <button
+                    type="button"
                     className={`day-btn ${isToday(date) ? 'today' : ''} ${isSelected(date) ? 'selected' : ''}`}
                     onClick={() => handleDateSelect(date)}
                     disabled={isDisabled(date)}
@@ -149,6 +150,7 @@ const CustomDatePicker: React.FC<CustomDatePickerProps> = ({ value, onChange, pl
           
           <div className="popup-footer">
             <button 
+              type="button"
               className="today-btn" 
               onClick={() => handleDateSelect(new Date())}
               disabled={isTodayDisabled}

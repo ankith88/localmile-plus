@@ -2577,6 +2577,19 @@ export const generateDailyScheduledJobs = onSchedule({
 
     // Check if job is stopped or skipped today
     if (template.recurrenceStatus === 'stopped') continue;
+    if (template.stopDate && todayStr >= template.stopDate) {
+      batch.update(doc.ref, {
+        recurrenceStatus: 'stopped',
+        stoppedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      operationsInBatch++;
+      if (operationsInBatch >= 450) {
+        await batch.commit();
+        batch = db.batch();
+        operationsInBatch = 0;
+      }
+      continue;
+    }
     if (template.skippedDates && template.skippedDates.includes(todayStr)) continue;
 
     // Check if the template has started

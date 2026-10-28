@@ -18,13 +18,15 @@ import {
   User,
   Building2
 } from 'lucide-react';
-import { collection, query, where, getDocs, doc, orderBy, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, addDoc, doc, orderBy, updateDoc, arrayUnion, arrayRemove, serverTimestamp } from 'firebase/firestore';
 import { sortStops } from '../../utils/stops';
 
 import { db } from '../../firebase/config';
 import SupportEmailModal from '../../components/SupportEmailModal';
+import BulkStopSchedulesModal from '../../components/BulkStopSchedulesModal';
 import { useLpo } from '../../context/LpoContext';
-import { getNextOccurrences, parseLocalDate } from '../../utils/scheduling';
+import { formatDateForInput, getDayName, getNextOccurrences, parseLocalDate } from '../../utils/scheduling';
+import { syncJobWithNetSuite } from '../../utils/netsuiteSync';
 import CustomSelect from '../../components/CustomSelect';
 import CustomDatePicker from '../../components/CustomDatePicker';
 import { getDisplayServiceName } from '../../utils/serviceHelpers';
@@ -44,8 +46,11 @@ const Schedules: React.FC = () => {
   const [selectedCustomerFilter, setSelectedCustomerFilter] = useState('all');
   const [selectedServiceFilter, setSelectedServiceFilter] = useState('all');
 
-  const [adminRoleView, setAdminRoleView] = useState<'customer' | 'parent'>('customer');
+  const [adminRoleView, setAdminRoleView] = useState<'all' | 'customer' | 'parent'>('customer');
   const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(new Map());
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<Set<string>>(new Set());
+  const [isBulkStopModalOpen, setIsBulkStopModalOpen] = useState(false);
+  const [isBulkStopping, setIsBulkStopping] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -236,6 +241,95 @@ const Schedules: React.FC = () => {
     }
   };
 
+  const ensureTodayJobInstanceIfApplicable = async (scheduleObj: any) => {
+    try {
+      if (!scheduleObj || !scheduleObj.id) return;
+      if (scheduleObj.recurrenceStatus === 'stopped') return;
+      const status = (scheduleObj.status || '').toLowerCase();
+      if (status && !['accepted', 'scheduled', 'active'].includes(status)) return;
+
+      const now = new Date();
+      const todayStr = formatDateForInput(now);
+      const todayDayName = getDayName(now).substring(0, 3);
+
+      if (scheduleObj.stopDate && todayStr >= scheduleObj.stopDate) return;
+      if (Array.isArray(scheduleObj.skippedDates) && scheduleObj.skippedDates.includes(todayStr)) return;
+      if (scheduleObj.date && scheduleObj.date > todayStr) return;
+      if (!Array.isArray(scheduleObj.frequency) || !scheduleObj.frequency.includes(todayDayName)) return;
+
+      // Check if an active instance for today already exists
+      const existingSnap = await getDocs(
+        query(
+          collection(db, 'jobs'),
+          where('scheduledJobId', '==', scheduleObj.id),
+          where('date', '==', todayStr)
+        )
+      );
+      const hasActiveInstance = existingSnap.docs.some(d => {
+        const st = (d.data().status || '').toLowerCase();
+        return st !== 'cancelled' && st !== 'rejected';
+      });
+      if (hasActiveInstance) return;
+
+      let instanceServiceInternalId = scheduleObj.serviceInternalId || null;
+      let instanceServiceRate = scheduleObj.serviceRate || null;
+      const customerId = scheduleObj.customer_id;
+      const instanceIsFree = Boolean(scheduleObj.is_free_job === true || scheduleObj.is_free_job === 'true');
+
+      if ((!instanceServiceInternalId || !instanceServiceRate) && customerId) {
+        try {
+          const compDoc = await getDoc(doc(db, 'companies', String(customerId)));
+          if (compDoc.exists()) {
+            const compData = compDoc.data();
+            const normSvc = (scheduleObj.service || '').toLowerCase();
+            if (normSvc.includes('site-to-lpo') || normSvc.includes('site-to-australia post') || normSvc.includes('pmpo')) {
+              if (!instanceServiceInternalId) {
+                instanceServiceInternalId = (instanceIsFree && compData?.serviceTrialInternalID)
+                  ? compData.serviceTrialInternalID
+                  : (compData?.servicePMPOInternalID || compData?.lpoServicePMPOInternalID || null);
+              }
+              if (!instanceServiceRate) {
+                instanceServiceRate = compData?.servicePMPORate || compData?.lpoServicePMPORate || '15';
+              }
+            } else if (normSvc.includes('lpo-to-site') || normSvc.includes('australia post-to-site') || normSvc.includes('ampo')) {
+              if (!instanceServiceInternalId) {
+                instanceServiceInternalId = compData?.serviceAMPOInternalID || compData?.lpoServiceAMPOInternalID || null;
+              }
+              if (!instanceServiceRate) {
+                instanceServiceRate = compData?.serviceAMPORate || compData?.lpoServiceAMPORate || '15';
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`Error resolving service metadata for company ${customerId}:`, err);
+        }
+      }
+
+      const { id: _schedId, ...templateFields } = scheduleObj;
+      const newInstancePayload = {
+        ...templateFields,
+        serviceInternalId: instanceServiceInternalId,
+        serviceRate: instanceServiceRate,
+        is_free_job: instanceIsFree,
+        jobType: 'scheduled_instance',
+        scheduledJobId: scheduleObj.id,
+        date: todayStr,
+        status: 'scheduled',
+        syncedWithNetSuite: false,
+        createdAt: serverTimestamp(),
+        operatorNetSuiteId: null,
+        operatorName: null,
+        operatorEmail: null,
+        operatorPhone: null
+      };
+
+      const newJobRef = await addDoc(collection(db, 'jobs'), newInstancePayload);
+      await syncJobWithNetSuite({ id: newJobRef.id, ...newInstancePayload }, userData);
+    } catch (err) {
+      console.error("Error generating immediate job instance for today:", err);
+    }
+  };
+
   const handleUpdateFrequency = async (jobId: string, day: string) => {
     const schedule = schedules.find(s => s.id === jobId);
     if (!schedule) return;
@@ -248,11 +342,13 @@ const Schedules: React.FC = () => {
       await updateDoc(doc(db, 'scheduled_jobs', jobId), {
         frequency: newFreq
       });
-      const updated = schedules.map(s => s.id === jobId ? { ...s, frequency: newFreq } : s);
+      const updatedSchedule = { ...schedule, frequency: newFreq };
+      const updated = schedules.map(s => s.id === jobId ? updatedSchedule : s);
       setSchedules(updated);
       if (selectedSchedule?.id === jobId) {
         setSelectedSchedule({ ...selectedSchedule, frequency: newFreq });
       }
+      await ensureTodayJobInstanceIfApplicable(updatedSchedule);
     } catch (e) {
       console.error("Error updating frequency:", e);
     }
@@ -260,10 +356,12 @@ const Schedules: React.FC = () => {
 
   const handleUpdateStartDate = async (jobId: string, newStartDate: string) => {
     if (!newStartDate) return;
+    const schedule = schedules.find(s => s.id === jobId);
     try {
       await updateDoc(doc(db, 'scheduled_jobs', jobId), {
         date: newStartDate
       });
+      const updatedSchedule = schedule ? { ...schedule, date: newStartDate } : null;
       const updated = schedules.map(s => s.id === jobId ? { ...s, date: newStartDate } : s);
       setSchedules(updated);
       if (selectedSchedule?.id === jobId) {
@@ -273,10 +371,232 @@ const Schedules: React.FC = () => {
       if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
         setCurrentMonth(new Date(parts[0], parts[1] - 1, 1));
       }
+      if (updatedSchedule) {
+        await ensureTodayJobInstanceIfApplicable(updatedSchedule);
+      }
     } catch (e) {
       console.error("Error updating start date:", e);
     }
   };
+
+  const cancelGeneratedJobsFromDate = async (targetSchedules: any[], stopDate: string): Promise<number> => {
+    const jobsToCancel = new Map<string, any>();
+    const scheduleIdSet = new Set(targetSchedules.map(s => s.id));
+    const requestIds = Array.from(new Set(targetSchedules.map(s => s.originalRequestId).filter(Boolean)));
+    const customerIds = Array.from(new Set(targetSchedules.map(s => s.customer_id ? String(s.customer_id) : '').filter(Boolean)));
+
+    const isCancellableOnOrAfter = (jobData: any) => {
+      const status = (jobData.status || '').toLowerCase();
+      if (status === 'completed' || status === 'cancelled' || status === 'rejected') return false;
+      return Boolean(jobData.date && jobData.date >= stopDate);
+    };
+
+    // 1. Match by scheduledJobId
+    await Promise.all(targetSchedules.map(async (sched) => {
+      try {
+        const snap = await getDocs(query(collection(db, 'jobs'), where('scheduledJobId', '==', sched.id)));
+        snap.docs.forEach(d => {
+          const data = d.data();
+          if (isCancellableOnOrAfter(data)) {
+            jobsToCancel.set(d.id, d.ref);
+          }
+        });
+      } catch (err) {
+        console.warn(`Error querying jobs by scheduledJobId ${sched.id}:`, err);
+      }
+    }));
+
+    // 2. Match by originalRequestId (if present)
+    await Promise.all(requestIds.map(async (reqId) => {
+      try {
+        const snap = await getDocs(query(collection(db, 'jobs'), where('originalRequestId', '==', reqId)));
+        snap.docs.forEach(d => {
+          const data = d.data();
+          if (isCancellableOnOrAfter(data)) {
+            jobsToCancel.set(d.id, d.ref);
+          }
+        });
+      } catch (err) {
+        console.warn(`Error querying jobs by originalRequestId ${reqId}:`, err);
+      }
+    }));
+
+    // 3. Match scheduled jobs by customer_id
+    await Promise.all(customerIds.map(async (custId) => {
+      try {
+        const snap = await getDocs(query(collection(db, 'jobs'), where('customer_id', '==', custId)));
+        snap.docs.forEach(d => {
+          const data = d.data();
+          const isScheduledJob =
+            (data.scheduledJobId && scheduleIdSet.has(data.scheduledJobId)) ||
+            data.jobType === 'scheduled' ||
+            data.jobType === 'scheduled_instance';
+          if (isScheduledJob && isCancellableOnOrAfter(data)) {
+            jobsToCancel.set(d.id, d.ref);
+          }
+        });
+      } catch (err) {
+        console.warn(`Error querying jobs by customer_id ${custId}:`, err);
+      }
+    }));
+
+    let cancelledCount = 0;
+    await Promise.all(Array.from(jobsToCancel.entries()).map(async ([jobId, jobRef]) => {
+      try {
+        await updateDoc(jobRef, {
+          status: 'cancelled',
+          cancelledAt: serverTimestamp(),
+          cancelledBy: userData?.email || userData?.uid || 'admin',
+          cancellationReason: `Scheduled service stopped from ${stopDate}`
+        });
+        cancelledCount++;
+      } catch (err) {
+        console.error(`Failed to cancel job ${jobId}:`, err);
+      }
+    }));
+
+    return cancelledCount;
+  };
+
+  const handleUpdateStopDate = async (jobId: string, newStopDate: string) => {
+    if (!isAdmin) return;
+    const todayStr = formatDateForInput(new Date());
+    const targetSched = schedules.find(s => s.id === jobId);
+    if (!targetSched) return;
+
+    try {
+      if (!newStopDate) {
+        await updateDoc(doc(db, 'scheduled_jobs', jobId), {
+          stopDate: null,
+          recurrenceStatus: 'active',
+          updatedAt: serverTimestamp()
+        });
+        setSchedules(prev => prev.map(s => s.id === jobId ? { ...s, stopDate: null, recurrenceStatus: 'active' } : s));
+        if (selectedSchedule?.id === jobId) {
+          setSelectedSchedule({ ...selectedSchedule, stopDate: null, recurrenceStatus: 'active' });
+        }
+        return;
+      }
+
+      const shouldStopImmediately = newStopDate <= todayStr || Boolean(targetSched.date && targetSched.date >= newStopDate);
+      const updates: Record<string, any> = {
+        stopDate: newStopDate,
+        recurrenceStatus: shouldStopImmediately ? 'stopped' : 'active',
+        updatedAt: serverTimestamp(),
+        stoppedBy: userData?.email || userData?.uid || 'admin',
+        ...(shouldStopImmediately ? { stoppedAt: serverTimestamp() } : { stoppedFromDateAt: serverTimestamp() })
+      };
+
+      await updateDoc(doc(db, 'scheduled_jobs', jobId), updates);
+      await cancelGeneratedJobsFromDate([targetSched], newStopDate);
+
+      setSchedules(prev => prev.map(s => s.id === jobId ? { ...s, stopDate: newStopDate, recurrenceStatus: updates.recurrenceStatus } : s));
+      if (shouldStopImmediately) {
+        setSelectedSchedule(null);
+      } else if (selectedSchedule?.id === jobId) {
+        setSelectedSchedule({ ...selectedSchedule, stopDate: newStopDate, recurrenceStatus: updates.recurrenceStatus });
+      }
+    } catch (e) {
+      console.error("Error updating stop date:", e);
+      alert("Failed to update stop date.");
+    }
+  };
+
+  const handleBulkStopSchedules = async (stopDate: string, targetScheduleIds: string[]) => {
+    if (!isAdmin) {
+      alert("Only admin and superadmin users can bulk stop scheduled services.");
+      return;
+    }
+    if (targetScheduleIds.length === 0) {
+      alert("Please select at least one customer or scheduled service.");
+      return;
+    }
+
+    const todayStr = formatDateForInput(new Date());
+    const idSet = new Set(targetScheduleIds);
+    const targetSchedules = schedules.filter(s => idSet.has(s.id));
+
+    if (targetSchedules.length === 0) {
+      alert("No matching active schedules found.");
+      return;
+    }
+
+    setIsBulkStopping(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      await Promise.all(targetSchedules.map(async (sched) => {
+        try {
+          const shouldStopImmediately = stopDate <= todayStr || Boolean(sched.date && sched.date >= stopDate);
+          const updates: Record<string, any> = {
+            stopDate,
+            recurrenceStatus: shouldStopImmediately ? 'stopped' : 'active',
+            updatedAt: serverTimestamp(),
+            stoppedBy: userData?.email || userData?.uid || 'admin',
+            ...(shouldStopImmediately ? { stoppedAt: serverTimestamp() } : { stoppedFromDateAt: serverTimestamp() })
+          };
+
+          await updateDoc(doc(db, 'scheduled_jobs', sched.id), updates);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to stop schedule ${sched.id}:`, err);
+          failCount++;
+        }
+      }));
+
+      const cancelledJobsCount = await cancelGeneratedJobsFromDate(targetSchedules, stopDate);
+
+      setSchedules(prev => prev.map(s => {
+        if (!idSet.has(s.id)) return s;
+        const shouldStopImmediately = stopDate <= todayStr || Boolean(s.date && s.date >= stopDate);
+        return {
+          ...s,
+          stopDate,
+          recurrenceStatus: shouldStopImmediately ? 'stopped' : 'active'
+        };
+      }));
+
+      const uniqueCustomersCount = new Set(
+        targetSchedules.map(s => (s.customer_id || s.customer?.company || s.id).toString())
+      ).size;
+
+      setSelectedScheduleIds(new Set());
+      setIsBulkStopModalOpen(false);
+
+      const formattedDate = parseLocalDate(stopDate).toLocaleDateString('en-AU', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      });
+
+      alert(
+        `Successfully scheduled ${successCount} service(s) across ${uniqueCustomersCount} customer(s) to stop from ${formattedDate}` +
+        (cancelledJobsCount > 0 ? `, and cancelled ${cancelledJobsCount} already-generated job(s) on or after ${formattedDate}.` : '.') +
+        (failCount > 0 ? ` (${failCount} failed)` : '')
+      );
+    } finally {
+      setIsBulkStopping(false);
+    }
+  };
+
+  const toggleSelectSchedule = (scheduleId: string, e?: React.MouseEvent | React.ChangeEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedScheduleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(scheduleId)) {
+        next.delete(scheduleId);
+      } else {
+        next.add(scheduleId);
+      }
+      return next;
+    });
+  };
+
+  const getParentName = React.useCallback((parentId?: string) => {
+    if (!parentId) return '';
+    return allParents.find(l => l.id === parentId)?.name || 'Unknown Parent';
+  }, [allParents]);
 
   const getItemUserRole = (item: any): 'customer' | 'parent' => {
     if (item.userRole) {
@@ -293,16 +613,20 @@ const Schedules: React.FC = () => {
     return 'customer';
   };
 
+  const todayStr = formatDateForInput(new Date());
+
   const filteredSchedules = schedules.filter(s => {
-    const matchesSearch = s.customer.company.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         s.customer.address.toLowerCase().includes(searchTerm.toLowerCase());
-    const isActive = s.recurrenceStatus !== 'stopped';
+    const companyStr = (s.customer?.company || '').toLowerCase();
+    const addressStr = (s.customer?.address || '').toLowerCase();
+    const matchesSearch = companyStr.includes(searchTerm.toLowerCase()) || 
+                         addressStr.includes(searchTerm.toLowerCase());
+    const isActive = s.recurrenceStatus !== 'stopped' && (!s.stopDate || s.stopDate > todayStr);
     const matchesCustomer = selectedCustomerFilter === 'all' || s.customer_id === selectedCustomerFilter;
     const serviceConfig = getServiceConfig(s.service);
     const matchesService = selectedServiceFilter === 'all' || serviceConfig.label === selectedServiceFilter;
 
     let matchesRole = true;
-    if (isAdmin) {
+    if (isAdmin && adminRoleView !== 'all') {
       matchesRole = getItemUserRole(s) === adminRoleView;
     }
 
@@ -314,6 +638,24 @@ const Schedules: React.FC = () => {
 
     return matchesSearch && isActive && matchesCustomer && matchesService && matchesRole && matchesParent;
   });
+
+  const selectAllFilteredSchedules = () => {
+    setSelectedScheduleIds(new Set(filteredSchedules.map(s => s.id)));
+  };
+
+  const clearScheduleSelection = () => {
+    setSelectedScheduleIds(new Set());
+  };
+
+  const selectedCustomerCount = React.useMemo(() => {
+    const custSet = new Set<string>();
+    schedules.forEach(s => {
+      if (selectedScheduleIds.has(s.id)) {
+        custSet.add((s.customer_id || s.customer?.company || s.id).toString());
+      }
+    });
+    return custSet.size;
+  }, [schedules, selectedScheduleIds]);
 
   // Calendar Logic Helpers
   const getDaysInMonth = (date: Date) => {
@@ -348,7 +690,7 @@ const Schedules: React.FC = () => {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const dayName = dayNames[checkDate.getDay()];
         
-        if (s.date && s.date <= dateStr && s.frequency?.includes(dayName)) {
+        if (s.date && s.date <= dateStr && (!s.stopDate || dateStr < s.stopDate) && s.frequency?.includes(dayName)) {
           results.push({ ...s, date: dateStr });
         }
       }
@@ -380,7 +722,33 @@ const Schedules: React.FC = () => {
                 </div>
               </div>
            </div>
-           <div className="header-right">
+           <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsBulkStopModalOpen(true)}
+                  className="btn-bulk-stop-action"
+                  style={{
+                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '14px 22px',
+                    borderRadius: '18px',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    boxShadow: '0 10px 25px rgba(220, 38, 38, 0.25)',
+                    transition: 'all 0.3s'
+                  }}
+                >
+                  <Trash2 size={18} />
+                  <span>
+                    BULK STOP SERVICES{selectedScheduleIds.size > 0 ? ` (${selectedScheduleIds.size})` : ''}
+                  </span>
+                </button>
+              )}
               <button onClick={() => window.location.href = '/new-job'} className="btn-premium-action">
                 <Plus size={20} />
                 <span>BOOK NEW JOB</span>
@@ -395,6 +763,7 @@ const Schedules: React.FC = () => {
                    value={adminRoleView}
                    onChange={(val) => setAdminRoleView(val as any)}
                    options={[
+                     { value: 'all', label: 'All Roles', icon: <Layers size={14} /> },
                      { value: 'customer', label: 'Role: Customer', icon: <User size={14} /> },
                      { value: 'parent', label: 'Role: Parent', icon: <Building2 size={14} /> }
                    ]}
@@ -465,6 +834,101 @@ const Schedules: React.FC = () => {
                <button className="btn-secondary-glass" onClick={() => window.location.reload()}><RefreshCw size={18} /></button>
             </div>
 
+            {isAdmin && filteredSchedules.length > 0 && (
+              <div
+                className="admin-bulk-bar glass-card"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  padding: '12px 20px',
+                  marginBottom: '24px',
+                  borderRadius: '16px',
+                  background: 'rgba(255, 255, 255, 0.85)',
+                  border: '1px solid rgba(255, 255, 255, 0.4)',
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary-glass"
+                    onClick={
+                      selectedScheduleIds.size === filteredSchedules.length && filteredSchedules.length > 0
+                        ? clearScheduleSelection
+                        : selectAllFilteredSchedules
+                    }
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      padding: '8px 14px',
+                      width: 'auto',
+                      height: 'auto',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {selectedScheduleIds.size === filteredSchedules.length && filteredSchedules.length > 0
+                      ? 'Deselect All'
+                      : `Select All Filtered (${filteredSchedules.length})`}
+                  </button>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>
+                    {selectedScheduleIds.size > 0
+                      ? `${selectedCustomerCount} customer${selectedCustomerCount === 1 ? '' : 's'} (${selectedScheduleIds.size} service${selectedScheduleIds.size === 1 ? '' : 's'}) selected`
+                      : 'Select customers in List view or click Bulk Stop Services to choose customers & stop date'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {selectedScheduleIds.size > 0 && (
+                    <button
+                      type="button"
+                      className="btn-secondary-glass"
+                      onClick={clearScheduleSelection}
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        padding: '8px 12px',
+                        width: 'auto',
+                        height: 'auto',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkStopModalOpen(true)}
+                    disabled={isBulkStopping}
+                    style={{
+                      background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      padding: '8px 16px',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: isBulkStopping ? 'wait' : 'pointer',
+                      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
+                      opacity: isBulkStopping ? 0.8 : 1
+                    }}
+                  >
+                    <Calendar size={15} />
+                    <span>
+                      {selectedScheduleIds.size > 0
+                        ? `Stop Selected From Date (${selectedScheduleIds.size})`
+                        : 'Select Customers & Stop From Date'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <div className="loading-state">
                 <RefreshCw className="spinner" />
@@ -503,7 +967,7 @@ const Schedules: React.FC = () => {
                                    key={job.id} 
                                    className={`job-dot-pill ${isSkipped ? 'skipped' : ''}`}
                                    onClick={() => setSelectedSchedule(job)}
-                                   title={`${job.customer.company} - ${serviceConfig.label}`}
+                                   title={`${job.customer.company} - ${serviceConfig.label}${job.stopDate ? ` (Stops: ${job.stopDate})` : ''}`}
                                    style={isSkipped ? {} : {
                                      backgroundColor: serviceConfig.bg,
                                      borderColor: serviceConfig.border,
@@ -537,6 +1001,23 @@ const Schedules: React.FC = () => {
                         <div className="card-header" onClick={() => toggleExpand(schedule.id)} style={{ cursor: 'pointer' }}>
                            <div className="customer-block">
                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                 {isAdmin && (
+                                   <input
+                                     type="checkbox"
+                                     checked={selectedScheduleIds.has(schedule.id)}
+                                     onClick={(e) => e.stopPropagation()}
+                                     onChange={(e) => toggleSelectSchedule(schedule.id, e)}
+                                     style={{
+                                       width: '18px',
+                                       height: '18px',
+                                       cursor: 'pointer',
+                                       accentColor: '#dc2626',
+                                       marginRight: '4px',
+                                       flexShrink: 0
+                                     }}
+                                     title={selectedScheduleIds.has(schedule.id) ? "Deselect schedule" : "Select schedule for bulk stop"}
+                                   />
+                                 )}
                                  <h3 className="company-name">{schedule.customer.company}</h3>
                                  {isAdmin && (
                                    <span className="lpo-badge-inline">
@@ -618,6 +1099,21 @@ const Schedules: React.FC = () => {
                               <Calendar size={12} />
                               <span>Starts: {schedule.date ? parseLocalDate(schedule.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                            </div>
+                           {schedule.stopDate && (
+                             <div
+                               className="meta-pill"
+                               style={{
+                                 backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                                 color: '#dc2626',
+                                 border: '1px solid rgba(220, 38, 38, 0.25)',
+                                 padding: '4px 10px',
+                                 borderRadius: '8px'
+                               }}
+                             >
+                               <Calendar size={12} />
+                               <span>Stops: {parseLocalDate(schedule.stopDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                             </div>
+                           )}
                           <div 
                             className="job-ref interactive" 
                             onClick={(e) => {
@@ -660,6 +1156,20 @@ const Schedules: React.FC = () => {
         contextTitle={supportJobId ? `Job Reference: ${supportJobId}` : undefined}
         metadata={supportMetadata}
       />
+
+      {isAdmin && (
+        <BulkStopSchedulesModal
+          isOpen={isBulkStopModalOpen}
+          onClose={() => setIsBulkStopModalOpen(false)}
+          schedules={filteredSchedules}
+          selectedScheduleIds={selectedScheduleIds}
+          onChangeSelectedIds={setSelectedScheduleIds}
+          onConfirm={handleBulkStopSchedules}
+          isSubmitting={isBulkStopping}
+          getServiceConfig={getServiceConfig}
+          getParentName={getParentName}
+        />
+      )}
 
       {selectedSchedule && (
         <div className="modal-overlay fade-in active">
@@ -713,6 +1223,38 @@ const Schedules: React.FC = () => {
                 )}
               </div>
 
+              {(isAdmin || selectedSchedule.stopDate) && (
+                <div className="mgmt-section">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label className="m-label" style={{ margin: 0 }}>Stop Services From Date</label>
+                    {isAdmin && (
+                      <span style={{ fontSize: '0.65rem', color: '#dc2626', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', background: 'rgba(220, 38, 38, 0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+                        Admin Editable
+                      </span>
+                    )}
+                  </div>
+                  {isAdmin ? (
+                    <div style={{ marginTop: '8px' }}>
+                      <CustomDatePicker
+                        value={selectedSchedule.stopDate || ''}
+                        onChange={(newStopDate) => {
+                          handleUpdateStopDate(selectedSchedule.id, newStopDate);
+                        }}
+                        placeholder="No stop date set (active ongoing)"
+                      />
+                      <span style={{ fontSize: '0.75rem', color: 'var(--ink-soft)', marginTop: '4px', display: 'block' }}>
+                        Setting a stop date keeps the schedule active until that date and cancels generated jobs on or after it.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="m-start-date-display" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(254, 242, 242, 0.8)', border: '1px solid rgba(220, 38, 38, 0.2)', borderRadius: '12px', fontSize: '0.9rem', fontWeight: '700', color: '#dc2626' }}>
+                      <Calendar size={16} />
+                      <span>Stops from {parseLocalDate(selectedSchedule.stopDate).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="mgmt-section">
                 <label className="m-label">Service Frequency</label>
                 <div className="m-frequency-grid">
@@ -731,7 +1273,7 @@ const Schedules: React.FC = () => {
               <div className="mgmt-section">
                 <label className="m-label">Upcoming Instances</label>
                 <div className="occurrences-list">
-                  {getNextOccurrences(selectedSchedule.date, selectedSchedule.frequency || [], 6).map(date => {
+                  {getNextOccurrences(selectedSchedule.date, selectedSchedule.frequency || [], 6, selectedSchedule.stopDate).map(date => {
                     const isSkipped = (selectedSchedule.skippedDates || []).includes(date);
                     return (
                       <div key={date} className={`occ-row ${isSkipped ? 'skipped' : ''}`}>

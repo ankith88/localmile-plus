@@ -1141,7 +1141,7 @@ const Dashboard: React.FC = () => {
 
   const getRecurringCustomerCount = () => {
     const activeSchedules = schedules.filter(s => {
-      const isNotStopped = s.recurrenceStatus !== 'stopped';
+      const isNotStopped = s.recurrenceStatus !== 'stopped' && (!s.stopDate || s.stopDate > today);
       const matchesFilter = applyGlobalFilters(s);
       return isNotStopped && matchesFilter;
     });

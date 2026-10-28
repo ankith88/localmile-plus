@@ -58,7 +58,12 @@ export const getDayName = (date: Date): string => {
 /**
  * Calculates the next N occurrences for a recurring schedule.
  */
-export const getNextOccurrences = (startDateStr: string, frequency: string[], count: number = 5): string[] => {
+export const getNextOccurrences = (
+  startDateStr: string,
+  frequency: string[],
+  count: number = 5,
+  stopDateStr?: string
+): string[] => {
   const occurrences: string[] = [];
   if (!startDateStr) return occurrences;
   
@@ -77,9 +82,13 @@ export const getNextOccurrences = (startDateStr: string, frequency: string[], co
   // Safety counter to prevent infinite loops
   let safety = 0;
   while (occurrences.length < count && safety < 100) {
+    const currentStr = formatDateForInput(current);
+    if (stopDateStr && currentStr >= stopDateStr) {
+      break;
+    }
     const dayName = getDayName(current);
     if (frequency.includes(dayName)) {
-      occurrences.push(formatDateForInput(current));
+      occurrences.push(currentStr);
     }
     current = addDays(current, 1);
     safety++;

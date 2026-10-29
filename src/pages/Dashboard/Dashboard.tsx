@@ -2292,7 +2292,7 @@ const Dashboard: React.FC = () => {
           if (selectedJobForCancel) {
             setJobs(jobs.map(j => j.id === selectedJobForCancel.id ? { ...j, status: 'cancelled' } : j));
           }
-          alert("Job cancelled and dispatch notified.");
+          alert("Job cancelled and franchisee & dispatch notified.");
         }}
       />
 

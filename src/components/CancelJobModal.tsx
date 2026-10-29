@@ -46,7 +46,9 @@ const CancelJobModal: React.FC<CancelJobModalProps> = ({ isOpen, onClose, job, o
           serviceType: job.service,
           date: job.date,
           parentId: job.parent_id,
-          customerId: job.netsuiteCustomerId || job.customer?.netsuiteId || ""
+          customer_id: job.customer_id,
+          customerId: job.customer_id || job.netsuiteCustomerId || job.customer?.netsuiteId || "",
+          franchiseeEmail: job.franchiseeEmail || job.operatorEmail || ""
         }
       });
       onSuccess();
@@ -88,7 +90,7 @@ const CancelJobModal: React.FC<CancelJobModalProps> = ({ isOpen, onClose, job, o
             border: '1px solid rgba(255, 71, 87, 0.2)'
           }}>
             <AlertTriangle size={20} />
-            <span>This will cancel the scheduled job and notify the dispatch team immediately.</span>
+            <span>This will cancel the scheduled job and notify the franchisee and dispatch team immediately.</span>
           </div>
 
           <div className="job-summary-mini" style={{ 

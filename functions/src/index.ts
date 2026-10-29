@@ -833,9 +833,10 @@ export const onScheduledJobCreated = onDocumentCreated({
   const db = getDB();
   const uid = afterData.uid;
 
-  let isCustomer = afterData.userRole === "customer";
-  let customerId = extractStringId(afterData.customer_id);
-  let userEmail = "";
+  let customerId = extractStringId(afterData.customer_id) || extractStringId(afterData.customer?.id);
+  let parentId = extractStringId(afterData.parent_id);
+  let franchiseeEmail = afterData.franchiseeEmail || afterData.operatorEmail || "";
+  let userEmail = afterData.customer?.email || "";
   let companyNameFromUser = "";
 
   if (uid) {
@@ -843,11 +844,10 @@ export const onScheduledJobCreated = onDocumentCreated({
       const userDoc = await db.collection("users").doc(uid).get();
       if (userDoc.exists) {
         const uData = userDoc.data();
-        if (uData?.role === "customer") {
-          isCustomer = true;
-        }
         customerId = customerId || extractStringId(uData?.customer_id);
-        userEmail = uData?.email || "";
+        parentId = parentId || extractStringId(uData?.parent_id);
+        franchiseeEmail = franchiseeEmail || uData?.franchiseeEmail || "";
+        userEmail = userEmail || uData?.email || "";
         companyNameFromUser = uData?.company || uData?.companyName || "";
       }
     } catch (err) {
@@ -855,40 +855,42 @@ export const onScheduledJobCreated = onDocumentCreated({
     }
   }
 
-  // Only send notification if created by a user with role 'customer'
-  if (!isCustomer) {
-    console.log(`[onScheduledJobCreated] Scheduled job ${scheduledJobId} was not created by a customer role user. Skipping franchisee email.`);
-    return;
-  }
-
-  if (!customerId) {
-    console.warn(`[onScheduledJobCreated] No customer_id found for scheduled job ${scheduledJobId}.`);
-    return;
-  }
-
-  // Look up companies document using customer_id to get franchiseeEmail
-  let franchiseeEmail = "";
+  // Look up companies document using customer_id (and parent_id fallback) to get franchiseeEmail
   let companyName = afterData.customer?.company || companyNameFromUser || "";
 
-  try {
-    const companyDoc = await db.collection("companies").doc(customerId).get();
-    if (companyDoc.exists) {
-      const companyData = companyDoc.data() || {};
-      franchiseeEmail = companyData.franchiseeEmail || companyData.email || companyData.contactEmail || "";
-      companyName = companyName || companyData.companyName || companyData.name || "Valued Customer";
-    } else {
-      console.warn(`[onScheduledJobCreated] Company document not found for customer_id: ${customerId}`);
+  if (customerId) {
+    try {
+      const companyDoc = await db.collection("companies").doc(customerId).get();
+      if (companyDoc.exists) {
+        const companyData = companyDoc.data() || {};
+        franchiseeEmail = companyData.franchiseeEmail || companyData.customerServiceEmail || companyData.email || companyData.contactEmail || franchiseeEmail;
+        companyName = companyName || companyData.companyName || companyData.name || "Valued Customer";
+        parentId = parentId || extractStringId(companyData.parent_id) || extractStringId(companyData.parentId);
+      } else {
+        console.warn(`[onScheduledJobCreated] Company document not found for customer_id: ${customerId}`);
+      }
+    } catch (err) {
+      console.error(`[onScheduledJobCreated] Error fetching company doc ${customerId}:`, err);
     }
-  } catch (err) {
-    console.error(`[onScheduledJobCreated] Error fetching company doc ${customerId}:`, err);
   }
 
-  if (!franchiseeEmail) {
-    console.warn(`[onScheduledJobCreated] No franchiseeEmail found in company document ${customerId}. Skipping email.`);
-    return;
+  if (!franchiseeEmail && parentId) {
+    try {
+      const parentDoc = await db.collection("companies").doc(parentId).get();
+      if (parentDoc.exists) {
+        const parentData = parentDoc.data() || {};
+        franchiseeEmail = parentData.franchiseeEmail || parentData.customerServiceEmail || parentData.email || parentData.contactEmail || "";
+      }
+    } catch (err) {
+      console.error(`[onScheduledJobCreated] Error fetching parent company doc ${parentId}:`, err);
+    }
   }
 
-  console.log(`[onScheduledJobCreated] Sending franchisee schedule notification to: ${franchiseeEmail} for company: ${companyName}`);
+  companyName = companyName || "Valued Customer";
+  const primaryRecipient = franchiseeEmail ? franchiseeEmail.trim() : "dispatcher@mailplus.com.au";
+  const ccRecipient = (franchiseeEmail && franchiseeEmail.trim().toLowerCase() !== "dispatcher@mailplus.com.au") ? "dispatcher@mailplus.com.au" : undefined;
+
+  console.log(`[onScheduledJobCreated] Sending schedule notification to: ${primaryRecipient} (CC: ${ccRecipient || "none"}) for company: ${companyName}`);
 
   // Format Days / Frequency
   const rawFrequency = afterData.frequency;
@@ -960,8 +962,8 @@ export const onScheduledJobCreated = onDocumentCreated({
           <h2>New Job Schedule Notification</h2>
         </div>
         <div class="content">
-          <p>Hello Franchisee,</p>
-          <p>A new recurring job schedule has been created by customer company <strong>${companyName}</strong>.</p>
+          <p>Hello Franchisee & Dispatch Team,</p>
+          <p>A new recurring job schedule has been created for <strong>${companyName}</strong>.</p>
           
           <div class="details-card">
             <table class="details-table">
@@ -1000,7 +1002,7 @@ export const onScheduledJobCreated = onDocumentCreated({
   // 1. Send via ProspectPlus Email API (automatically attaches email to lead/company profile in ProspectPlus CRM)
   let sentViaApi = false;
   try {
-    console.log(`[onScheduledJobCreated] Sending email to ${franchiseeEmail} (CC: dispatcher@mailplus.com.au) via ProspectPlus API...`);
+    console.log(`[onScheduledJobCreated] Sending email to ${primaryRecipient} (CC: ${ccRecipient || "none"}) via ProspectPlus API...`);
     const sendEmailRes = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
       method: 'POST',
       headers: {
@@ -1008,14 +1010,14 @@ export const onScheduledJobCreated = onDocumentCreated({
         'x-api-key': prospectplusApiKey.value()
       },
       body: JSON.stringify({
-        to: franchiseeEmail,
-        cc: 'dispatcher@mailplus.com.au',
+        to: primaryRecipient,
+        ...(ccRecipient ? { cc: ccRecipient } : {}),
         replyTo: 'localmile@mailplus.com.au',
         subject: subject,
         html: htmlContent,
         from: 'localmile@mailplus.com.au',
         metadata: {
-          customerId: customerId,
+          customerId: customerId || '',
           scheduledJobId: scheduledJobId,
           type: 'scheduled_job_created'
         }
@@ -1045,75 +1047,78 @@ export const onScheduledJobCreated = onDocumentCreated({
 
       await transporter.sendMail({
         from: '"LocalMile.Plus Bookings" <localmile@mailplus.com.au>',
-        to: franchiseeEmail,
-        cc: ["dispatcher@mailplus.com.au"],
+        to: primaryRecipient,
+        ...(ccRecipient ? { cc: [ccRecipient] } : {}),
         replyTo: "localmile@mailplus.com.au",
         subject: subject,
         html: htmlContent
       });
-      console.log(`[onScheduledJobCreated] Email sent via direct Nodemailer fallback to ${franchiseeEmail}`);
+      console.log(`[onScheduledJobCreated] Email sent via direct Nodemailer fallback to ${primaryRecipient}`);
     } catch (emailErr) {
       console.error(`[onScheduledJobCreated] Failed to send email via Nodemailer fallback:`, emailErr);
     }
   }
 
   // 3. Attach directly to ProspectPlus Database (leads or companies collection subcollection)
-  try {
-    let prospectDb: admin.firestore.Firestore;
+  if (customerId) {
     try {
-      prospectDb = admin.app("prospectplus").firestore();
-    } catch {
-      prospectDb = admin.initializeApp({
-        projectId: "mailplus-outbound-leads-crm"
-      }, "prospectplus").firestore();
-    }
-
-    const emailLogPayload = {
-      subject: subject,
-      bodyHtml: htmlContent,
-      sentAt: new Date().toISOString(),
-      sender: 'localmile@mailplus.com.au',
-      recipient: franchiseeEmail,
-      cc: 'dispatcher@mailplus.com.au',
-      status: 'delivered',
-      type: 'scheduled_job_created',
-      scheduledJobId: scheduledJobId,
-      companyName: companyName
-    };
-
-    // Attach to leads collection in ProspectPlus DB
-    const leadDoc = await prospectDb.collection("leads").doc(customerId).get();
-    if (leadDoc.exists) {
-      await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
-      console.log(`[onScheduledJobCreated] Successfully attached email to ProspectPlus leads/${customerId}/emails`);
-    } else {
-      const compDoc = await prospectDb.collection("companies").doc(customerId).get();
-      if (compDoc.exists) {
-        await prospectDb.collection("companies").doc(customerId).collection("emails").add(emailLogPayload);
-        console.log(`[onScheduledJobCreated] Successfully attached email to ProspectPlus companies/${customerId}/emails`);
-      } else {
-        await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
-        console.log(`[onScheduledJobCreated] Logged email to ProspectPlus leads/${customerId}/emails (default)`);
+      let prospectDb: admin.firestore.Firestore;
+      try {
+        prospectDb = admin.app("prospectplus").firestore();
+      } catch {
+        prospectDb = admin.initializeApp({
+          projectId: "mailplus-outbound-leads-crm"
+        }, "prospectplus").firestore();
       }
+
+      const emailLogPayload = {
+        subject: subject,
+        bodyHtml: htmlContent,
+        sentAt: new Date().toISOString(),
+        sender: 'localmile@mailplus.com.au',
+        recipient: primaryRecipient,
+        cc: ccRecipient || '',
+        status: 'delivered',
+        type: 'scheduled_job_created',
+        scheduledJobId: scheduledJobId,
+        companyName: companyName
+      };
+
+      // Attach to leads collection in ProspectPlus DB
+      const leadDoc = await prospectDb.collection("leads").doc(customerId).get();
+      if (leadDoc.exists) {
+        await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
+        console.log(`[onScheduledJobCreated] Successfully attached email to ProspectPlus leads/${customerId}/emails`);
+      } else {
+        const compDoc = await prospectDb.collection("companies").doc(customerId).get();
+        if (compDoc.exists) {
+          await prospectDb.collection("companies").doc(customerId).collection("emails").add(emailLogPayload);
+          console.log(`[onScheduledJobCreated] Successfully attached email to ProspectPlus companies/${customerId}/emails`);
+        } else {
+          await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
+          console.log(`[onScheduledJobCreated] Logged email to ProspectPlus leads/${customerId}/emails (default)`);
+        }
+      }
+    } catch (dbAttachErr) {
+      console.error("[onScheduledJobCreated] Error attaching email to ProspectPlus Firestore DB:", dbAttachErr);
     }
-  } catch (dbAttachErr) {
-    console.error("[onScheduledJobCreated] Error attaching email to ProspectPlus Firestore DB:", dbAttachErr);
   }
 
   // 4. Log local communication record in LocalMile Plus database
   try {
     await logCommunication({
       from: "bookings@localmile.plus",
-      to: [franchiseeEmail, "dispatcher@mailplus.com.au"],
+      to: ccRecipient ? [primaryRecipient, ccRecipient] : [primaryRecipient],
       subject: subject,
       body: htmlContent,
       type: "sent",
       metadata: {
         customerId,
+        parentId,
         companyName,
         scheduledJobId,
         service: displayService,
-        franchiseeEmail
+        franchiseeEmail: primaryRecipient
       }
     });
   } catch (logErr) {
@@ -1121,7 +1126,7 @@ export const onScheduledJobCreated = onDocumentCreated({
   }
 });
 
-// Logic: onScheduledJobUpdated (Notify Franchisee & Dispatcher when a recurring visit is skipped or stopped)
+// Logic: onScheduledJobUpdated (Notify Franchisee & Dispatcher when a recurring visit is skipped, stopped, or frequency is updated)
 export const onScheduledJobUpdated = onDocumentUpdated({
   document: "scheduled_jobs/{scheduledJobId}",
   database: "(default)",
@@ -1137,8 +1142,9 @@ export const onScheduledJobUpdated = onDocumentUpdated({
   const uid = afterData.uid;
 
   let customerId = extractStringId(afterData.customer_id) || extractStringId(afterData.customer?.id);
+  let parentId = extractStringId(afterData.parent_id);
   let companyName = afterData.customer?.company || "";
-  let franchiseeEmail = "";
+  let franchiseeEmail = afterData.franchiseeEmail || afterData.operatorEmail || "";
   let userEmail = afterData.customer?.email || "";
 
   if (uid) {
@@ -1147,8 +1153,9 @@ export const onScheduledJobUpdated = onDocumentUpdated({
       if (userDoc.exists) {
         const uData = userDoc.data();
         customerId = customerId || extractStringId(uData?.customer_id);
+        parentId = parentId || extractStringId(uData?.parent_id);
         companyName = companyName || uData?.company || uData?.companyName || "";
-        franchiseeEmail = uData?.franchiseeEmail || "";
+        franchiseeEmail = franchiseeEmail || uData?.franchiseeEmail || "";
         userEmail = userEmail || uData?.email || "";
       }
     } catch (err) {
@@ -1163,12 +1170,26 @@ export const onScheduledJobUpdated = onDocumentUpdated({
         const companyData = companyDoc.data() || {};
         franchiseeEmail = companyData.franchiseeEmail || companyData.customerServiceEmail || companyData.email || companyData.contactEmail || franchiseeEmail;
         companyName = companyName || companyData.companyName || companyData.name || "Valued Customer";
+        parentId = parentId || extractStringId(companyData.parent_id) || extractStringId(companyData.parentId);
       }
     } catch (err) {
       console.error(`[onScheduledJobUpdated] Error fetching company ${customerId}:`, err);
     }
   }
 
+  if (!franchiseeEmail && parentId) {
+    try {
+      const parentDoc = await db.collection("companies").doc(parentId).get();
+      if (parentDoc.exists) {
+        const parentData = parentDoc.data() || {};
+        franchiseeEmail = parentData.franchiseeEmail || parentData.customerServiceEmail || parentData.email || parentData.contactEmail || "";
+      }
+    } catch (err) {
+      console.error(`[onScheduledJobUpdated] Error fetching parent company ${parentId}:`, err);
+    }
+  }
+
+  companyName = companyName || "Valued Customer";
   const primaryRecipient = franchiseeEmail ? franchiseeEmail.trim() : "dispatcher@mailplus.com.au";
   const ccRecipient = (franchiseeEmail && franchiseeEmail.trim().toLowerCase() !== "dispatcher@mailplus.com.au") ? "dispatcher@mailplus.com.au" : undefined;
 
@@ -1291,6 +1312,7 @@ export const onScheduledJobUpdated = onDocumentUpdated({
         type: "sent",
         metadata: {
           customerId,
+          parentId,
           companyName,
           scheduledJobId,
           service: displayService,
@@ -1371,18 +1393,33 @@ export const onScheduledJobUpdated = onDocumentUpdated({
     await sendEmailNotification(subject, htmlContent, "scheduled_job_skipped");
   }
 
-  // 2. Detect Recurring Schedule Series Stopped
+  // 2. Detect Recurring Schedule Series Stopped (Immediate or Future Stop Date)
   const beforeStatus = beforeData.recurrenceStatus;
   const afterStatus = afterData.recurrenceStatus;
+  const beforeStopDate = beforeData.stopDate || null;
+  const afterStopDate = afterData.stopDate || null;
 
-  if (afterStatus === 'stopped' && beforeStatus !== 'stopped') {
+  const isNewlyStoppedImmediately = afterStatus === 'stopped' && beforeStatus !== 'stopped';
+  const isNewlyScheduledToStop = Boolean(afterStopDate && afterStopDate !== beforeStopDate && !isNewlyStoppedImmediately);
+
+  if (isNewlyStoppedImmediately || isNewlyScheduledToStop) {
     const rawFrequency = afterData.frequency;
     let daysFormatted = "N/A";
     if (Array.isArray(rawFrequency)) {
       daysFormatted = rawFrequency.join(", ");
     }
 
-    const subject = `RECURRING SERVICE STOPPED: ${companyName} - ${displayService}`;
+    const stopHeading = isNewlyStoppedImmediately
+      ? "Recurring Schedule Stopped Notification"
+      : "Recurring Schedule Stop Date Scheduled";
+    const stopSummary = isNewlyStoppedImmediately
+      ? `The recurring schedule series for <strong>${companyName}</strong> has been <strong>STOPPED</strong>${afterStopDate ? ` (effective from <strong>${afterStopDate}</strong>)` : ''}. All future visits for this recurring schedule have been cancelled.`
+      : `The recurring schedule series for <strong>${companyName}</strong> has been scheduled to <strong>STOP from ${afterStopDate}</strong>. Any generated visits on or after <strong>${afterStopDate}</strong> have been cancelled.`;
+
+    const subject = isNewlyStoppedImmediately
+      ? `RECURRING SERVICE STOPPED: ${companyName} - ${displayService}`
+      : `RECURRING SERVICE SCHEDULED TO STOP (${afterStopDate}): ${companyName} - ${displayService}`;
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -1405,11 +1442,11 @@ export const onScheduledJobUpdated = onDocumentUpdated({
       <body>
         <div class="container">
           <div class="header">
-            <h2>Recurring Schedule Stopped Notification</h2>
+            <h2>${stopHeading}</h2>
           </div>
           <div class="content">
             <p>Hello Franchisee & Dispatch Team,</p>
-            <p>The recurring schedule series for <strong>${companyName}</strong> has been <strong>STOPPED</strong>. All future visits for this recurring schedule have been cancelled.</p>
+            <p>${stopSummary}</p>
             
             <div class="details-card">
               <table class="details-table">
@@ -1421,6 +1458,7 @@ export const onScheduledJobUpdated = onDocumentUpdated({
                   <td class="label">Stopped Service:</td>
                   <td class="value"><strong>${displayService}</strong></td>
                 </tr>
+                ${afterStopDate ? `<tr><td class="label">Stop Date:</td><td class="value"><strong style="color: #dc2626;">${afterStopDate}</strong></td></tr>` : ''}
                 <tr>
                   <td class="label">Original Days:</td>
                   <td class="value"><strong>${daysFormatted}</strong></td>
@@ -1431,7 +1469,7 @@ export const onScheduledJobUpdated = onDocumentUpdated({
               </table>
             </div>
 
-            <p>No further automatic jobs will be dispatched for this recurring schedule series.</p>
+            <p>No further automatic jobs will be dispatched for this recurring schedule series${afterStopDate && !isNewlyStoppedImmediately ? ` on or after ${afterStopDate}` : ''}.</p>
           </div>
           <div class="footer">
             <p>&copy; LocalMile.Plus &bull; MailPlus System Notification</p>
@@ -1442,6 +1480,113 @@ export const onScheduledJobUpdated = onDocumentUpdated({
     `;
 
     await sendEmailNotification(subject, htmlContent, "scheduled_job_stopped");
+  }
+
+  // 3. Detect Schedule Frequency Added / Updated
+  const normalizeFreqArray = (freq: any): string[] => {
+    if (!Array.isArray(freq)) return [];
+    const map: Record<string, string> = {
+      'monday': 'Mon', 'tuesday': 'Tue', 'wednesday': 'Wed', 'thursday': 'Thu', 'friday': 'Fri', 'saturday': 'Sat', 'sunday': 'Sun',
+      'mon': 'Mon', 'tue': 'Tue', 'wed': 'Wed', 'thu': 'Thu', 'fri': 'Fri', 'sat': 'Sat', 'sun': 'Sun',
+      'm': 'Mon', 't': 'Tue', 'w': 'Wed', 'th': 'Thu', 'f': 'Fri'
+    };
+    const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const normalized = Array.from(new Set(freq.map((d: any) => map[String(d).toLowerCase()] || String(d))));
+    return normalized.sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+  };
+
+  const beforeFreq = normalizeFreqArray(beforeData.frequency);
+  const afterFreq = normalizeFreqArray(afterData.frequency);
+
+  if (beforeFreq.join(",") !== afterFreq.join(",")) {
+    const dayFullMap: Record<string, string> = {
+      'Mon': 'Monday',
+      'Tue': 'Tuesday',
+      'Wed': 'Wednesday',
+      'Thu': 'Thursday',
+      'Fri': 'Friday',
+      'Sat': 'Saturday',
+      'Sun': 'Sunday'
+    };
+    const formatDays = (days: string[]) =>
+      days.length > 0 ? days.map(d => dayFullMap[d] || d).join(", ") : "None";
+
+    const addedDays = afterFreq.filter(d => !beforeFreq.includes(d));
+    const removedDays = beforeFreq.filter(d => !afterFreq.includes(d));
+
+    const subject = addedDays.length > 0 && removedDays.length === 0
+      ? `NEW FREQUENCY ADDED: ${companyName} - ${displayService} (${formatDays(addedDays)})`
+      : `SCHEDULE FREQUENCY UPDATED: ${companyName} - ${displayService}`;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2d3748; background-color: #f4f7f8; margin: 0; padding: 20px; }
+          .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+          .header { background-color: #095c7b; padding: 25px; text-align: center; color: #ffffff; }
+          .header h2 { margin: 0; font-size: 22px; font-weight: 700; }
+          .content { padding: 30px; }
+          .details-card { background-color: #f8fafb; border-left: 4px solid #095c7b; border-radius: 6px; padding: 18px 20px; margin: 20px 0; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+          .details-table { width: 100%; border-collapse: collapse; }
+          .details-table td { padding: 8px 0; font-size: 14px; }
+          .details-table td.label { font-weight: 600; color: #4a5568; width: 40%; }
+          .details-table td.value { color: #1a202c; font-weight: 500; }
+          .footer { background-color: #f8fafb; padding: 15px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Schedule Frequency Updated</h2>
+          </div>
+          <div class="content">
+            <p>Hello Franchisee & Dispatch Team,</p>
+            <p>The recurring service frequency for <strong>${companyName}</strong> has been updated.</p>
+            
+            <div class="details-card">
+              <table class="details-table">
+                <tr>
+                  <td class="label">Company Name:</td>
+                  <td class="value"><strong>${companyName}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Service:</td>
+                  <td class="value"><strong>${displayService}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">New Scheduled Days:</td>
+                  <td class="value"><strong style="color: #095c7b;">${formatDays(afterFreq)}</strong></td>
+                </tr>
+                <tr>
+                  <td class="label">Previous Days:</td>
+                  <td class="value">${formatDays(beforeFreq)}</td>
+                </tr>
+                ${addedDays.length > 0 ? `<tr><td class="label">Added Days:</td><td class="value"><strong style="color: #059669;">+ ${formatDays(addedDays)}</strong></td></tr>` : ''}
+                ${removedDays.length > 0 ? `<tr><td class="label">Removed Days:</td><td class="value"><strong style="color: #dc2626;">- ${formatDays(removedDays)}</strong></td></tr>` : ''}
+                ${pickupAddress ? `<tr><td class="label">Pickup Address:</td><td class="value">${pickupAddress}</td></tr>` : ''}
+                ${deliveryAddress ? `<tr><td class="label">Delivery Address:</td><td class="value">${deliveryAddress}</td></tr>` : ''}
+                ${userEmail ? `<tr><td class="label">Customer Email:</td><td class="value">${userEmail}</td></tr>` : ''}
+              </table>
+            </div>
+
+            <p>Please log in to LocalMile.Plus portal to review the updated schedule.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; LocalMile.Plus &bull; MailPlus System Notification</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await sendEmailNotification(subject, htmlContent, "scheduled_job_frequency_updated");
   }
 });
 
@@ -3005,7 +3150,7 @@ export const notifyMissingPoBox = onCall({
 export const cancelJob = onCall({
   invoker: "public",
   cors: true,
-  secrets: [gmailAppPassword],
+  secrets: [gmailAppPassword, prospectplusApiKey],
 }, async (request) => {
   console.log("[Cancel Job] Function triggered");
 
@@ -3025,9 +3170,10 @@ export const cancelJob = onCall({
   const db = getDB();
 
   try {
-    // 1. Update Firestore
+    // 1. Update Firestore & retrieve job data
     const jobRef = db.collection('jobs').doc(jobId);
     const jobSnap = await jobRef.get();
+    let jobData: any = null;
 
     if (!jobSnap.exists) {
       // Check scheduled_jobs if not in jobs
@@ -3038,6 +3184,7 @@ export const cancelJob = onCall({
         throw new HttpsError("not-found", "Job not found in active jobs or schedules.");
       }
 
+      jobData = schedSnap.data() || {};
       await schedRef.update({
         status: 'cancelled',
         cancellationReason: reason,
@@ -3046,6 +3193,7 @@ export const cancelJob = onCall({
         cancelledBy: request.auth.token.email
       });
     } else {
+      jobData = jobSnap.data() || {};
       await jobRef.update({
         status: 'cancelled',
         cancellationReason: reason,
@@ -3055,76 +3203,236 @@ export const cancelJob = onCall({
       });
     }
 
-    // 2. Send Email
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: "bookings@localmile.plus",
-        pass: gmailAppPassword.value(),
-      },
-    });
+    // 2. Resolve Franchisee & Dispatcher recipients
+    const uid = jobData.uid;
+    let customerId =
+      extractStringId(jobData.customer_id) ||
+      extractStringId(jobData.customer?.id) ||
+      extractStringId(metadata?.customer_id) ||
+      extractStringId(metadata?.customerId);
+    let parentId =
+      extractStringId(jobData.parent_id) ||
+      extractStringId(metadata?.parentId);
+    let companyName =
+      metadata?.companyName ||
+      jobData.customer?.company ||
+      "";
+    let franchiseeEmail =
+      metadata?.franchiseeEmail ||
+      jobData.franchiseeEmail ||
+      jobData.operatorEmail ||
+      "";
 
-    const recipient = "dispatcher@mailplus.com.au";
+    if (uid) {
+      try {
+        const userDoc = await db.collection("users").doc(uid).get();
+        if (userDoc.exists) {
+          const uData = userDoc.data();
+          customerId = customerId || extractStringId(uData?.customer_id);
+          parentId = parentId || extractStringId(uData?.parent_id);
+          companyName = companyName || uData?.company || uData?.companyName || "";
+          franchiseeEmail = franchiseeEmail || uData?.franchiseeEmail || "";
+        }
+      } catch (err) {
+        console.error(`[Cancel Job] Error fetching user ${uid}:`, err);
+      }
+    }
+
+    if (customerId) {
+      try {
+        const companyDoc = await db.collection("companies").doc(customerId).get();
+        if (companyDoc.exists) {
+          const companyData = companyDoc.data() || {};
+          franchiseeEmail =
+            companyData.franchiseeEmail ||
+            companyData.customerServiceEmail ||
+            companyData.email ||
+            companyData.contactEmail ||
+            franchiseeEmail;
+          companyName = companyName || companyData.companyName || companyData.name || "";
+          parentId = parentId || extractStringId(companyData.parent_id) || extractStringId(companyData.parentId);
+        }
+      } catch (err) {
+        console.error(`[Cancel Job] Error fetching company ${customerId}:`, err);
+      }
+    }
+
+    if (!franchiseeEmail && parentId) {
+      try {
+        const parentDoc = await db.collection("companies").doc(parentId).get();
+        if (parentDoc.exists) {
+          const parentData = parentDoc.data() || {};
+          franchiseeEmail =
+            parentData.franchiseeEmail ||
+            parentData.customerServiceEmail ||
+            parentData.email ||
+            parentData.contactEmail ||
+            "";
+        }
+      } catch (err) {
+        console.error(`[Cancel Job] Error fetching parent company ${parentId}:`, err);
+      }
+    }
+
+    const primaryRecipient = franchiseeEmail ? franchiseeEmail.trim() : "dispatcher@mailplus.com.au";
+    const ccRecipient =
+      franchiseeEmail && franchiseeEmail.trim().toLowerCase() !== "dispatcher@mailplus.com.au"
+        ? "dispatcher@mailplus.com.au"
+        : undefined;
     const userEmail = request.auth.token.email || "Unknown User";
+    const displayCompany = companyName || metadata?.companyName || "Job";
+    const displayService = metadata?.serviceType || jobData.service || "";
+    const displayDate = metadata?.date || jobData.date || "";
 
-    const mailOptions = {
-      from: '"LocalMile.Plus Bookings" <localmile@mailplus.com.au>',
-      to: recipient,
-      replyTo: "bookings@localmile.plus",
-      subject: `JOB CANCELLATION: [Ref: ${jobId}] ${metadata?.companyName || 'Job'}`,
-      html: `
-        <div style="font-family: 'Fraunces', serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; overflow: hidden;">
-          <div style="background: #ff4757; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">Job Cancellation Notice</h1>
-          </div>
-          <div style="padding: 30px;">
-            <p>A job has been cancelled in the LocalMile.Plus portal.</p>
-            
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Job Reference:</strong></td><td style="padding: 8px 0;">#${jobId}</td></tr>
-                ${metadata?.companyName ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Customer:</strong></td><td style="padding: 8px 0;">${metadata.companyName}</td></tr>` : ""}
-                ${metadata?.serviceType ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${metadata.serviceType}</td></tr>` : ""}
-                ${metadata?.date ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td><td style="padding: 8px 0;">${metadata.date}</td></tr>` : ""}
-                <tr><td style="padding: 8px 0; color: #666;"><strong>Cancelled By:</strong></td><td style="padding: 8px 0;">${userEmail}</td></tr>
-              </table>
-            </div>
-
-            <div style="margin-top: 30px;">
-              <h3 style="color: #ff4757; border-bottom: 2px solid #ff4757; padding-bottom: 8px; display: inline-block;">Cancellation Details</h3>
-              <p><strong>Reason:</strong> ${reason}</p>
-              ${notes ? `<p><strong>Notes:</strong></p><div style="background: #fffafa; padding: 15px; border-left: 4px solid #ff4757; font-style: italic;">${notes.replace(/\n/g, '<br>')}</div>` : ""}
-            </div>
-
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
-            <p style="font-size: 14px; color: #666; text-align: center;">This is an automated notification from the LocalMile.Plus portal.</p>
-          </div>
+    const subject = `JOB CANCELLATION: [Ref: ${jobId}] ${displayCompany}`;
+    const rawHtml = `
+      <div style="font-family: 'Fraunces', serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 12px; overflow: hidden;">
+        <div style="background: #ff4757; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">Job Cancellation Notice</h1>
         </div>
-      `,
-    };
+        <div style="padding: 30px;">
+          <p>Hello Franchisee & Dispatch Team,</p>
+          <p>A job has been cancelled in the LocalMile.Plus portal.</p>
+          
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr><td style="padding: 8px 0; color: #666; width: 140px;"><strong>Job Reference:</strong></td><td style="padding: 8px 0;">#${jobId}</td></tr>
+              ${displayCompany ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Customer:</strong></td><td style="padding: 8px 0;">${displayCompany}</td></tr>` : ""}
+              ${displayService ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Service:</strong></td><td style="padding: 8px 0;">${displayService}</td></tr>` : ""}
+              ${displayDate ? `<tr><td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td><td style="padding: 8px 0;">${displayDate}</td></tr>` : ""}
+              <tr><td style="padding: 8px 0; color: #666;"><strong>Cancelled By:</strong></td><td style="padding: 8px 0;">${userEmail}</td></tr>
+            </table>
+          </div>
 
-    const taggedHtml = injectMetadataTag(mailOptions.html, {
+          <div style="margin-top: 30px;">
+            <h3 style="color: #ff4757; border-bottom: 2px solid #ff4757; padding-bottom: 8px; display: inline-block;">Cancellation Details</h3>
+            <p><strong>Reason:</strong> ${reason}</p>
+            ${notes ? `<p><strong>Notes:</strong></p><div style="background: #fffafa; padding: 15px; border-left: 4px solid #ff4757; font-style: italic;">${notes.replace(/\n/g, '<br>')}</div>` : ""}
+          </div>
+
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
+          <p style="font-size: 14px; color: #666; text-align: center;">This is an automated notification from the LocalMile.Plus portal.</p>
+        </div>
+      </div>
+    `;
+
+    const taggedHtml = injectMetadataTag(rawHtml, {
       ...metadata,
       jobId,
-      parentId: metadata?.parentId,
-      customerId: metadata?.customerId
+      parentId: parentId || metadata?.parentId,
+      customerId: customerId || metadata?.customerId
     });
 
-    await transporter.sendMail({
-      ...mailOptions,
-      html: taggedHtml
-    });
+    // 3. Send Email via ProspectPlus API + Nodemailer fallback
+    let sentViaApi = false;
+    try {
+      console.log(`[Cancel Job] Sending cancellation email to ${primaryRecipient} (CC: ${ccRecipient || 'none'}) via ProspectPlus API...`);
+      const sendEmailRes = await fetch('https://prospectplus.com.au/api/integrations/netsuite/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': prospectplusApiKey.value()
+        },
+        body: JSON.stringify({
+          to: primaryRecipient,
+          ...(ccRecipient ? { cc: ccRecipient } : {}),
+          replyTo: 'localmile@mailplus.com.au',
+          subject: subject,
+          html: taggedHtml,
+          from: 'localmile@mailplus.com.au',
+          metadata: {
+            customerId: customerId || '',
+            jobId: jobId,
+            type: 'job_cancelled'
+          }
+        })
+      });
 
-    // 3. Log to communications
+      if (sendEmailRes.ok) {
+        sentViaApi = true;
+        console.log("[Cancel Job] Successfully sent cancellation email via ProspectPlus API.");
+      } else {
+        console.error("[Cancel Job] ProspectPlus API send-email failed:", await sendEmailRes.text());
+      }
+    } catch (apiErr) {
+      console.error("[Cancel Job] Error sending cancellation email via ProspectPlus API:", apiErr);
+    }
+
+    if (!sentViaApi) {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: "bookings@localmile.plus",
+          pass: gmailAppPassword.value(),
+        },
+      });
+
+      await transporter.sendMail({
+        from: '"LocalMile.Plus Bookings" <localmile@mailplus.com.au>',
+        to: primaryRecipient,
+        ...(ccRecipient ? { cc: [ccRecipient] } : {}),
+        replyTo: "bookings@localmile.plus",
+        subject: subject,
+        html: taggedHtml
+      });
+      console.log(`[Cancel Job] Email sent via direct Nodemailer fallback to ${primaryRecipient} (CC: ${ccRecipient || 'none'})`);
+    }
+
+    // 4. Attach email log to ProspectPlus DB if customerId is available
+    if (customerId) {
+      try {
+        let prospectDb: admin.firestore.Firestore;
+        try {
+          prospectDb = admin.app("prospectplus").firestore();
+        } catch {
+          prospectDb = admin.initializeApp({
+            projectId: "mailplus-outbound-leads-crm"
+          }, "prospectplus").firestore();
+        }
+
+        const emailLogPayload = {
+          subject: subject,
+          bodyHtml: taggedHtml,
+          sentAt: new Date().toISOString(),
+          sender: 'localmile@mailplus.com.au',
+          recipient: primaryRecipient,
+          cc: ccRecipient || '',
+          status: 'delivered',
+          type: 'job_cancelled',
+          jobId: jobId,
+          companyName: displayCompany
+        };
+
+        const leadDoc = await prospectDb.collection("leads").doc(customerId).get();
+        if (leadDoc.exists) {
+          await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
+        } else {
+          const compDoc = await prospectDb.collection("companies").doc(customerId).get();
+          if (compDoc.exists) {
+            await prospectDb.collection("companies").doc(customerId).collection("emails").add(emailLogPayload);
+          } else {
+            await prospectDb.collection("leads").doc(customerId).collection("emails").add(emailLogPayload);
+          }
+        }
+      } catch (dbAttachErr) {
+        console.error("[Cancel Job] Error attaching cancellation email to ProspectPlus DB:", dbAttachErr);
+      }
+    }
+
+    // 5. Log to communications
     await logCommunication({
       from: "bookings@localmile.plus",
-      to: recipient,
-      subject: mailOptions.subject,
+      to: ccRecipient ? [primaryRecipient, ccRecipient] : [primaryRecipient],
+      subject: subject,
       body: taggedHtml,
       type: 'sent',
       metadata: {
         ...metadata,
         jobId,
+        parentId: parentId || metadata?.parentId,
+        customerId: customerId || metadata?.customerId,
+        companyName: displayCompany,
+        franchiseeEmail: primaryRecipient,
         reason,
         type: 'cancellation'
       }

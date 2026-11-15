@@ -22,6 +22,12 @@ import { db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
 import { getDisplayServiceName } from '../../utils/serviceHelpers';
+import {
+  isActiveCompanyRecord,
+  getSelectedParentIds,
+  fetchCompanySubcustomers,
+  type CompanyOption
+} from '../../utils/companyFilters';
 
 const Reports: React.FC = () => {
   const { parent, isAdmin, selectedParentId, setSelectedParentId, allParents, userData } = useLpo();
@@ -31,7 +37,8 @@ const Reports: React.FC = () => {
   const [adminRoleView, setAdminRoleView] = useState<string | string[]>('all');
   const [selectedCustomerCompanyId, setSelectedCustomerCompanyId] = useState<string | string[]>('all');
   const [userRoleMap, setUserRoleMap] = useState<Map<string, string>>(() => new Map<string, string>());
-  const [customerCompanies, setCustomerCompanies] = useState<{ id: string, name: string }[]>([]);
+  const [customerCompanies, setCustomerCompanies] = useState<CompanyOption[]>([]);
+  const [subcollectionCustomers, setSubcollectionCustomers] = useState<CompanyOption[]>([]);
   const [rawJobs, setRawJobs] = useState<any[]>([]);
   const [rawRequests, setRawRequests] = useState<any[]>([]);
 
@@ -82,7 +89,8 @@ const Reports: React.FC = () => {
         const seenNames = new Set<string>();
         compSnap.docs.forEach(d => {
           const data = d.data();
-          const name = data.name || data.companyName;
+          if (!isActiveCompanyRecord(data)) return;
+          const name = (data.name || data.companyName || '').toString().trim();
           if (name && !seenNames.has(name.toLowerCase())) {
             seenNames.add(name.toLowerCase());
             compList.push({ id: d.id, name });
@@ -93,7 +101,8 @@ const Reports: React.FC = () => {
           const custSnap = await getDocs(collection(db, 'customers'));
           custSnap.docs.forEach(d => {
             const data = d.data();
-            const name = data.name || data.companyName;
+            if (!isActiveCompanyRecord(data)) return;
+            const name = (data.name || data.companyName || '').toString().trim();
             if (name && !seenNames.has(name.toLowerCase())) {
               seenNames.add(name.toLowerCase());
               compList.push({ id: d.id, name });
@@ -103,6 +112,7 @@ const Reports: React.FC = () => {
           // ignore if customers collection is unavailable
         }
 
+        compList.sort((a, b) => a.name.localeCompare(b.name));
         setCustomerCompanies(compList);
       } catch (err) {
         console.error("Error fetching users & companies for admin in Reports:", err);
@@ -111,10 +121,40 @@ const Reports: React.FC = () => {
     fetchUsersAndCompanies();
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    let active = true;
+    const parentIds = getSelectedParentIds(selectedParentId);
+    setSelectedCustomerCompanyId('all');
+
+    if (parentIds.length === 0) {
+      setSubcollectionCustomers([]);
+      return;
+    }
+
+    fetchCompanySubcustomers(parentIds).then((list) => {
+      if (active) setSubcollectionCustomers(list);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdmin, selectedParentId]);
+
+  const selectedParentIdsList = React.useMemo(
+    () => getSelectedParentIds(selectedParentId),
+    [selectedParentId]
+  );
+
   const allCustomerCompanyOptions = React.useMemo(() => {
     const map = new Map<string, string>();
-    customerCompanies.forEach(c => map.set(c.id, c.name));
+    const hasSelectedCompany = selectedParentIdsList.length > 0;
+    const baseList = hasSelectedCompany ? subcollectionCustomers : customerCompanies;
+    baseList.forEach(c => map.set(c.id, c.name));
     [...rawJobs, ...rawRequests].forEach(item => {
+      if (hasSelectedCompany && (!item.parent_id || !selectedParentIdsList.includes(item.parent_id))) {
+        return;
+      }
       if (item.customer?.company) {
         const cid = item.customer_id || item.customer.company;
         if (!map.has(cid)) {
@@ -122,8 +162,10 @@ const Reports: React.FC = () => {
         }
       }
     });
-    return Array.from(map.entries()).map((entry: [string, string]) => ({ id: entry[0], name: entry[1] }));
-  }, [customerCompanies, rawJobs, rawRequests]);
+    return Array.from(map.entries())
+      .map((entry: [string, string]) => ({ id: entry[0], name: entry[1] }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [customerCompanies, subcollectionCustomers, selectedParentIdsList, rawJobs, rawRequests]);
 
   const getItemUserRole = (item: any): 'customer' | 'parent' => {
     if (item.userRole) {
@@ -392,27 +434,27 @@ const Reports: React.FC = () => {
                   className="lpo-select-custom"
                 />
                 <CustomSelect 
-                  value={selectedCustomerCompanyId}
-                  onChange={(val) => setSelectedCustomerCompanyId(val)}
-                  options={[
-                    { value: 'all', label: 'All Customer Companies', icon: <Building2 size={14} /> },
-                    ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
-                  ]}
-                  isMulti={true}
-                  searchable={true}
-                  placeholder="All Customer Companies"
-                  className="lpo-select-custom"
-                />
-                <CustomSelect 
                   value={selectedParentId}
                   onChange={(val) => setSelectedParentId(val)}
                   options={[
-                    { value: 'all', label: 'All Regions / Parents', icon: <MapPin size={14} /> },
+                    { value: 'all', label: 'All Companies / Parents', icon: <MapPin size={14} /> },
                     ...allParents.map(l => ({ value: l.id, label: l.name, icon: <MapPin size={14} /> }))
                   ]}
                   isMulti={true}
                   searchable={true}
-                  placeholder="All Regions / Parents"
+                  placeholder="All Companies / Parents"
+                  className="lpo-select-custom"
+                />
+                <CustomSelect 
+                  value={selectedCustomerCompanyId}
+                  onChange={(val) => setSelectedCustomerCompanyId(val)}
+                  options={[
+                    { value: 'all', label: selectedParentIdsList.length > 0 ? 'All Subcustomers' : 'All Customer Companies', icon: <Building2 size={14} /> },
+                    ...allCustomerCompanyOptions.map(c => ({ value: c.id, label: c.name, icon: <Building2 size={14} /> }))
+                  ]}
+                  isMulti={true}
+                  searchable={true}
+                  placeholder={selectedParentIdsList.length > 0 ? 'All Subcustomers' : 'All Customer Companies'}
                   className="lpo-select-custom"
                 />
               </>

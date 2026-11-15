@@ -62,7 +62,11 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
 
   const isAllSelected = useMemo(() => {
     if (!isMulti) return value === 'all';
-    return selectedValues.includes('all') || selectedValues.length === 0 || selectedValues.length === nonAllOptions.length;
+    return (
+      selectedValues.includes('all') ||
+      selectedValues.length === 0 ||
+      (nonAllOptions.length > 1 && selectedValues.length === nonAllOptions.length)
+    );
   }, [isMulti, value, selectedValues, nonAllOptions]);
 
   const filteredOptions = useMemo(() => {
@@ -119,7 +123,7 @@ const CustomSelect: React.FC<CustomSelectProps> = ({
       nextValues = [...current, optValue];
     }
 
-    if (nextValues.length === 0 || nextValues.length === nonAllOptions.length) {
+    if (nextValues.length === 0 || (nonAllOptions.length > 1 && nextValues.length === nonAllOptions.length)) {
       onChange('all');
     } else {
       onChange(nextValues);

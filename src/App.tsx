@@ -24,6 +24,10 @@ import ResetPassword from './pages/Auth/ResetPassword';
 import UserManagement from './pages/Admin/UserManagement';
 import AdminCommunications from './pages/Admin/AdminCommunications';
 import ActivateAccount from './pages/Auth/ActivateAccount';
+import OperatorSignIn from './pages/Auth/OperatorSignIn';
+import ProofUploadPage from './pages/Operator/ProofUploadPage';
+import ProofsViewerPage from './pages/Operator/ProofsViewerPage';
+import { hasCompany1868657UploadAccess, isCompany1868657ParentViewer } from './utils/operatorAccess';
 
 import OnboardingTour from './components/OnboardingTour';
 
@@ -43,6 +47,47 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!user) return <Navigate to="/signin" />;
   if (!isAdmin) return <Navigate to="/dashboard" />;
   
+  return <>{children}</>;
+};
+
+const OperatorRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, userData, isAdmin, loading } = useLpo();
+  const [checking, setChecking] = React.useState(true);
+  const [allowed, setAllowed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      setAllowed(false);
+      setChecking(false);
+      return;
+    }
+    let active = true;
+    hasCompany1868657UploadAccess(userData, isAdmin, user.email).then((res) => {
+      if (active) {
+        setAllowed(res);
+        setChecking(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [user, userData, isAdmin, loading]);
+
+  if (loading || checking) return <LoadingScreen />;
+  if (!user) return <Navigate to="/operator/signin" />;
+  if (!allowed) return <Navigate to="/dashboard" />;
+
+  return <>{children}</>;
+};
+
+const ParentProofsRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, userData, isAdmin, loading } = useLpo();
+
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/signin" />;
+  if (!isCompany1868657ParentViewer(userData, isAdmin)) return <Navigate to="/dashboard" />;
+
   return <>{children}</>;
 };
 
@@ -74,9 +119,24 @@ const App: React.FC = () => {
       <BrowserRouter>
         <Routes>
           <Route path="/signin" element={<SignIn />} />
+          <Route path="/operator/signin" element={<OperatorSignIn />} />
           <Route path="/register" element={<SignUp />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/activate/:uid" element={<ActivateAccount />} />
+
+          <Route path="/operator/upload" element={
+            <OperatorRoute>
+              <ProofUploadPage />
+            </OperatorRoute>
+          } />
+
+          <Route path="/proofs" element={
+            <ParentProofsRoute>
+              <AppLayout>
+                <ProofsViewerPage />
+              </AppLayout>
+            </ParentProofsRoute>
+          } />
           
           <Route path="/dashboard" element={
             <PrivateRoute>

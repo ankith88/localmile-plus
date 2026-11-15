@@ -333,7 +333,8 @@ const BulkStopSchedulesModal: React.FC<BulkStopSchedulesModalProps> = ({
               gap: '10px',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: 'rgba(26, 61, 51, 0.02)'
+              background: 'rgba(26, 61, 51, 0.02)',
+              flexShrink: 0
             }}
           >
             <div
@@ -404,7 +405,7 @@ const BulkStopSchedulesModal: React.FC<BulkStopSchedulesModalProps> = ({
           </div>
 
           {/* Scrollable Customer Groups */}
-          <div style={{ overflowY: 'auto', maxHeight: '290px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ overflowY: 'auto', maxHeight: '320px', flex: 1, minHeight: 0, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {filteredGroups.length === 0 ? (
               <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
                 No matching customers with active scheduled services found.
@@ -424,6 +425,7 @@ const BulkStopSchedulesModal: React.FC<BulkStopSchedulesModalProps> = ({
                       borderRadius: '12px',
                       background: selectedInGroup > 0 ? 'rgba(254, 242, 242, 0.4)' : 'rgba(255, 255, 255, 0.9)',
                       overflow: 'hidden',
+                      flexShrink: 0,
                       transition: 'all 0.15s'
                     }}
                   >

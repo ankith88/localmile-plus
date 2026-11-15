@@ -18,7 +18,7 @@ import SupportEmailModal from '../../components/SupportEmailModal';
 
 const SignIn: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useLpo();
+  const { user, userData } = useLpo();
   const [loginMethod, setLoginMethod] = useState<'email' | 'mobile'>('email');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -31,10 +31,14 @@ const SignIn: React.FC = () => {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
+      if (userData?.role === 'operator' && userData?.parent_id === '1868657') {
+        navigate('/operator/upload');
+        return;
+      }
       console.log("User already logged in, redirecting to dashboard...");
       navigate('/dashboard');
     }
-  }, [user, navigate]);
+  }, [user, userData, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();

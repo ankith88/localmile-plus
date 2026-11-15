@@ -13,10 +13,13 @@ import {
   Pin,
   PinOff,
   UserCircle,
-  Mail
+  Mail,
+  Camera,
+  FileImage
 } from 'lucide-react';
 import { auth } from '../firebase/config';
 import { useLpo } from '../context/LpoContext';
+import { isCompany1868657ParentViewer, TARGET_COMPANY_ID } from '../utils/operatorAccess';
 
 const Sidebar: React.FC = () => {
   const { isSidebarPinned, setIsSidebarPinned, parent, isAdmin, userData, awaitingTcCount, companyName } = useLpo();
@@ -40,6 +43,22 @@ const Sidebar: React.FC = () => {
       path: '/customers' 
     },
     { name: 'Invoices', icon: FileText, path: '/invoices' },
+    {
+      name: 'Uploaded Proofs',
+      icon: FileImage,
+      path: '/proofs',
+      hidden: !isCompany1868657ParentViewer(userData, isAdmin),
+    },
+    {
+      name: 'Proof Upload',
+      icon: Camera,
+      path: '/operator/upload',
+      hidden: !(
+        isAdmin ||
+        (userData?.parent_id === TARGET_COMPANY_ID &&
+          ['operator', 'parent'].includes(userData?.role || ''))
+      ),
+    },
     { name: 'Operational Insights', icon: BarChart3, path: '/reports' },
     { name: 'Service Area', icon: MapPin, path: '/service-area' },
     { name: 'My Profile', icon: UserCircle, path: '/profile' },
@@ -153,7 +172,7 @@ const Sidebar: React.FC = () => {
 
           <div className="nav-group">
             {isExpanded && <p className="group-title">Administration</p>}
-            {navItems.slice(3).map((item) => (
+            {navItems.slice(3).filter(item => !item.hidden).map((item) => (
               <NavLink 
                 key={item.path} 
                 to={item.path}

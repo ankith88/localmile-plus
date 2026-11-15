@@ -6412,3 +6412,103 @@ export const getCompanyStatus = onCall({ invoker: "public" }, async (request) =>
   }
 });
 
+// Logic: onProofUploadAccessGranted (Email franchisee/operator with access steps + CC mailplusit@mailplus.com.au)
+export const onProofUploadAccessGranted = onDocumentCreated({
+  document: "companies/{companyId}/proof_upload_access/{emailId}",
+  database: "(default)",
+  secrets: [gmailAppPassword],
+}, async (event) => {
+  const snapshot = event.data;
+  const { companyId, emailId } = event.params;
+
+  if (!snapshot) return;
+  const data = snapshot.data();
+  if (!data || data.active !== true) return;
+
+  const recipientEmail = (data.email || emailId || "").toString().trim();
+  if (!recipientEmail) {
+    console.warn(`[onProofUploadAccessGranted] Missing email for ${companyId}/${emailId}`);
+    return;
+  }
+
+  const db = getDB();
+  let companyName = "LocalMile Partner";
+  try {
+    const companyDoc = await db.collection("companies").doc(companyId).get();
+    if (companyDoc.exists) {
+      const cData = companyDoc.data();
+      companyName = (cData?.companyName || cData?.name || companyName).toString();
+    }
+  } catch (err) {
+    console.warn(`[onProofUploadAccessGranted] Could not fetch company name for ${companyId}:`, err);
+  }
+
+  const baseUrl = (data.origin || "https://localmile.plus").toString().replace(/\/$/, "");
+  const signInUrl = `${baseUrl}/operator/signin`;
+  const recipientName = data.label ? data.label.toString().trim() : "Partner";
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: "bookings@localmile.plus",
+      pass: gmailAppPassword.value(),
+    },
+  });
+
+  const mailOptions = {
+    from: '"LocalMile.Plus" <localmile@mailplus.com.au>',
+    to: recipientEmail,
+    cc: "mailplusit@mailplus.com.au",
+    replyTo: "mailplusit@mailplus.com.au",
+    subject: `Proof Upload Access Granted — ${companyName}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+      </head>
+      <body style="margin:0; padding:0; background-color:#d0dfcd; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color:#1A3D33;">
+        <div style="max-width:600px; margin:28px auto; background:#ffffff; border-radius:14px; overflow:hidden; box-shadow:0 6px 24px rgba(26,61,51,0.08);">
+          <div style="background:#095c7b; padding:24px 28px; color:#ffffff;">
+            <h1 style="margin:0; font-size:20px; font-weight:700;">Proof Upload Access Granted</h1>
+            <p style="margin:6px 0 0; font-size:14px; opacity:0.9;">${companyName}</p>
+          </div>
+          <div style="padding:26px 28px; line-height:1.6; font-size:14px;">
+            <p style="margin-top:0;">Hi ${recipientName},</p>
+            <p>You have been granted access to upload <strong>Proof of Delivery</strong> and <strong>Proof of Excess Weight</strong> images for <strong>${companyName}</strong>.</p>
+
+            <div style="background:#f7faf7; border:1px solid #d5e2d5; border-radius:10px; padding:16px 18px; margin:18px 0;">
+              <p style="margin:0 0 10px; font-weight:700; color:#1A3D33;">How to access and upload proofs:</p>
+              <ol style="margin:0; padding-left:20px;">
+                <li style="margin-bottom:6px;">Open the Operator Sign-In page: <a href="${signInUrl}" style="color:#095c7b; font-weight:700;">${signInUrl}</a></li>
+                <li style="margin-bottom:6px;">Sign in with your email (<strong>${recipientEmail}</strong>) or mobile number and password. If you have not set a password yet, click <strong>Forgot?</strong> on the sign-in page to receive a password setup/reset link.</li>
+                <li style="margin-bottom:6px;">Select the <strong>Subcustomer</strong> and <strong>Service</strong>.</li>
+                <li style="margin-bottom:6px;">Choose the <strong>Date &amp; Time</strong> and select <strong>Proof of Delivery</strong> or <strong>Proof of Excess Weight</strong> (enter quantity if excess weight).</li>
+                <li>Take or choose your proof photos and tap <strong>Submit</strong>.</li>
+              </ol>
+            </div>
+
+            <div style="text-align:center; margin:24px 0 10px;">
+              <a href="${signInUrl}" style="display:inline-block; background:#095c7b; color:#ffffff; text-decoration:none; padding:12px 24px; border-radius:8px; font-weight:700; font-size:14px;">
+                Go to Operator Sign In
+              </a>
+            </div>
+
+            <p style="margin-top:22px; font-size:12px; color:#526b62;">
+              Need help? Reply to this email or contact <a href="mailto:mailplusit@mailplus.com.au" style="color:#095c7b;">mailplusit@mailplus.com.au</a>.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[onProofUploadAccessGranted] Sent email to ${recipientEmail} (CC: mailplusit@mailplus.com.au): ${info.messageId}`);
+  } catch (err) {
+    console.error(`[onProofUploadAccessGranted] Failed to send email to ${recipientEmail}:`, err);
+  }
+});
+

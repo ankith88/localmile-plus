@@ -132,11 +132,27 @@ export const DevContextSwitcher: React.FC = () => {
         try {
           const q = query(collection(db, 'customers'), limit(100));
           const snapshot = await getDocs(q);
-          const customerData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            name: doc.data().name || 'Unknown Name',
-            email: doc.data().email
-          }));
+          const INACTIVE_STATUSES = new Set([
+            'cancelled', 'canceled', 'inactive', 'lost', 'declined',
+            'suspended', 'deactivated', 'archived', 'deleted'
+          ]);
+          const customerData = snapshot.docs
+            .map(doc => {
+              const data = doc.data();
+              const name = (data.name || data.companyName || '').toString().trim();
+              if (!name) return null;
+              const status = (data.status || data.customerStatus || '').toString().toLowerCase().trim();
+              if (data.active === false || data.isActive === false || INACTIVE_STATUSES.has(status)) {
+                return null;
+              }
+              return {
+                id: doc.id,
+                name,
+                email: data.email
+              };
+            })
+            .filter((c): c is { id: string; name: string; email: any } => c !== null)
+            .sort((a, b) => a.name.localeCompare(b.name));
           setCustomers(customerData);
         } catch (error) {
           console.error("Error fetching customers for dev switcher", error);

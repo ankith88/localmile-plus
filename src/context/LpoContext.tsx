@@ -229,21 +229,46 @@ export const LpoProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           if (isSuperAdminUid(user.uid) || user.email?.toLowerCase() === 'ankith.ravindran@mailplus.com.au' || userDoc.data()?.role === 'admin' || userDoc.data()?.role === 'superadmin') {
             const parentsSnapshot = await getDocs(collection(db, 'companies'));
-            setAllParents(parentsSnapshot.docs.map(doc => {
-              const data = doc.data();
-              const addr1 = data.address1 || data.addressLine1 || (typeof data.address === 'object' ? data.address?.address1 : '') || '';
-              const street = data.street || data.streetAddress || (typeof data.address === 'object' ? data.address?.street : '') || '';
-              const combinedAddress = (addr1 && street && !addr1.toLowerCase().includes(street.toLowerCase()))
-                ? `${addr1} ${street}`.trim()
-                : (addr1 || street || (typeof data.address === 'string' && data.address !== '[object Object]' ? data.address : '') || '');
-              return {
-                id: doc.id,
-                name: data.name || data.companyName || 'Unknown Company',
-                location: data.Location || data.city || '',
-                address: combinedAddress,
-                ...data
-              } as ParentEntity;
-            }));
+            const ACTIVE_PARENT_STATUSES = new Set(['active', 'signed', 'won', 'approved', 'enabled']);
+            const activeParents = parentsSnapshot.docs
+              .map(doc => {
+                const data = doc.data();
+                const rawName = (data.name || data.companyName || '').toString().trim();
+                if (!rawName) return null;
+
+                const isParentCompany = Boolean(
+                  data.isParent === true ||
+                  data.role === 'parent' ||
+                  data.type === 'parent' ||
+                  data.im_id ||
+                  data.lpo_id ||
+                  (typeof data.name === 'string' && data.name.trim().length > 0 && !data.customerEntityId)
+                );
+                if (!isParentCompany) return null;
+
+                const effectiveStatus = (data.status || data.customerStatus || '').toString().toLowerCase().trim();
+                const isStatusActive =
+                  data.active !== false &&
+                  data.isActive !== false &&
+                  (!effectiveStatus || ACTIVE_PARENT_STATUSES.has(effectiveStatus));
+                if (!isStatusActive) return null;
+
+                const addr1 = data.address1 || data.addressLine1 || (typeof data.address === 'object' ? data.address?.address1 : '') || '';
+                const street = data.street || data.streetAddress || (typeof data.address === 'object' ? data.address?.street : '') || '';
+                const combinedAddress = (addr1 && street && !addr1.toLowerCase().includes(street.toLowerCase()))
+                  ? `${addr1} ${street}`.trim()
+                  : (addr1 || street || (typeof data.address === 'string' && data.address !== '[object Object]' ? data.address : '') || '');
+                return {
+                  id: doc.id,
+                  name: rawName,
+                  location: data.Location || data.city || '',
+                  address: combinedAddress,
+                  ...data
+                } as ParentEntity;
+              })
+              .filter((p): p is ParentEntity => p !== null)
+              .sort((a, b) => a.name.localeCompare(b.name));
+            setAllParents(activeParents);
           }
 
         } catch (error) {

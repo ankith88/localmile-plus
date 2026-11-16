@@ -8,12 +8,15 @@ import {
   collection, 
   query, 
   where, 
-  getDocs 
+  getDocs,
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import { auth, db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import LoadingScreen from '../../components/LoadingScreen';
 import SupportEmailModal from '../../components/SupportEmailModal';
+import { hasCompany1868657UploadAccess } from '../../utils/operatorAccess';
 
 
 const SignIn: React.FC = () => {
@@ -30,14 +33,24 @@ const SignIn: React.FC = () => {
 
   // Redirect if already logged in
   useEffect(() => {
-    if (user) {
-      if (userData?.role === 'operator' && userData?.parent_id === '1868657') {
-        navigate('/operator/upload');
-        return;
-      }
+    if (!user) return;
+    if (userData?.role === 'operator') {
+      navigate('/operator/upload', { replace: true });
+      return;
+    }
+    if (userData) {
       console.log("User already logged in, redirecting to dashboard...");
       navigate('/dashboard');
+      return;
     }
+    let active = true;
+    hasCompany1868657UploadAccess(null, false, user.email).then((isOperatorOnly) => {
+      if (!active) return;
+      navigate(isOperatorOnly ? '/operator/upload' : '/dashboard', { replace: true });
+    });
+    return () => {
+      active = false;
+    };
   }, [user, userData, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -66,7 +79,23 @@ const SignIn: React.FC = () => {
         emailToUse = querySnapshot.docs[0].data().email;
       }
 
-      await signInWithEmailAndPassword(auth, emailToUse, password);
+      const cred = await signInWithEmailAndPassword(auth, emailToUse, password);
+      let userDoc = await getDoc(doc(db, 'users', cred.user.uid));
+      if (!userDoc.exists() && cred.user.email) {
+        userDoc = await getDoc(doc(db, 'users', cred.user.email));
+      }
+      const signedInRole = userDoc.exists() ? userDoc.data()?.role : null;
+      if (signedInRole === 'operator') {
+        navigate('/operator/upload', { replace: true });
+        return;
+      }
+      if (!userDoc.exists()) {
+        const isOperatorOnly = await hasCompany1868657UploadAccess(null, false, cred.user.email);
+        if (isOperatorOnly) {
+          navigate('/operator/upload', { replace: true });
+          return;
+        }
+      }
       console.log("Sign in successful! Redirecting...");
       navigate('/dashboard');
     } catch (err: any) {

@@ -1,5 +1,5 @@
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { auth, db } from '../firebase/config';
 import type { UserMetadata } from '../context/LpoContext';
 import { getDisplayServiceName } from './serviceHelpers';
 
@@ -84,4 +84,48 @@ export function isCompany1868657ParentViewer(
     userData.role === 'parent' &&
     (userData.parent_id === TARGET_COMPANY_ID || userData.customer_id === TARGET_COMPANY_ID)
   );
+}
+
+/**
+ * Uploads a compressed proof image Blob via the /api/upload-proof-image endpoint
+ * to gs://localmile-plus-pod-storage and returns its download URL.
+ */
+export async function uploadProofBlob(storagePath: string, blob: Blob): Promise<string> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error('You must be signed in to upload proof images.');
+  }
+
+  const idToken = await currentUser.getIdToken();
+  const base64Data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const commaIdx = result.indexOf(',');
+      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+    };
+    reader.onerror = () => reject(new Error('Failed to read compressed image.'));
+    reader.readAsDataURL(blob);
+  });
+
+  const response = await fetch('/api/upload-proof-image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      storagePath,
+      base64Data,
+      contentType: blob.type || 'image/jpeg',
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.json().catch(() => ({}));
+    throw new Error(errBody.error || `Upload failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.url;
 }

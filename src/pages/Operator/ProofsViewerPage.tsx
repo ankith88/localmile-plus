@@ -27,7 +27,7 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { deleteObject, ref } from 'firebase/storage';
 import { db, storage } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import { compressImage } from '../../utils/imageCompression';
@@ -35,8 +35,11 @@ import {
   fetchTargetCompanyName,
   formatOperatorServiceName,
   TARGET_COMPANY_ID,
+  uploadProofBlob,
 } from '../../utils/operatorAccess';
 import LoadingScreen from '../../components/LoadingScreen';
+import ExtrasReportPanel from '../../components/ExtrasReportPanel';
+import { normalizeExtrasRecord } from '../../utils/extrasReport';
 
 interface ProofFileEntry {
   url: string;
@@ -80,6 +83,7 @@ const ProofsViewerPage: React.FC = () => {
   const [proofTypeFilter, setProofTypeFilter] = useState<'all' | 'pod' | 'excess_weight'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [showExtrasReport, setShowExtrasReport] = useState(false);
 
   // Lightbox state
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
@@ -195,6 +199,14 @@ const ProofsViewerPage: React.FC = () => {
       excessCount,
     };
   }, [filteredProofs]);
+
+  const extrasRecords = useMemo(
+    () =>
+      proofs
+        .filter((p) => p.proofType === 'excess_weight')
+        .map((p) => normalizeExtrasRecord(p.id, p)),
+    [proofs]
+  );
 
   const openLightbox = (images: string[], index: number, title: string) => {
     setLightboxImages(images);
@@ -317,9 +329,7 @@ const ProofsViewerPage: React.FC = () => {
         const compressed = await compressImage(file);
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         const storagePath = `proof_uploads/${TARGET_COMPANY_ID}/${editingProof.subcustomerId}/${editProofType}/${ts}_edit_${i}_${safeName}.jpg`;
-        const storageRef = ref(storage, storagePath);
-        await uploadBytes(storageRef, compressed, { contentType: 'image/jpeg' });
-        const url = await getDownloadURL(storageRef);
+        const url = await uploadProofBlob(storagePath, compressed);
         uploadedNew.push({
           url,
           storagePath,
@@ -410,6 +420,27 @@ const ProofsViewerPage: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowExtrasReport((prev) => !prev)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 14px',
+                borderRadius: '10px',
+                border: showExtrasReport ? '1px solid #b45309' : '1px solid #cbd5e1',
+                background: showExtrasReport ? '#fef3c7' : '#ffffff',
+                color: showExtrasReport ? '#92400e' : '#0f172a',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <Scale size={16} />
+              <span>{showExtrasReport ? 'Hide Extras Report' : 'Extras Report & Export'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={fetchProofs}
@@ -448,6 +479,15 @@ const ProofsViewerPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Admin & Superadmin Extras Report & Export */}
+      {isAdmin && showExtrasReport && (
+        <ExtrasReportPanel
+          records={extrasRecords}
+          externalLoading={loading}
+          variant="card"
+        />
+      )}
 
       {/* Summary Stats */}
       <div

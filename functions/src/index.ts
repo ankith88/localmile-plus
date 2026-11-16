@@ -1,7 +1,7 @@
 import * as admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { onCall, HttpsError, onRequest } from "firebase-functions/v2/https";
-import { onDocumentUpdated, onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentUpdated, onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { defineSecret } from "firebase-functions/params";
@@ -3662,23 +3662,71 @@ export const requestPasswordResetHttp = onRequest({
   }
 
   try {
+    // 0. Verify user exists in Firebase Auth (or auto-provision if they have active proof_upload_access)
+    try {
+      await admin.auth().getUserByEmail(email);
+    } catch (lookupErr: any) {
+      if (lookupErr?.code === 'auth/user-not-found') {
+        const dbCheck = getDB();
+        const accessSnap = await dbCheck
+          .collection("companies")
+          .doc("1868657")
+          .collection("proof_upload_access")
+          .doc(email.toLowerCase().trim())
+          .get();
+
+        if (accessSnap.exists && accessSnap.data()?.active === true) {
+          const accessData = accessSnap.data() || {};
+          const createdUser = await admin.auth().createUser({
+            email: email.trim(),
+            displayName: (accessData.label || "Operator").toString(),
+            emailVerified: true,
+          });
+          await dbCheck.collection("users").doc(createdUser.uid).set({
+            email: email.trim(),
+            name: (accessData.label || "Operator").toString(),
+            role: "operator",
+            parent_id: "1868657",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          console.log(`[Auth] Auto-provisioned operator Auth account for ${email} (${createdUser.uid})`);
+        } else {
+          res.status(404).json({ error: "No account found with that email address." });
+          return;
+        }
+      } else {
+        throw lookupErr;
+      }
+    }
+
     // 1. Generate the reset link with auto-healing fallback for non-allowlisted domains
     let link = "";
     try {
       const actionCodeSettings = {
         url: origin ? `${origin}/signin` : 'https://localmile-plus.web.app/signin',
-        handleCodeInApp: true,
+        handleCodeInApp: false,
       };
       console.log(`[Auth] Generating password reset link for: ${email} with redirect: ${actionCodeSettings.url}`);
       link = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
     } catch (authErr: any) {
-      console.warn(`[Auth] Failed to generate link with origin ${origin}:`, authErr.message);
-      console.log(`[Auth] Retrying with default allowlisted Firebase domain...`);
-      const fallbackSettings = {
-        url: 'https://localmile-plus.web.app/signin',
-        handleCodeInApp: true,
-      };
-      link = await admin.auth().generatePasswordResetLink(email, fallbackSettings);
+      console.warn(`[Auth] Failed to generate link with actionCodeSettings (origin=${origin}):`, authErr.message);
+      console.log(`[Auth] Retrying with default Firebase Auth reset link (no actionCodeSettings)...`);
+      link = await admin.auth().generatePasswordResetLink(email);
+    }
+
+    // Route the user to our branded /reset-password page instead of Firebase's default /__/auth/action page
+    try {
+      const parsedLink = new URL(link);
+      const oobCode = parsedLink.searchParams.get("oobCode");
+      const mode = parsedLink.searchParams.get("mode") || "resetPassword";
+      if (oobCode) {
+        const appBase = (typeof origin === "string" && origin.startsWith("http"))
+          ? origin.replace(/\/$/, "")
+          : "https://localmile.plus";
+        link = `${appBase}/reset-password?mode=${encodeURIComponent(mode)}&oobCode=${encodeURIComponent(oobCode)}`;
+      }
+    } catch (urlErr) {
+      console.warn("[Auth] Could not rewrite reset link to /reset-password:", urlErr);
     }
 
     // 2. Fetch leadId from user document if exists
@@ -6416,7 +6464,7 @@ export const getCompanyStatus = onCall({ invoker: "public" }, async (request) =>
 export const onProofUploadAccessGranted = onDocumentCreated({
   document: "companies/{companyId}/proof_upload_access/{emailId}",
   database: "(default)",
-  secrets: [gmailAppPassword],
+  secrets: [gmailAppPassword, prospectplusApiKey],
 }, async (event) => {
   const snapshot = event.data;
   const { companyId, emailId } = event.params;
@@ -6432,6 +6480,35 @@ export const onProofUploadAccessGranted = onDocumentCreated({
   }
 
   const db = getDB();
+  const recipientName = data.label ? data.label.toString().trim() : "Partner";
+
+  // Ensure the operator has a Firebase Auth account & user profile so they can sign in / reset password
+  try {
+    await admin.auth().getUserByEmail(recipientEmail);
+  } catch (lookupErr: any) {
+    if (lookupErr?.code === "auth/user-not-found") {
+      try {
+        const createdUser = await admin.auth().createUser({
+          email: recipientEmail,
+          displayName: recipientName,
+          emailVerified: true,
+        });
+        await db.collection("users").doc(createdUser.uid).set({
+          email: recipientEmail,
+          name: recipientName,
+          role: "operator",
+          parent_id: companyId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        console.log(`[onProofUploadAccessGranted] Created Firebase Auth account for ${recipientEmail} (${createdUser.uid})`);
+      } catch (createErr) {
+        console.error(`[onProofUploadAccessGranted] Failed to create Auth account for ${recipientEmail}:`, createErr);
+      }
+    } else {
+      console.warn(`[onProofUploadAccessGranted] Auth lookup failed for ${recipientEmail}:`, lookupErr);
+    }
+  }
+
   let companyName = "LocalMile Partner";
   try {
     const companyDoc = await db.collection("companies").doc(companyId).get();
@@ -6445,23 +6522,8 @@ export const onProofUploadAccessGranted = onDocumentCreated({
 
   const baseUrl = (data.origin || "https://localmile.plus").toString().replace(/\/$/, "");
   const signInUrl = `${baseUrl}/operator/signin`;
-  const recipientName = data.label ? data.label.toString().trim() : "Partner";
-
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: "bookings@localmile.plus",
-      pass: gmailAppPassword.value(),
-    },
-  });
-
-  const mailOptions = {
-    from: '"LocalMile.Plus" <localmile@mailplus.com.au>',
-    to: recipientEmail,
-    cc: "mailplusit@mailplus.com.au",
-    replyTo: "mailplusit@mailplus.com.au",
-    subject: `Proof Upload Access Granted — ${companyName}`,
-    html: `
+  const subject = `Proof Upload Access Granted — ${companyName}`;
+  const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -6501,14 +6563,158 @@ export const onProofUploadAccessGranted = onDocumentCreated({
         </div>
       </body>
       </html>
-    `,
-  };
+    `;
+
+  // 1. Send via ProspectPlus Email API
+  let sentViaApi = false;
+  try {
+    const sendEmailRes = await fetch("https://prospectplus.com.au/api/integrations/netsuite/send-email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": prospectplusApiKey.value(),
+      },
+      body: JSON.stringify({
+        to: recipientEmail,
+        cc: "mailplusit@mailplus.com.au",
+        replyTo: "mailplusit@mailplus.com.au",
+        from: "localmile@mailplus.com.au",
+        subject,
+        html: htmlContent,
+        metadata: {
+          companyId,
+          type: "proof_upload_access_granted",
+        },
+      }),
+    });
+
+    if (sendEmailRes.ok) {
+      sentViaApi = true;
+      console.log(`[onProofUploadAccessGranted] Sent email via ProspectPlus API to ${recipientEmail} (CC: mailplusit@mailplus.com.au)`);
+    } else {
+      console.error("[onProofUploadAccessGranted] ProspectPlus API send-email failed:", await sendEmailRes.text());
+    }
+  } catch (apiErr) {
+    console.error("[onProofUploadAccessGranted] Error sending email via ProspectPlus API:", apiErr);
+  }
+
+  // 2. Fallback to Nodemailer if ProspectPlus API failed
+  if (!sentViaApi) {
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "bookings@localmile.plus",
+        pass: gmailAppPassword.value(),
+      },
+    });
+
+    try {
+      const info = await transporter.sendMail({
+        from: '"LocalMile.Plus" <localmile@mailplus.com.au>',
+        to: recipientEmail,
+        cc: "mailplusit@mailplus.com.au",
+        replyTo: "mailplusit@mailplus.com.au",
+        subject,
+        html: htmlContent,
+      });
+      console.log(`[onProofUploadAccessGranted] Sent email via Nodemailer to ${recipientEmail} (CC: mailplusit@mailplus.com.au): ${info.messageId}`);
+    } catch (err) {
+      console.error(`[onProofUploadAccessGranted] Failed to send email to ${recipientEmail}:`, err);
+    }
+  }
+});
+
+// Upload proof image to gs://localmile-plus-pod-storage using Firebase Admin SDK
+export const uploadProofImageHttp = onRequest({
+  cors: true,
+}, async (req, res) => {
+  if (req.method === "OPTIONS") {
+    res.status(204).send();
+    return;
+  }
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`[onProofUploadAccessGranted] Sent email to ${recipientEmail} (CC: mailplusit@mailplus.com.au): ${info.messageId}`);
-  } catch (err) {
-    console.error(`[onProofUploadAccessGranted] Failed to send email to ${recipientEmail}:`, err);
+    const authHeader = req.headers.authorization || "";
+    const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    if (!idToken) {
+      res.status(401).json({ error: "Unauthorized: missing auth token" });
+      return;
+    }
+
+    await admin.auth().verifyIdToken(idToken);
+
+    const { storagePath, base64Data, contentType } = req.body || {};
+    if (!storagePath || !base64Data || typeof storagePath !== "string" || typeof base64Data !== "string") {
+      res.status(400).json({ error: "Missing storagePath or base64Data" });
+      return;
+    }
+
+    if (!storagePath.startsWith("proof_uploads/")) {
+      res.status(400).json({ error: "Invalid storagePath" });
+      return;
+    }
+
+    const buffer = Buffer.from(base64Data, "base64");
+    const bucketName = "localmile-plus-pod-storage";
+    const bucket = admin.storage().bucket(bucketName);
+    const file = bucket.file(storagePath);
+    const downloadToken = crypto.randomUUID();
+
+    await file.save(buffer, {
+      contentType: contentType || "image/jpeg",
+      metadata: {
+        metadata: {
+          firebaseStorageDownloadTokens: downloadToken,
+        },
+      },
+    });
+
+    const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+    res.status(200).json({ url, storagePath });
+  } catch (err: any) {
+    console.error("[uploadProofImageHttp] Error uploading proof image:", err);
+    res.status(500).json({ error: err?.message || "Failed to upload proof image" });
+  }
+});
+
+// Logic: onProofUploadAccessRevoked (Delete operator Auth account & users doc when proof_upload_access is deleted)
+export const onProofUploadAccessRevoked = onDocumentDeleted({
+  document: "companies/{companyId}/proof_upload_access/{emailId}",
+  database: "(default)",
+}, async (event) => {
+  const snapshot = event.data;
+  const { companyId, emailId } = event.params;
+  const deletedData = snapshot?.data();
+  const email = (deletedData?.email || emailId || "").toString().trim().toLowerCase();
+  if (!email) return;
+
+  const db = getDB();
+  try {
+    const authUser = await admin.auth().getUserByEmail(email);
+    const userDocRef = db.collection("users").doc(authUser.uid);
+    const userDoc = await userDocRef.get();
+    const userRole = userDoc.exists ? userDoc.data()?.role : null;
+
+    // Only delete if this is a dedicated operator account (or has no users doc), never delete admin/parent/customer accounts
+    if (!userDoc.exists || userRole === "operator") {
+      await admin.auth().deleteUser(authUser.uid);
+      if (userDoc.exists) {
+        await userDocRef.delete();
+      }
+      console.log(`[onProofUploadAccessRevoked] Deleted operator Auth user & profile for ${email} (${authUser.uid}) from company ${companyId}`);
+    } else {
+      console.log(`[onProofUploadAccessRevoked] Preserved non-operator Auth user ${email} (role=${userRole})`);
+    }
+  } catch (err: any) {
+    if (err?.code === "auth/user-not-found") {
+      console.log(`[onProofUploadAccessRevoked] No Auth user found for ${email}`);
+      return;
+    }
+    console.error(`[onProofUploadAccessRevoked] Error revoking Auth user for ${email}:`, err);
   }
 });
 

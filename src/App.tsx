@@ -32,11 +32,35 @@ import { hasCompany1868657UploadAccess, isCompany1868657ParentViewer } from './u
 import OnboardingTour from './components/OnboardingTour';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading } = useLpo();
-  
-  if (loading) return <LoadingScreen />;
+  const { user, userData, isAdmin, loading } = useLpo();
+  const [checkingOperatorOnly, setCheckingOperatorOnly] = React.useState(false);
+  const [operatorOnly, setOperatorOnly] = React.useState(false);
+
+  const isOperatorRole = userData?.role === 'operator' && !isAdmin;
+
+  React.useEffect(() => {
+    if (loading || !user || userData || isAdmin) {
+      setCheckingOperatorOnly(false);
+      setOperatorOnly(false);
+      return;
+    }
+    let active = true;
+    setCheckingOperatorOnly(true);
+    hasCompany1868657UploadAccess(null, false, user.email).then((allowed) => {
+      if (active) {
+        setOperatorOnly(allowed);
+        setCheckingOperatorOnly(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [user, userData, isAdmin, loading]);
+
+  if (loading || checkingOperatorOnly) return <LoadingScreen />;
   if (!user) return <Navigate to="/signin" />;
-  
+  if (isOperatorRole || operatorOnly) return <Navigate to="/operator/upload" replace />;
+
   return <>{children}</>;
 };
 

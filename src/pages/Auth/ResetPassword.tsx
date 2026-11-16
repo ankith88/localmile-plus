@@ -5,7 +5,7 @@ import {
   confirmPasswordReset 
 } from 'firebase/auth';
 import { auth } from '../../firebase/config';
-import { Lock, CheckCircle, AlertCircle, ArrowRight, Key } from 'lucide-react';
+import { Lock, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react';
 import LoadingScreen from '../../components/LoadingScreen';
 
 const ResetPassword: React.FC = () => {
@@ -19,14 +19,15 @@ const ResetPassword: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(true);
-  const [error, setError] = useState('');
+  const [linkError, setLinkError] = useState('');
+  const [formError, setFormError] = useState('');
   const [success, setSuccess] = useState(false);
   const [email, setEmail] = useState('');
 
   useEffect(() => {
     const verifyCode = async () => {
       if (mode !== 'resetPassword' || !oobCode) {
-        setError('Invalid or expired reset link. Please request a new one from the sign-in page.');
+        setLinkError('Invalid or expired reset link. Please request a new one from the sign-in page.');
         setVerifying(false);
         setLoading(false);
         return;
@@ -39,7 +40,7 @@ const ResetPassword: React.FC = () => {
         setLoading(false);
       } catch (err: any) {
         console.error("Verification error:", err);
-        setError('This reset link has expired or has already been used.');
+        setLinkError('This reset link has expired or has already been used.');
         setVerifying(false);
         setLoading(false);
       }
@@ -50,26 +51,26 @@ const ResetPassword: React.FC = () => {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
     
     if (newPassword !== confirmPassword) {
-      setError('Passwords do not match.');
+      setFormError('Passwords do not match.');
       return;
     }
 
     if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long.');
+      setFormError('Password must be at least 6 characters long.');
       return;
     }
 
     setLoading(true);
-    setError('');
 
     try {
       await confirmPasswordReset(auth, oobCode!, newPassword);
       setSuccess(true);
     } catch (err: any) {
       console.error("Reset error:", err);
-      setError(err.message || 'Failed to reset password. Please try again.');
+      setFormError(err.message || 'Failed to reset password. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -80,95 +81,104 @@ const ResetPassword: React.FC = () => {
   }
 
   return (
-    <div className="reset-page-premium">
-      <div className="mesh-bg">
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-      </div>
-
-      <div className="reset-container">
-        <div className="reset-card glass fade-in">
+    <div className="signin-page">
+      {loading && !verifying && <LoadingScreen message="Updating Password" />}
+      <div className="signin-container">
+        <div className="signin-card">
           <div className="logo-section">
             <h1 className="brand-logo">LocalMile<span className="logo-plus">.Plus</span></h1>
-            <p className="powered-by font-ui">Powered by MailPlus</p>
+            <p className="powered-by">Powered by MailPlus</p>
+            {!success && (
+              <>
+                <h2 className="reset-title">Reset Password</h2>
+                {email ? (
+                  <p className="welcome-text">
+                    Set a new password for <span className="email-highlight">{email}</span>
+                  </p>
+                ) : (
+                  <p className="welcome-text">Secure your account with a new password</p>
+                )}
+              </>
+            )}
           </div>
 
           {!success ? (
-            <>
-              <div className="header-text">
-                <div className="icon-badge">
-                  <Key size={24} />
+            linkError ? (
+              <div className="link-error-state">
+                <div className="error-message">
+                  <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                  <span>{linkError}</span>
                 </div>
-                <h2>Secure Password Reset</h2>
-                {email ? (
-                  <p className="email-hint">
-                    Set a new password for <span className="highlight">{email}</span>
-                  </p>
-                ) : (
-                  <p className="email-hint">Secure your account with a new password</p>
+                <Link to="/signin" className="signin-btn" style={{ textDecoration: 'none', marginBottom: 0 }}>
+                  <span>Return to Sign In</span>
+                  <ArrowRight size={20} />
+                </Link>
+              </div>
+            ) : (
+              <form className="signin-form" onSubmit={handleResetPassword}>
+                <div className="input-group">
+                  <label htmlFor="newPassword">New Password</label>
+                  <div className="input-wrapper">
+                    <Lock size={20} />
+                    <input
+                      id="newPassword"
+                      type="password"
+                      placeholder="Min. 6 characters"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div className="input-group">
+                  <label htmlFor="confirmPassword">Confirm Password</label>
+                  <div className="input-wrapper">
+                    <Lock size={20} />
+                    <input
+                      id="confirmPassword"
+                      type="password"
+                      placeholder="Re-enter new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {formError && (
+                  <div className="error-message">
+                    <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                    <span>{formError}</span>
+                  </div>
                 )}
-              </div>
 
-              {error ? (
-                <div className="error-state-premium">
-                  <div className="error-message-glass">
-                    <AlertCircle size={20} />
-                    <span>{error}</span>
-                  </div>
-                  <Link to="/signin" className="btn-secondary-glass full-width">
-                    Return to Sign In
-                  </Link>
-                </div>
-              ) : (
-                <form className="reset-form" onSubmit={handleResetPassword}>
-                  <div className="input-group">
-                    <label className="label-eyebrow" htmlFor="newPassword">New Password</label>
-                    <div className="input-wrapper-glass">
-                      <Lock size={18} />
-                      <input 
-                        id="newPassword"
-                        type="password" 
-                        placeholder="Min. 6 characters"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        required
-                        autoFocus
-                      />
-                    </div>
-                  </div>
+                <button type="submit" className="signin-btn" disabled={loading}>
+                  <span>{loading ? 'Updating Password...' : 'Reset Password'}</span>
+                  {!loading && <ArrowRight size={20} />}
+                </button>
 
-                  <div className="input-group">
-                    <label className="label-eyebrow" htmlFor="confirmPassword">Confirm Password</label>
-                    <div className="input-wrapper-glass">
-                      <Lock size={18} />
-                      <input 
-                        id="confirmPassword"
-                        type="password" 
-                        placeholder="Re-enter new password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <button type="submit" className="btn-primary-glass full-width" disabled={loading}>
-                    <span>{loading ? 'Updating Security...' : 'Reset Password'}</span>
-                    {!loading && <ArrowRight size={20} />}
-                  </button>
-                </form>
-              )}
-            </>
+                <p className="footer-link">
+                  Remembered your password?{' '}
+                  <Link to="/signin">Return to Sign In</Link>
+                </p>
+              </form>
+            )
           ) : (
-            <div className="success-state-premium fade-in">
+            <div className="success-state">
               <div className="success-icon-badge">
-                <CheckCircle size={40} />
+                <CheckCircle size={36} />
               </div>
-              <h2>Password Updated</h2>
-              <p>Your password has been reset successfully. You can now access your account with the new credentials.</p>
-              <button 
-                onClick={() => navigate('/signin')} 
-                className="btn-primary-glass full-width"
+              <h2 className="reset-title">Password Updated</h2>
+              <p className="welcome-text" style={{ marginBottom: '28px' }}>
+                Your password has been reset successfully. You can now access your account with your new credentials.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/signin')}
+                className="signin-btn"
+                style={{ marginBottom: 0 }}
               >
                 <span>Sign In Now</span>
                 <ArrowRight size={20} />
@@ -176,82 +186,44 @@ const ResetPassword: React.FC = () => {
             </div>
           )}
         </div>
-        
-        <div className="reset-footer font-ui">
-          &copy; {new Date().getFullYear()} LocalMile.Plus Security Protocol
-        </div>
       </div>
 
       <style>{`
-        .reset-page-premium {
+        .signin-page {
           min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
           background-color: var(--offwhite);
           padding: 20px;
-          position: relative;
-          overflow: hidden;
         }
 
-        .mesh-bg {
-          position: absolute;
-          top: 0; left: 0; right: 0; bottom: 0;
-          z-index: 0;
-          filter: blur(100px);
-          opacity: 0.4;
-        }
-
-        .blob {
-          position: absolute;
-          border-radius: 50%;
-          width: 500px;
-          height: 500px;
-          background: var(--cream-warm);
-          animation: blobPulse 10s infinite alternate;
-        }
-
-        .blob-1 { top: -100px; right: -100px; }
-        .blob-2 { bottom: -100px; left: -100px; background: var(--yellow); opacity: 0.3; }
-
-        @keyframes blobPulse {
-          0% { transform: scale(1) translate(0, 0); }
-          100% { transform: scale(1.2) translate(50px, 50px); }
-        }
-
-        .reset-container {
+        .signin-container {
           width: 100%;
-          max-width: 460px;
-          position: relative;
-          z-index: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
+          max-width: 440px;
         }
 
-        .reset-card.glass {
-          background: rgba(255, 255, 255, 0.85);
-          backdrop-filter: blur(15px);
-          border-radius: 32px;
-          padding: 48px;
-          box-shadow: 0 20px 60px rgba(26, 61, 51, 0.1);
-          border: 1px solid rgba(255, 255, 255, 0.5);
+        .signin-card {
+          background: var(--paper);
+          border-radius: 24px;
+          padding: 40px;
+          box-shadow: 0 10px 40px rgba(26, 61, 51, 0.1);
         }
 
         .logo-section {
           text-align: center;
-          margin-bottom: 40px;
+          margin-bottom: 32px;
         }
 
         .brand-logo {
           font-family: var(--font-headings);
-          font-size: 2.4rem;
+          font-size: 2.8rem;
           font-weight: 400;
           color: var(--ink);
           letter-spacing: -0.025em;
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
-        
+
         .brand-logo .logo-plus {
           color: var(--yellow);
           font-family: var(--font-headings);
@@ -260,185 +232,139 @@ const ResetPassword: React.FC = () => {
         }
 
         .powered-by {
+          font-family: var(--font-ui);
           font-size: 0.65rem;
-          font-weight: 600;
+          font-weight: 500;
           color: var(--ink-soft);
           text-transform: uppercase;
-          letter-spacing: 0.2em;
-          opacity: 0.6;
+          letter-spacing: 0.16em;
+          margin-bottom: 20px;
         }
 
-        .header-text {
-          text-align: center;
-          margin-bottom: 36px;
-        }
-
-        .icon-badge {
-          width: 56px;
-          height: 56px;
-          background: var(--offwhite);
-          border-radius: 18px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 0 auto 20px;
-          color: var(--gold);
-          box-shadow: 0 8px 20px rgba(168, 118, 58, 0.15);
-        }
-
-        .header-text h2 {
+        .reset-title {
           font-family: var(--font-headings);
-          font-size: 1.8rem;
+          font-size: 1.35rem;
           font-weight: 400;
           color: var(--ink);
-          margin-bottom: 12px;
+          margin-bottom: 6px;
         }
 
-        .email-hint {
-          font-size: 0.95rem;
+        .welcome-text {
           color: var(--ink-soft);
+          font-size: 0.92rem;
+          font-weight: 500;
           line-height: 1.5;
         }
 
-        .email-hint .highlight {
+        .email-highlight {
           color: var(--ink);
           font-weight: 700;
         }
 
         .input-group {
-          margin-bottom: 24px;
+          margin-bottom: 20px;
         }
 
-        .label-eyebrow {
+        .input-group label {
           display: block;
-          font-size: 0.65rem;
-          margin-bottom: 10px;
-          color: var(--gold);
-        }
-
-        .input-wrapper-glass {
-          position: relative;
-          display: flex;
-          align-items: center;
-        }
-
-        .input-wrapper-glass svg {
-          position: absolute;
-          left: 18px;
-          color: var(--ink-soft);
-          opacity: 0.5;
-        }
-
-        .input-wrapper-glass input {
-          width: 100%;
-          padding: 16px 16px 16px 52px;
-          border-radius: 16px;
-          border: 1px solid rgba(0,0,0,0.06);
-          background: white;
-          font-size: 1rem;
+          font-family: var(--font-ui);
+          font-size: 0.7rem;
           font-weight: 500;
-          transition: all 0.3s;
           color: var(--ink);
+          text-transform: uppercase;
+          letter-spacing: 0.16em;
+          margin-bottom: 8px;
         }
 
-        .input-wrapper-glass input:focus {
-          border-color: var(--gold);
-          box-shadow: 0 0 0 4px rgba(168, 118, 58, 0.1);
-          outline: none;
+        .input-wrapper {
+          position: relative;
         }
 
-        .full-width {
-          width: 100%;
+        .input-wrapper svg {
+          position: absolute;
+          left: 14px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--ink-soft);
+          opacity: 0.6;
+          pointer-events: none;
         }
 
-        .error-message-glass {
-          color: #b71c1c;
-          font-size: 0.9rem;
-          margin-bottom: 24px;
-          padding: 16px;
-          background: rgba(255, 235, 238, 0.5);
-          border-radius: 14px;
+        .input-wrapper input {
+          padding-left: 45px;
+        }
+
+        .error-message {
           display: flex;
           align-items: center;
-          gap: 12px;
-          border: 1px solid rgba(183, 28, 28, 0.1);
+          gap: 8px;
+          color: var(--danger);
+          font-size: 0.85rem;
+          margin-bottom: 20px;
+          padding: 10px 12px;
+          background: #ffebee;
+          border-radius: 8px;
         }
 
-        .btn-secondary-glass {
+        .signin-btn {
+          width: 100%;
+          background: var(--ink);
+          color: white;
+          padding: 14px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 16px;
-          border-radius: 16px;
-          border: 1px solid rgba(0,0,0,0.05);
-          background: white;
-          font-weight: 700;
+          gap: 12px;
+          font-size: 1.05rem;
+          font-weight: 600;
+          margin-bottom: 24px;
+        }
+
+        .signin-btn:hover:not(:disabled) {
+          background: var(--ink-soft);
+        }
+
+        .signin-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .footer-link {
+          text-align: center;
+          font-size: 0.85rem;
+          color: var(--ink-soft);
+        }
+
+        .footer-link a {
           color: var(--ink);
+          font-weight: 600;
           text-decoration: none;
-          transition: all 0.2s;
         }
 
-        .btn-secondary-glass:hover {
-          background: var(--offwhite);
-          transform: translateY(-2px);
+        .footer-link a:hover {
+          text-decoration: underline;
         }
 
-        .success-state-premium {
+        .success-state {
           text-align: center;
         }
 
         .success-icon-badge {
-          width: 80px;
-          height: 80px;
+          width: 64px;
+          height: 64px;
           background: #e8f5e9;
           color: #2e7d32;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          margin: 0 auto 24px;
-          box-shadow: 0 10px 25px rgba(46, 125, 50, 0.15);
-        }
-
-        .success-state-premium h2 {
-          font-family: var(--font-headings);
-          font-size: 2rem;
-          color: var(--ink);
-          margin-bottom: 16px;
-        }
-
-        .success-state-premium p {
-          color: var(--ink-soft);
-          margin-bottom: 36px;
-          line-height: 1.6;
-          font-size: 1.05rem;
-        }
-
-        .reset-footer {
-          text-align: center;
-          font-size: 0.65rem;
-          color: var(--ink-soft);
-          opacity: 0.4;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-        }
-
-        .fade-in {
-          animation: fadeIn 0.6s ease-out;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+          margin: 0 auto 20px;
         }
 
         @media (max-width: 480px) {
-          .reset-card.glass {
-            padding: 32px 24px;
-          }
-          
-          .brand-logo {
-            font-size: 2rem;
+          .signin-card {
+            padding: 28px 22px;
           }
         }
       `}</style>

@@ -16,6 +16,10 @@
         "function": "requestPasswordResetHttp"
       },
       {
+        "source": "/api/upload-proof-image",
+        "function": "uploadProofImageHttp"
+      },
+      {
         "source": "/api/**",
         "function": "api"
       },

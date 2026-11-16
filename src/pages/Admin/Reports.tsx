@@ -21,6 +21,7 @@ import { collection, query, getDocs, where } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import CustomSelect from '../../components/CustomSelect';
+import ExtrasReportPanel from '../../components/ExtrasReportPanel';
 import { getDisplayServiceName } from '../../utils/serviceHelpers';
 import {
   isActiveCompanyRecord,
@@ -685,6 +686,9 @@ const Reports: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {/* Admin & Superadmin Captured Extras Report & Export */}
+            {isAdmin && <ExtrasReportPanel variant="glass" />}
 
             {/* Insights Row (Top Customers & Geographic Volume) */}
             <div className="insights-row">

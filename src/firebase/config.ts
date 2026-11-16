@@ -12,7 +12,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyCEKfFKLTso-t3Lu6YV8XOpCCBF2az9Hcg",
   authDomain: "localmile-plus.firebaseapp.com",
   projectId: "localmile-plus",
-  storageBucket: "localmile-plus.firebasestorage.app",
+  storageBucket: "localmile-plus-pod-storage",
   messagingSenderId: "1058596386803",
   appId: "1:1058596386803:web:ee4cf205f3512224c70486",
   measurementId: "G-P2FC478MV0"

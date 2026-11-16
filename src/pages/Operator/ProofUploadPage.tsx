@@ -28,8 +28,7 @@ import {
   where,
   limit,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage } from '../../firebase/config';
+import { auth, db } from '../../firebase/config';
 import { useLpo } from '../../context/LpoContext';
 import { compressImage } from '../../utils/imageCompression';
 import {
@@ -37,6 +36,7 @@ import {
   fetchTargetCompanyName,
   formatOperatorServiceName,
   isCompany1868657ParentViewer,
+  uploadProofBlob,
 } from '../../utils/operatorAccess';
 import LoadingScreen from '../../components/LoadingScreen';
 import './ProofUploadPage.css';
@@ -335,12 +335,7 @@ const ProofUploadPage: React.FC = () => {
         const compressedBlob = await compressImage(file);
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         const storagePath = `proof_uploads/${TARGET_COMPANY_ID}/${selectedSubcustomer.id}/${proofType}/${timestamp}_${i}_${safeName}.jpg`;
-        const storageRef = ref(storage, storagePath);
-
-        await uploadBytes(storageRef, compressedBlob, {
-          contentType: 'image/jpeg',
-        });
-        const downloadUrl = await getDownloadURL(storageRef);
+        const downloadUrl = await uploadProofBlob(storagePath, compressedBlob);
 
         uploadedFiles.push({
           url: downloadUrl,
@@ -458,7 +453,7 @@ const ProofUploadPage: React.FC = () => {
                 <span>View Proofs</span>
               </button>
             )}
-            {userData?.role !== 'operator' && (
+            {(isAdmin || (userData && userData.role !== 'operator')) && (
               <button
                 type="button"
                 className="proof-nav-btn"
